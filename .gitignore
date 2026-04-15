@@ -1,0 +1,28 @@
+# API密钥文件
+.env
+
+# Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 测试覆盖率
+.coverage
+htmlcov/
+
+# 临时文件
+*.tmp
+*.log
