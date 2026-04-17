@@ -8,6 +8,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.callbacks import StreamingStdOutCallbackHandler
+# 导入问题识别工具
+from tools.problem_recognition import ProblemRecognizer
 
 
 class SimpleAgent:
@@ -16,6 +18,7 @@ class SimpleAgent:
         
         self.api_key = api_key  # 千问API密钥
         self.vision_tool = vision_tool  # 多模态图片识别工具
+        self.recognizer = ProblemRecognizer()  # 问题识别工具
 
         # 初始化LangChain组件
         self.chain = None
@@ -162,6 +165,30 @@ class SimpleAgent:
         hist = self._session_histories.get(sid)
         if hist is not None:
             hist.clear()
+    
+    async def stream_process(self, user_input: str, session_id: Optional[str] = None):
+        """流式处理用户输入，逐token返回"""
+        sid = session_id if session_id is not None else self._default_session_id
+        config: Dict[str, Any] = {"configurable": {"session_id": sid}}
+        
+        # 检查是否是图片输入（文件路径）
+        if self._is_image_input(user_input):
+            # 对于图片输入，先处理再流式返回
+            result = self._process_image_path(user_input, sid, config, False)
+            yield result
+            return
+        
+        # 使用LangChain的astream方法进行流式处理
+        async for chunk in self.chain.astream({"input": user_input}, config=config):
+            if chunk:
+                yield chunk
+        
+        # 如果是积分问题，添加Sympy验证
+        recognition_result = self.recognizer.recognize(user_input)
+        if recognition_result.get("type") == "integration" or "积分" in user_input:
+            verification_result = self._verify_with_sympy({"text": user_input, "expression": recognition_result.get("expression", ""), "variable": recognition_result.get("variable", "x")}, "")
+            if verification_result:
+                yield verification_result
     
     def _verify_with_sympy(self, problem: Dict[str, str], qwen_answer: str) -> str:
         """使用sympy验证千问API的答案"""

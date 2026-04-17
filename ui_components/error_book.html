@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>错题本 - 数学AI助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 300px;
+            background-color: #fff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            z-index: 1000;
+            transform: translateX(0);
+            transition: transform 0.3s ease-in-out;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1890ff;
+            margin-bottom: 10px;
+        }
+
+        .welcome {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .close-sidebar-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #999;
+            padding: 5px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .close-sidebar-btn:hover {
+            color: #333;
+            background-color: #f0f0f0;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .new-chat-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            background-color: #f0f0f0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .new-chat-btn:hover {
+            background-color: #e0e0e0;
+        }
+
+        .history-item {
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: background-color 0.2s;
+        }
+
+        .history-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .history-item.active {
+            background-color: #e6f7ff;
+        }
+
+        .history-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .history-time {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .sidebar-footer {
+            padding: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .error-book-btn {
+            width: 100%;
+            padding: 12px;
+            background-color: #fff2e8;
+            border: 1px solid #ffd591;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #d46b08;
+            transition: all 0.2s;
+        }
+
+        .error-book-btn:hover {
+            background-color: #fff1e6;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #fafafa;
+            margin-left: 300px;
+            transition: margin-left 0.3s ease-in-out;
+            height: 100vh;
+        }
+
+        .main-content.expanded {
+            margin-left: 0;
+        }
+
+        .error-book-header {
+            padding: 20px;
+            background-color: #fff;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .error-book-title {
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .error-book-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+
+        .open-sidebar-btn {
+            padding: 6px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .open-sidebar-btn:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+
+        /* 错题本界面 */
+        #error-book-interface {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .error-book-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #fafafa;
+            max-height: 100vh;
+        }
+
+        .error-book-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+            flex: 1;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .filter-section {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+            margin-bottom: 20px;
+        }
+
+        .filter-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .filter-item {
+            flex: 1;
+        }
+
+        .filter-label {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .filter-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .filter-input:focus {
+            border-color: #1890ff;
+            outline: none;
+        }
+
+        .error-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .error-card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+            padding: 20px;
+        }
+
+        .error-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .error-question {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        .error-meta {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .error-reason {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #fff2f0;
+            border: 1px solid #ffccc7;
+            border-radius: 4px;
+        }
+
+        .error-reason-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #f5222d;
+            margin-bottom: 5px;
+        }
+
+        .error-reason-content {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .error-answer {
+            margin-top: 15px;
+        }
+
+        .error-answer-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #52c41a;
+            margin-bottom: 5px;
+        }
+
+        .error-answer-content {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .error-tags {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .error-tag {
+            padding: 4px 12px;
+            background-color: #f0f0f0;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .error-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .error-action-btn {
+            padding: 6px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .error-action-btn:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 250px;
+            }
+
+            .main-content {
+                margin-left: 250px;
+            }
+
+            .filter-row {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .sidebar {
+                width: 280px;
+            }
+
+            .main-content {
+                margin-left: 280px;
+            }
+
+            .error-book-header {
+                padding: 15px;
+            }
+
+            .error-book-container {
+                padding: 15px;
+            }
+        }
+
+        /* 隐藏类 */
+        .hidden {
+            display: none;
+        }
+
+        /* 过渡动画 */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div>
+                    <div class="logo">数学AI助手</div>
+                    <div class="welcome">你好！我是你的数学学习助手</div>
+                </div>
+                <button class="close-sidebar-btn" onclick="toggleSidebar()">×</button>
+            </div>
+            <div class="sidebar-content">
+                <button class="new-chat-btn" onclick="window.location.href='index.html'">+ 新对话</button>
+                <div id="history-list">
+                    <!-- 历史对话列表将通过JS动态生成 -->
+                </div>
+            </div>
+            <div class="sidebar-footer">
+                <button class="error-book-btn" onclick="window.location.href='error_book.html'">📚 错题本</button>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 错题本界面 -->
+            <div id="error-book-interface">
+                <div class="error-book-header">
+                    <div class="error-book-title">📚 错题本</div>
+                    <div class="error-book-actions">
+                        <button class="open-sidebar-btn" onclick="toggleSidebar()">菜单</button>
+                        <button class="action-btn" onclick="window.location.href='/'">返回对话</button>
+                    </div>
+                </div>
+                <div class="error-book-container">
+                    <div class="error-book-stats">
+                        <div class="stat-card">
+                            <div class="stat-number" id="total-errors">0</div>
+                            <div class="stat-label">总错题数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="unmastered-errors">0</div>
+                            <div class="stat-label">待复习</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" id="mastered-errors">0</div>
+                            <div class="stat-label">已掌握</div>
+                        </div>
+                    </div>
+                    <div class="filter-section">
+                        <div class="filter-title">筛选条件</div>
+                        <div class="filter-row">
+                            <div class="filter-item">
+                                <label class="filter-label">搜索</label>
+                                <input type="text" class="filter-input" id="error-search" placeholder="搜索题目或答案">
+                            </div>
+                            <div class="filter-item">
+                                <label class="filter-label">分类</label>
+                                <select class="filter-input" id="error-category">
+                                    <option value="">全部分类</option>
+                                    <option value="极限">极限</option>
+                                    <option value="导数">导数</option>
+                                    <option value="积分">积分</option>
+                                    <option value="微分方程">微分方程</option>
+                                </select>
+                            </div>
+                            <div class="filter-item">
+                                <label class="filter-label">掌握度</label>
+                                <select class="filter-input" id="error-mastery">
+                                    <option value="">全部掌握度</option>
+                                    <option value="1">1-完全不会</option>
+                                    <option value="2">2-不太理解</option>
+                                    <option value="3">3-一般</option>
+                                    <option value="4">4-较好</option>
+                                    <option value="5">5-精通</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="error-list" id="error-list">
+                        <!-- 错题列表将通过JS动态生成 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let errorBook = loadErrorBook();
+        let chats = loadChats();
+
+        // 初始化
+        function init() {
+            renderHistoryList();
+            renderErrorBook();
+            setupEventListeners();
+        }
+
+        // 生成UUID
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // 加载历史对话
+        function loadChats() {
+            const savedChats = localStorage.getItem('math_ai_chats');
+            return savedChats ? JSON.parse(savedChats) : [];
+        }
+
+        // 加载错题本
+        function loadErrorBook() {
+            const savedErrorBook = localStorage.getItem('math_ai_error_book');
+            if (savedErrorBook) {
+                return JSON.parse(savedErrorBook);
+            } else {
+                // 生成模拟数据
+                return generateMockErrorBook();
+            }
+        }
+
+        // 保存错题本
+        function saveErrorBook() {
+            localStorage.setItem('math_ai_error_book', JSON.stringify(errorBook));
+        }
+
+        
+        // 渲染历史对话列表
+        function renderHistoryList() {
+            const historyList = document.getElementById('history-list');
+            historyList.innerHTML = '';
+
+            chats.forEach(chat => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'history-item';
+                historyItem.onclick = () => window.location.href = `index.html#${chat.id}`;
+                historyItem.innerHTML = `
+                    <div class="history-title">${chat.title}</div>
+                    <div class="history-time">${chat.lastMessageTime}</div>
+                `;
+                historyList.appendChild(historyItem);
+            });
+        }
+
+        // 渲染错题本
+        function renderErrorBook() {
+            const errorList = document.getElementById('error-list');
+            const totalErrors = document.getElementById('total-errors');
+            const unmasteredErrors = document.getElementById('unmastered-errors');
+            const masteredErrors = document.getElementById('mastered-errors');
+
+            totalErrors.textContent = errorBook.length;
+            unmasteredErrors.textContent = errorBook.filter(item => !item.is_mastered).length;
+            masteredErrors.textContent = errorBook.filter(item => item.is_mastered).length;
+
+            errorList.innerHTML = '';
+
+            errorBook.forEach(item => {
+                const errorCard = document.createElement('div');
+                errorCard.className = 'error-card fade-in';
+                errorCard.innerHTML = `
+                    <div class="error-card-header">
+                        <div>
+                            <div class="error-question">${item.question}</div>
+                            <div class="error-meta">
+                                添加时间: ${item.added_at} | 掌握度: ${'★'.repeat(item.mastery_level)}${'☆'.repeat(5 - item.mastery_level)} | ${item.is_mastered ? '已掌握' : '待复习'}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="error-reason">
+                        <div class="error-reason-label">错误原因</div>
+                        <div class="error-reason-content">${item.error_reason}</div>
+                    </div>
+                    <div class="error-answer">
+                        <div class="error-answer-label">正确答案</div>
+                        <div class="error-answer-content">${item.correct_answer}</div>
+                    </div>
+                    ${item.notes ? `<div class="error-answer">
+                        <div class="error-answer-label">笔记</div>
+                        <div class="error-answer-content">${item.notes}</div>
+                    </div>` : ''}
+                    <div class="error-tags">
+                        ${item.categories.map(cat => `<span class="error-tag">${cat}</span>`).join('')}
+                    </div>
+                    <div class="error-actions">
+                        <button class="error-action-btn" onclick="toggleMastery('${item.id}')">${item.is_mastered ? '标记为待复习' : '标记为已掌握'}</button>
+                        <button class="error-action-btn" onclick="deleteError('${item.id}')">删除</button>
+                    </div>
+                `;
+                errorList.appendChild(errorCard);
+            });
+        }
+
+        // 切换侧边栏
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.querySelector('.main-content');
+            
+            sidebar.classList.toggle('collapsed');
+            mainContent.classList.toggle('expanded');
+        }
+
+        // 切换错题掌握状态
+        function toggleMastery(errorId) {
+            const error = errorBook.find(item => item.id === errorId);
+            if (error) {
+                error.is_mastered = !error.is_mastered;
+                saveErrorBook();
+                renderErrorBook();
+            }
+        }
+
+        // 删除错题
+        function deleteError(errorId) {
+            if (confirm('确定要删除这道错题吗？')) {
+                errorBook = errorBook.filter(item => item.id !== errorId);
+                saveErrorBook();
+                renderErrorBook();
+            }
+        }
+
+        // 设置事件监听器
+        function setupEventListeners() {
+            // 错题本筛选
+            document.getElementById('error-search').addEventListener('input', function() {
+                // 这里可以实现筛选逻辑
+            });
+
+            document.getElementById('error-category').addEventListener('change', function() {
+                // 这里可以实现筛选逻辑
+            });
+
+            document.getElementById('error-mastery').addEventListener('change', function() {
+                // 这里可以实现筛选逻辑
+            });
+        }
+
+        // 初始化应用
+        init();
+    </script>
+</body>
+</html>
