@@ -99,7 +99,7 @@ async def stream_chat_response(message, session_id):
                     json.dumps({'content': chunk})
                 except (TypeError, ValueError) as json_error:
                     yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}'})}\n\n"
-                    continue
+                    return
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
         # 发送结束标志
         yield "data: [DONE]\n\n"

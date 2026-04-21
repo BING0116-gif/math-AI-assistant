@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Any, Optional, Tuple, Union
 from sympy import symbols, integrate, parse_expr
 from config.prompts import SYSTEM_PROMPT
@@ -185,7 +186,8 @@ class SimpleAgent:
             
             # 异步处理VL识别流
             try:
-                async for chunk in self.vision_tool.recognize_stream_async(user_input):
+                # 添加超时控制
+                async for chunk in asyncio.wait_for(self.vision_tool.recognize_stream_async(user_input), timeout=30.0):
                     if chunk["type"] == "token":
                         vl_full_response += chunk["content"]
                         yield chunk["content"]
@@ -197,6 +199,9 @@ class SimpleAgent:
                     elif chunk["type"] == "error":
                         yield f"\n\n错误: {chunk['content']}"
                         return
+            except asyncio.TimeoutError:
+                yield "\n\n错误: 图片识别超时"
+                return
             except Exception as e:
                 yield f"\n\n错误: {str(e)}"
                 return

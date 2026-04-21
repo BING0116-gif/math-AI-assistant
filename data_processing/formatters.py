@@ -7,7 +7,7 @@
 import re
 import os
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class ErrorBookFormatter:
@@ -112,7 +112,7 @@ class ErrorBookFormatter:
             # 尝试标准化时间格式
             try:
                 # 如果是ISO格式或其他标准格式，转换为目标格式
-                dt = datetime.fromisoformat(added_at.replace('Z', '+00:00'))
+                dt = datetime.fromisoformat(added_at.replace('Z', '+00:00')).astimezone(timezone.utc)
                 data['added_at'] = dt.strftime("%Y-%m-%d %H:%M")
             except (ValueError, AttributeError):
                 # 保持原样（可能是自定义格式）

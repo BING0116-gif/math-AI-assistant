@@ -5,6 +5,7 @@
 """
 
 import re
+import base64
 from typing import Tuple, List, Dict, Any
 
 
@@ -95,9 +96,15 @@ class ErrorBookValidator:
 
         if question_type == 'image':
             # 图片类型：检查是否是有效的图片数据或路径
-            if not (question.startswith('data:image/') or 
-                   (question and '.' in question and 
-                    question.split('.')[-1].lower() in ['png', 'jpg', 'jpeg', 'gif'])):
+            if question.startswith('data:image/'):
+                # 验证base64格式
+                try:
+                    base64_data = question.split(',')[1] if ',' in question else question
+                    base64.b64decode(base64_data)
+                except:
+                    return "无效的base64图片数据"
+            elif not (question and '.' in question and 
+                    question.split('.')[-1].lower() in ['png', 'jpg', 'jpeg', 'gif']):
                 return "图片类型题目的数据格式无效"
 
         elif question_type == 'text':
