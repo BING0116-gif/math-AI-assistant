@@ -1,0 +1,46 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-7.4.4, pluggy-1.0.0 -- F:\anaconda\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\HUAWEI\Desktop\math AI assistant
+plugins: anyio-4.2.0, langsmith-0.7.9
+collecting ... collected 22 items
+
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_valid_text_error PASSED [  4%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_missing_required_fields PASSED [  9%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_invalid_image_format PASSED [ 13%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_image_type_with_base64 PASSED [ 18%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_text_with_image_data_mismatch PASSED [ 22%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_mastery_level_validation PASSED [ 27%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_field_length_limit PASSED [ 31%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_sanitize_string FAILED [ 36%]
+tests/test_data_storage_fix.py::TestErrorBookValidator::test_validate_categories PASSED [ 40%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_format_text_question PASSED [ 45%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_format_image_question PASSED [ 50%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_extract_recognized_text_from_markers PASSED [ 54%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_extract_recognized_text_from_confirmation PASSED [ 59%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_generate_preview_removes_latex PASSED [ 63%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_auto_classification PASSED [ 68%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_timestamp_standardization PASSED [ 72%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_default_values_for_empty_fields FAILED [ 77%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_clean_html_tags PASSED [ 81%]
+tests/test_data_storage_fix.py::TestErrorBookFormatter::test_clean_latex_commands PASSED [ 86%]
+tests/test_data_storage_fix.py::TestDataIntegrity::test_no_data_loss_after_formatting PASSED [ 90%]
+tests/test_data_storage_fix.py::TestDataIntegrity::test_new_fields_added PASSED [ 95%]
+tests/test_data_storage_fix.py::TestDataIntegrity::test_backward_compatibility_with_old_data_format PASSED [100%]
+
+================================== FAILURES ===================================
+_________________ TestErrorBookValidator.test_sanitize_string _________________
+tests\test_data_storage_fix.py:121: in test_sanitize_string
+    assert cleaned == "hello world"
+E   AssertionError: assert 'hello   world' == 'hello world'
+E     - hello world
+E     + hello   world
+E     ?       ++
+_________ TestErrorBookFormatter.test_default_values_for_empty_fields _________
+tests\test_data_storage_fix.py:287: in test_default_values_for_empty_fields
+    assert formatted['notes'] == ''
+E   AssertionError: assert None == ''
+=========================== short test summary info ===========================
+FAILED tests/test_data_storage_fix.py::TestErrorBookValidator::test_sanitize_string
+FAILED tests/test_data_storage_fix.py::TestErrorBookFormatter::test_default_values_for_empty_fields
+======================== 2 failed, 20 passed in 15.31s ========================

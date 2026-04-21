@@ -11,7 +11,7 @@ import json
 import os
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-import requests
+import httpx
 
 # API 配置（与现有 DashScope key 复用）
 _DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
@@ -69,13 +69,13 @@ class VisionTool:
         self._model = model or _VL_MODELS[0]
         self._base_url = _DASHSCOPE_BASE
 
-    def _post(
+    async def _post_async(
         self,
         messages: List[Dict[str, Any]],
         model: str,
         stream: bool = False,
         **params,
-    ) -> requests.Response:
+    ): 
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -86,14 +86,292 @@ class VisionTool:
             "stream": stream,
             **params,
         }
-        resp = requests.post(
-            f"{self._base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=60,
+        async with httpx.AsyncClient(timeout=60) as client:
+            async with client.stream(
+                "POST",
+                f"{self._base_url}/chat/completions",
+                headers=headers,
+                json=payload
+            ) as response:
+                response.raise_for_status()
+                if stream:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+                else:
+                    yield await response.aread()
+
+    def _post(
+        self,
+        messages: List[Dict[str, Any]],
+        model: str,
+        stream: bool = False,
+        **params,
+    ): 
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": stream,
+            **params,
+        }
+        with httpx.Client(timeout=60) as client:
+            if stream:
+                with client.stream(
+                    "POST",
+                    f"{self._base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                ) as response:
+                    response.raise_for_status()
+                    for chunk in response.iter_bytes():
+                        yield chunk
+            else:
+                response = client.post(
+                    f"{self._base_url}/chat/completions",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                yield response.content
+
+    async def recognize_stream_async(
+        self,
+        image_source: Union[str, Tuple[str, bytes]],
+        user_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        """
+        异步流式版本：将图片发给 VL 模型，逐token返回识别结果。
+        返回异步生成器，每次 yield 一个内容片段。
+        """
+        if not self._api_key:
+            yield {
+                "type": "error",
+                "content": "未找到 DASHSCOPE_API_KEY，请在 .env 或环境变量中配置。"
+            }
+            return
+
+        try:
+            if isinstance(image_source, tuple):
+                mime, b64 = image_source
+                image_url = f"data:{mime};base64,{b64}"
+            else:
+                path = image_source
+                if not os.path.exists(path):
+                    yield {"type": "error", "content": f"图片文件不存在: {path}"}
+                    return
+                mime = _guess_mime(path)
+                b64 = _img_to_base64(path)
+                image_url = f"data:{mime};base64,{b64}"
+        except Exception as e:
+            yield {"type": "error", "content": f"图片读取失败: {e}"}
+            return
+
+        system = (
+            "你是一个高数题目图像理解专家。用户会发来一张截图，"
+            "请完成以下两步：\n\n"
+            "【步骤 1：结构化提取】\n"
+            "仔细阅读截图，提取题目中的所有信息，包括：\n"
+            "- 题干文字（中文叙述）\n"
+            "- 数学公式（用 LaTeX 表示，例如 $x^2+1$）\n"
+            "- 几何图形描述（如坐标系、曲线、点、线段）\n"
+            "- 选项内容（如 A/B/C/D）\n\n"
+            "【步骤 2：输出格式】\n"
+            "将提取结果按以下格式返回（不要加任何额外说明）：\n\n"
+            "【题目】\n<题干文字>\n\n"
+            "【公式】\n<LaTeX 公式，重要公式用独立段落 $$...$$>\n\n"
+            "【图形描述】（如有）\n<坐标系、关键点位置等>\n\n"
+            "【选项】（如有）\n<选项内容>\n\n"
+            "【其他说明】（如有）\n<图注、补充条件等>\n"
         )
-        resp.raise_for_status()
-        return resp
+
+        user_content: List[Dict[str, Any]] = [
+            {"type": "image_url", "image_url": {"url": image_url}},
+        ]
+        if user_prompt:
+            user_content.insert(0, {"type": "text", "text": user_prompt})
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ]
+
+        models_to_try = [model or self._model] + [
+            m for m in _VL_MODELS if m != (model or self._model)
+        ]
+        last_error = ""
+        for try_model in models_to_try:
+            try:
+                buffer = b''
+                full_response = ""
+                async for chunk in self._post_async(
+                    messages,
+                    model=try_model,
+                    stream=True,
+                    temperature=0.3,
+                    max_tokens=2048,
+                ):
+                    if chunk:
+                        buffer += chunk
+                        # 按行处理
+                        lines = buffer.split(b'\n\n')
+                        for i, line in enumerate(lines):
+                            if i < len(lines) - 1:  # 处理完整的行
+                                line_str = line.decode('utf-8')
+                                if line_str.startswith('data: '):
+                                    data_str = line_str[6:]
+                                    if data_str == '[DONE]':
+                                        break
+                                    try:
+                                        data = json.loads(data_str)
+                                        delta = data.get('choices', [{}])[0].get('delta', {})
+                                        content = delta.get('content', '')
+                                        if content:
+                                            full_response += content
+                                            yield {"type": "token", "content": content}
+                                    except json.JSONDecodeError:
+                                        continue
+                        # 保留未处理的部分
+                        buffer = lines[-1]
+                
+                # 返回完整结果供后续使用
+                yield {
+                    "type": "complete",
+                    "success": True,
+                    "llm_description": _build_llm_input(full_response),
+                    "raw_response": full_response,
+                    "model_used": try_model,
+                }
+                return
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+        yield {
+            "type": "error",
+            "content": f"所有 VL 模型调用均失败: {last_error}"
+        }
+
+    def recognize_stream(
+        self,
+        image_source: Union[str, Tuple[str, bytes]],
+        user_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        """
+        同步流式版本：将图片发给 VL 模型，逐token返回识别结果。
+        返回生成器，每次 yield 一个内容片段。
+        """
+        if not self._api_key:
+            yield {
+                "type": "error",
+                "content": "未找到 DASHSCOPE_API_KEY，请在 .env 或环境变量中配置。"
+            }
+            return
+
+        try:
+            if isinstance(image_source, tuple):
+                mime, b64 = image_source
+                image_url = f"data:{mime};base64,{b64}"
+            else:
+                path = image_source
+                if not os.path.exists(path):
+                    yield {"type": "error", "content": f"图片文件不存在: {path}"}
+                    return
+                mime = _guess_mime(path)
+                b64 = _img_to_base64(path)
+                image_url = f"data:{mime};base64,{b64}"
+        except Exception as e:
+            yield {"type": "error", "content": f"图片读取失败: {e}"}
+            return
+
+        system = (
+            "你是一个高数题目图像理解专家。用户会发来一张截图，"
+            "请完成以下两步：\n\n"
+            "【步骤 1：结构化提取】\n"
+            "仔细阅读截图，提取题目中的所有信息，包括：\n"
+            "- 题干文字（中文叙述）\n"
+            "- 数学公式（用 LaTeX 表示，例如 $x^2+1$）\n"
+            "- 几何图形描述（如坐标系、曲线、点、线段）\n"
+            "- 选项内容（如 A/B/C/D）\n\n"
+            "【步骤 2：输出格式】\n"
+            "将提取结果按以下格式返回（不要加任何额外说明）：\n\n"
+            "【题目】\n<题干文字>\n\n"
+            "【公式】\n<LaTeX 公式，重要公式用独立段落 $$...$$>\n\n"
+            "【图形描述】（如有）\n<坐标系、关键点位置等>\n\n"
+            "【选项】（如有）\n<选项内容>\n\n"
+            "【其他说明】（如有）\n<图注、补充条件等>\n"
+        )
+
+        user_content: List[Dict[str, Any]] = [
+            {"type": "image_url", "image_url": {"url": image_url}},
+        ]
+        if user_prompt:
+            user_content.insert(0, {"type": "text", "text": user_prompt})
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ]
+
+        models_to_try = [model or self._model] + [
+            m for m in _VL_MODELS if m != (model or self._model)
+        ]
+        last_error = ""
+        for try_model in models_to_try:
+            try:
+                buffer = b''
+                full_response = ""
+                for chunk in self._post(
+                    messages,
+                    model=try_model,
+                    stream=True,
+                    temperature=0.3,
+                    max_tokens=2048,
+                ):
+                    if chunk:
+                        buffer += chunk
+                        # 按行处理
+                        lines = buffer.split(b'\n\n')
+                        for i, line in enumerate(lines):
+                            if i < len(lines) - 1:  # 处理完整的行
+                                line_str = line.decode('utf-8')
+                                if line_str.startswith('data: '):
+                                    data_str = line_str[6:]
+                                    if data_str == '[DONE]':
+                                        break
+                                    try:
+                                        data = json.loads(data_str)
+                                        delta = data.get('choices', [{}])[0].get('delta', {})
+                                        content = delta.get('content', '')
+                                        if content:
+                                            full_response += content
+                                            yield {"type": "token", "content": content}
+                                    except json.JSONDecodeError:
+                                        continue
+                        # 保留未处理的部分
+                        buffer = lines[-1]
+                
+                # 返回完整结果供后续使用
+                yield {
+                    "type": "complete",
+                    "success": True,
+                    "llm_description": _build_llm_input(full_response),
+                    "raw_response": full_response,
+                    "model_used": try_model,
+                }
+                return
+            except Exception as e:
+                last_error = str(e)
+                continue
+
+        yield {
+            "type": "error",
+            "content": f"所有 VL 模型调用均失败: {last_error}"
+        }
 
     def recognize(
         self,

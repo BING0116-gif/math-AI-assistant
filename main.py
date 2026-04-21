@@ -2,10 +2,12 @@ from tools.math_solver import MathSolverTool
 from tools.vision_tool import VisionTool
 from agent_core.agent import SimpleAgent
 from error_book import ErrorBookManager, ErrorItem
+from data_processing.validators import ErrorBookValidator
+from data_processing.formatters import ErrorBookFormatter
 import os
 import base64
 import json
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse,StreamingResponse
@@ -92,7 +94,46 @@ async def stream_chat_response(message, session_id):
         # 调用agent的stream_process方法
         async for chunk in agent.stream_process(message, session_id=session_id):
             if chunk:
+                # 检查chunk是否为有效的JSON
+                try:
+                    json.dumps({'content': chunk})
+                except (TypeError, ValueError) as json_error:
+                    yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}'})}\n\n"
+                    continue
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
+        # 发送结束标志
+        yield "data: [DONE]\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'content': f'错误: {str(e)}'})}\n\n"
+
+# 流式生成器函数（图片识别）
+async def stream_recognize_response(image_data, session_id):
+    """生成器函数，逐token返回图片识别响应"""
+    try:
+        # 处理base64图片数据
+        if image_data.startswith('data:image/'):
+            # 移除data URL前缀
+            image_data = image_data.split(',')[1]
+        
+        # 保存图片到临时文件
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+            temp_file.write(base64.b64decode(image_data))
+            temp_file_path = temp_file.name
+        
+        # 调用agent的stream_process方法处理图片
+        async for chunk in agent.stream_process(temp_file_path, session_id=session_id):
+            if chunk:
+                # 确保chunk是字符串
+                if not isinstance(chunk, str):
+                    chunk = str(chunk)
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+        
+        # 删除临时文件
+        os.unlink(temp_file_path)
+        
         # 发送结束标志
         yield "data: [DONE]\n\n"
     except Exception as e:
@@ -113,38 +154,19 @@ async def chat(request: ChatRequest):
         media_type="text/event-stream"
     )
 
-# API端点：图片识别
+# API端点：图片识别（流式响应）
 @app.post('/api/recognize')
-def recognize(request: RecognizeRequest):
+async def recognize(request: RecognizeRequest):
     image_data = request.image
     session_id = request.session_id
     
     if not image_data:
         raise HTTPException(status_code=400, detail="请提供图片数据")
     
-    try:
-        # 处理base64图片数据
-        if image_data.startswith('data:image/'):
-            # 移除data URL前缀
-            image_data = image_data.split(',')[1]
-        
-        # 保存图片到临时文件
-        import tempfile
-        import os
-        
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-            temp_file.write(base64.b64decode(image_data))
-            temp_file_path = temp_file.name
-        
-        # 处理图片
-        response = agent.process_input(temp_file_path, session_id=session_id, stream=False)
-        
-        # 删除临时文件
-        os.unlink(temp_file_path)
-        
-        return {"response": response}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(
+        stream_recognize_response(image_data, session_id),
+        media_type="text/event-stream"
+    )
 
 # API端点：错题本 - 获取所有错题
 @app.get('/api/error-book')
@@ -159,25 +181,55 @@ def get_error_book():
 @app.post('/api/error-book')
 def add_error(request: ErrorItemRequest):
     try:
+        # Step 1: 数据校验 - 验证字段完整性和格式
+        raw_data = request.dict()
+        is_valid, validation_errors = ErrorBookValidator.validate(raw_data)
+        
+        if not is_valid:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"数据验证失败: {'; '.join(validation_errors)}"
+            )
+        
+        # Step 2: 数据格式化 - 智能提取和标准化处理
+        formatted_data = ErrorBookFormatter.format(raw_data)
+        
+        # Step 3: 创建错题对象并保存
         error_item = ErrorItem(
-            id=request.id,
-            question=request.question,
-            question_type=request.question_type,
-            image_path=request.image_path,
-            error_reason=request.error_reason,
-            categories=request.categories,
-            original_answer=request.original_answer,
-            correct_answer=request.correct_answer,
-            notes=request.notes,
-            added_at=request.added_at,
-            mastery_level=request.mastery_level,
-            is_mastered=request.is_mastered
+            id=formatted_data.get('id', ''),
+            question=formatted_data.get('question', ''),
+            question_type=formatted_data.get('question_type', 'text'),
+            image_path=formatted_data.get('image_path'),
+            error_reason=formatted_data.get('error_reason', ''),
+            categories=formatted_data.get('categories', []),
+            original_answer=formatted_data.get('original_answer', ''),
+            correct_answer=formatted_data.get('correct_answer', ''),
+            notes=formatted_data.get('notes', ''),
+            added_at=formatted_data.get('added_at', ''),
+            mastery_level=formatted_data.get('mastery_level', 3),
+            is_mastered=formatted_data.get('is_mastered', False)
         )
         
         error_id = error_book_manager.add(error_item)
-        return {"id": error_id}
+        
+        # Step 4: 返回完整的格式化数据（包含处理后的新字段）
+        return {
+            "id": error_id,
+            "status": "success",
+            "message": "错题添加成功",
+            "data": {
+                **error_item.to_dict(),
+                "display_question": formatted_data.get('display_question', ''),
+                "recognized_text": formatted_data.get('recognized_text', ''),
+                "answer_preview": formatted_data.get('answer_preview', ''),
+                "has_image": formatted_data.get('has_image', False),
+                "categories": formatted_data.get('categories', [])
+            }
+        }
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 # API端点：错题本 - 更新错题
 @app.put('/api/error-book/{error_id}')

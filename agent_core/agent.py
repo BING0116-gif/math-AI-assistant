@@ -173,9 +173,53 @@ class SimpleAgent:
         
         # 检查是否是图片输入（文件路径）
         if self._is_image_input(user_input):
-            # 对于图片输入，先处理再流式返回
-            result = self._process_image_path(user_input, sid, config, False)
-            yield result
+            # 对于图片输入，使用流式处理
+            if not self.vision_tool:
+                yield "VisionTool未注册，无法处理图片"
+                return
+            
+            # 先流式输出VL识别结果
+            yield "正在识别图片...\n\n"
+            vl_full_response = ""
+            llm_description = ""
+            
+            # 异步处理VL识别流
+            try:
+                async for chunk in self.vision_tool.recognize_stream_async(user_input):
+                    if chunk["type"] == "token":
+                        vl_full_response += chunk["content"]
+                        yield chunk["content"]
+                    elif chunk["type"] == "complete":
+                        vl_full_response = chunk.get("raw_response", "")
+                        llm_description = chunk.get("llm_description", "")
+                        yield "\n\n"
+                        break
+                    elif chunk["type"] == "error":
+                        yield f"\n\n错误: {chunk['content']}"
+                        return
+            except Exception as e:
+                yield f"\n\n错误: {str(e)}"
+                return
+            
+            if not llm_description:
+                yield "\n\n错误: 图片识别失败"
+                return
+            
+            # 使用识别结果调用解题链（异步流式）
+            try:
+                async for chunk in self.chain.astream({"input": llm_description}, config=config):
+                    if chunk:
+                        yield chunk
+            except Exception as e:
+                yield f"\n\n错误: {str(e)}"
+                return
+            
+            # 如果是积分问题，添加Sympy验证
+            recognition_result = self.recognizer.recognize(user_input)
+            if recognition_result.get("type") == "integration" or "积分" in user_input:
+                verification_result = self._verify_with_sympy({"text": user_input, "expression": recognition_result.get("expression", ""), "variable": recognition_result.get("variable", "x")}, "")
+                if verification_result:
+                    yield verification_result
             return
         
         # 使用LangChain的astream方法进行流式处理

@@ -166,6 +166,39 @@
             background-color: #fff1e6;
         }
 
+        /* 右键菜单样式 */
+        .context-menu {
+            position: fixed;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            min-width: 120px;
+            padding: 4px 0;
+            display: none;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            transition: background-color 0.2s;
+        }
+
+        .context-menu-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .context-menu-item.danger {
+            color: #ff4d4f;
+        }
+
+        .context-menu-item.danger:hover {
+            background-color: #fff1f0;
+        }
+
         /* 主内容区 */
         .main-content {
             flex: 1;
@@ -457,47 +490,6 @@
 
         .message-content a:hover {
             text-decoration: underline;
-        }
-
-        /* 错题本按钮样式 */
-        .error-book-buttons {
-            display: flex;
-            gap: 10px;
-            padding: 15px 20px;
-            background-color: #f8f9fa;
-            border-top: 1px solid #e0e0e0;
-            border-bottom: 1px solid #e0e0e0;
-            animation: fadeIn 0.3s ease-in;
-        }
-
-        .error-book-btn {
-            padding: 8px 16px;
-            border: 1px solid #d9d9d9;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-
-        .error-book-btn.add {
-            background-color: #1890ff;
-            color: #fff;
-            border-color: #1890ff;
-        }
-
-        .error-book-btn.add:hover {
-            background-color: #40a9ff;
-            border-color: #40a9ff;
-        }
-
-        .error-book-btn.cancel {
-            background-color: #fff;
-            color: #666;
-        }
-
-        .error-book-btn.cancel:hover {
-            background-color: #f0f0f0;
-            color: #333;
         }
 
         .input-container {
@@ -798,6 +790,126 @@
                 transform: translateY(0);
             }
         }
+
+        /* 错题本操作按钮容器 - 消息级别 */
+        .error-book-action {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding-top: 8px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .error-btn {
+            padding: 6px 14px;
+            border-radius: 18px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            border: none;
+            outline: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .error-btn.add {
+            background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+        }
+
+        .error-btn.add:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+        }
+
+        .error-btn.add:active {
+            transform: scale(0.96);
+        }
+
+        .error-btn.skip {
+            background: #f5f5f5;
+            color: #666;
+            border: 1px solid #d9d9d9;
+        }
+
+        .error-btn.skip:hover {
+            background: #e6e6e6;
+            color: #333;
+        }
+
+        .error-btn.added {
+            background: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
+            color: white;
+            cursor: not-allowed;
+            opacity: 0.9;
+        }
+
+        .error-btn.skipped {
+            background: #fafafa;
+            color: #999;
+            cursor: not-allowed;
+            text-decoration: line-through;
+            border: 1px solid #e8e8e8;
+        }
+
+        .error-time {
+            font-size: 11px;
+            color: #999;
+            margin-left: auto;
+        }
+
+        /* Toast提示样式 */
+        .toast-container {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10000;
+            animation: toast-slide-up 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .toast-success {
+            background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+        }
+
+        .toast-error {
+            background: linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%);
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            opacity: 0.8;
+        }
+
+        .toast-close:hover {
+            opacity: 1;
+        }
+
+        @keyframes toast-slide-up {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
@@ -898,7 +1010,21 @@
         // 加载历史对话
         function loadChats() {
             const savedChats = localStorage.getItem('math_ai_chats');
-            return savedChats ? JSON.parse(savedChats) : [];
+            if (!savedChats) return [];
+
+            const chats = JSON.parse(savedChats);
+
+            // 向后兼容：为旧数据的AI消息添加默认字段
+            chats.forEach(chat => {
+                chat.messages.forEach(msg => {
+                    if (msg.sender === 'ai' && !msg.errorBookStatus) {
+                        msg.errorBookStatus = 'pending';
+                        msg.errorBookId = null;
+                    }
+                });
+            });
+
+            return chats;
         }
 
         // 保存历史对话
@@ -919,12 +1045,112 @@
                 const historyItem = document.createElement('div');
                 historyItem.className = `history-item ${chat.id === currentChatId ? 'active' : ''}`;
                 historyItem.onclick = () => switchChat(chat.id);
+                // 添加右键事件
+                historyItem.oncontextmenu = (e) => showContextMenu(e, chat.id);
                 historyItem.innerHTML = `
                     <div class="history-title">${chat.title}</div>
                     <div class="history-time">${chat.lastMessageTime}</div>
                 `;
                 historyList.appendChild(historyItem);
             });
+        }
+
+        // 显示右键菜单
+        function showContextMenu(e, chatId) {
+            e.preventDefault();
+            
+            // 创建右键菜单
+            const contextMenu = document.createElement('div');
+            contextMenu.className = 'context-menu';
+            contextMenu.id = 'context-menu';
+            contextMenu.innerHTML = `
+                <div class="context-menu-item" onclick="renameChat('${chatId}')">✏️ 重命名</div>
+                <div class="context-menu-item danger" onclick="deleteChat('${chatId}')">🗑️ 删除对话</div>
+            `;
+            
+            // 设置菜单位置
+            const x = e.clientX;
+            const y = e.clientY;
+            
+            // 确保菜单不超出视窗
+            const menuWidth = 120;
+            const menuHeight = 40;
+            const adjustedX = x + menuWidth > window.innerWidth ? x - menuWidth : x;
+            const adjustedY = y + menuHeight > window.innerHeight ? y - menuHeight : y;
+            
+            contextMenu.style.left = adjustedX + 'px';
+            contextMenu.style.top = adjustedY + 'px';
+            contextMenu.style.display = 'block';
+            
+            // 移除已存在的菜单
+            const existingMenu = document.getElementById('context-menu');
+            if (existingMenu) {
+                existingMenu.remove();
+            }
+            
+            document.body.appendChild(contextMenu);
+            
+            // 点击其他地方关闭菜单
+            document.addEventListener('click', hideContextMenu);
+        }
+
+        // 隐藏右键菜单
+        function hideContextMenu() {
+            const contextMenu = document.getElementById('context-menu');
+            if (contextMenu) {
+                contextMenu.remove();
+            }
+            document.removeEventListener('click', hideContextMenu);
+        }
+
+        // 删除对话
+        function deleteChat(chatId) {
+            hideContextMenu();
+            
+            // 确认删除
+            if (!confirm('确定要删除这个对话吗？此操作不可恢复。')) {
+                return;
+            }
+            
+            // 从数组中移除
+            const index = chats.findIndex(c => c.id === chatId);
+            if (index !== -1) {
+                chats.splice(index, 1);
+                saveChats();
+                
+                // 如果删除的是当前聊天，切换到第一个聊天
+                if (chatId === currentChatId) {
+                    if (chats.length > 0) {
+                        currentChatId = chats[0].id;
+                        renderChat(currentChatId);
+                    } else {
+                        // 如果没有聊天了，创建新对话
+                        createNewChat();
+                    }
+                }
+                
+                renderHistoryList();
+            }
+        }
+
+        // 重命名对话
+        function renameChat(chatId) {
+            hideContextMenu();
+            
+            const chat = chats.find(c => c.id === chatId);
+            if (!chat) return;
+            
+            const newTitle = prompt('请输入新的对话名称:', chat.title);
+            if (newTitle && newTitle.trim() !== '') {
+                chat.title = newTitle.trim();
+                saveChats();
+                renderHistoryList();
+                
+                // 如果重命名的是当前聊天，刷新聊天界面以更新标题
+                if (chatId === currentChatId) {
+                    renderChat(currentChatId);
+                }
+            }
         }
 
 
@@ -944,7 +1170,11 @@
                         content: '你好！我是你的数学AI助手，有什么我可以帮助你的吗？',
                         sender: 'ai',
                         timestamp: new Date().toLocaleString(),
-                        type: 'text'
+                        type: 'text',
+
+                        // 错题本状态字段
+                        errorBookStatus: 'pending',
+                        errorBookId: null
                     }
                 ]
             };
@@ -988,8 +1218,36 @@
                 // 隐藏图片预览
                 hideImagePreview();
                 
-                // 显示加载状态
-                showLoading();
+                // 创建AI消息并添加到聊天（初始为空内容）
+                const chat = chats.find(c => c.id === currentChatId);
+                if (!chat) return;
+                
+                const aiMessageId = generateUUID();
+                const aiMessage = {
+                    id: aiMessageId,
+                    content: '',
+                    sender: 'ai',
+                    timestamp: '正在生成...',
+                    type: 'text',
+                    errorBookStatus: 'pending',
+                    errorBookId: null
+                };
+                chat.messages.push(aiMessage);
+                
+                // 创建DOM消息元素
+                const chatContainer = document.getElementById('chat-container');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message ai-message';
+                messageDiv.id = `message-${aiMessageId}`;
+                messageDiv.innerHTML = `
+                    <div class="message-content"></div>
+                    <div class="message-time">正在生成...</div>
+                `;
+                chatContainer.appendChild(messageDiv);
+                scrollToBottom();
+                
+                // 显示停止按钮
+                showStopButton(aiMessageId);
 
                 try {
                     const response = await fetch('/api/recognize', {
@@ -1003,21 +1261,110 @@
                         })
                     });
 
-                    const data = await response.json();
-                    hideLoading();
-
-                    if (response.ok) {
-                        addMessage('ai', data.response || '抱歉，我没有收到有效的回复。', 'text');
-                        // 显示错题本按钮
-                        showErrorBookButtons();
-                    } else {
-                        addMessage('ai', '发生错误: ' + (data.detail || '未知错误'), 'text');
+                    if (!response.ok) {
+                        throw new Error('API请求失败');
                     }
-                } catch (error) {
-                    hideLoading();
-                    addMessage('ai', '网络错误: ' + error.message, 'text');
-                }
+
+                    // 处理SSE流式响应
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let fullText = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const data = line.substring(6);
+                                if (data === '[DONE]') break;
+
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    if (parsed.content) {
+                                        fullText += parsed.content;
+                                        // 实时更新消息内容
+                                        const aiMessageDiv = document.getElementById(`message-${aiMessageId}`);
+                                        if (aiMessageDiv) {
+                                            const contentDiv = aiMessageDiv.querySelector('.message-content');
+                                            if (contentDiv) {
+                                                contentDiv.textContent = fullText;
+                                                scrollToBottom();
+                                                // 实时渲染 LaTeX
+                                                renderMathInElement(contentDiv);
+                                            }
+                                        }
+                                    }
+                                } catch (e) {
+                                    // 忽略解析错误
+                                }
+                            }
+                        }
+
+                        buffer = lines[lines.length - 1];
+                    }
+
+                    // 提取【图片识别结果】后的内容作为AI回复
+                    let displayText = fullText;
+                    const marker = '【图片识别结果】\n';
+                    const markerIndex = fullText.indexOf(marker);
+                    if (markerIndex !== -1) {
+                        displayText = fullText.substring(markerIndex + marker.length);
+                    }
+                    
+                    // 更新消息内容和时间
+                    aiMessage.content = displayText || fullText || '抱歉，图片识别失败。';
+                    aiMessage.timestamp = new Date().toLocaleString();
+                    
+                    const aiMessageDiv = document.getElementById(`message-${aiMessageId}`);
+                    if (aiMessageDiv) {
+                        const contentDiv = aiMessageDiv.querySelector('.message-content');
+                        if (contentDiv) {
+                            contentDiv.textContent = aiMessage.content;
+                        }
+                        const timeDiv = aiMessageDiv.querySelector('.message-time');
+                        if (timeDiv) {
+                            timeDiv.textContent = aiMessage.timestamp;
+                        }
+                    }
+                    
+                    // 隐藏停止按钮
+                    hideStopButton();
+                    
+                    // 保存聊天并更新界面
+                    chat.lastMessageTime = new Date().toLocaleString();
+                    saveChats();
+                    renderHistoryList();
+                    renderChat(currentChatId);
+                    
+                    // 渲染数学公式
+                    if (window.MathJax && window.MathJax.typesetPromise) {
+                        setTimeout(() => {
+                            MathJax.typesetPromise([chatContainer]).catch((err) => console.log('MathJax error: ', err));
+                        }, 100);
+                    }
                 
+                } catch (error) {
+                    hideStopButton();
+                    if (error.name !== 'AbortError') {
+                        // 获取当前消息div并显示错误
+                        const aiMessageDiv = document.getElementById(`message-${aiMessageId}`);
+                        if (aiMessageDiv) {
+                            const contentDiv = aiMessageDiv.querySelector('.message-content');
+                            if (contentDiv) {
+                                contentDiv.textContent = fullText || '图片识别发生错误: ' + error.message;
+                            }
+                            updateMessageTime(aiMessageId);
+                        } else {
+                            addMessage('ai', '图片识别发生错误: ' + error.message, 'text');
+                        }
+                    }
+                }
+
                 // 清空待发送图片
                 pendingImage = null;
             }
@@ -1105,8 +1452,6 @@
                     // 完成后更新消息时间
                     updateMessageTime(messageId);
                     hideStopButton();
-                    // 显示错题本按钮
-                    showErrorBookButtons();
                 } catch (error) {
                     if (error.name !== 'AbortError') {
                         // 显示错误消息
@@ -1121,34 +1466,57 @@
         }
 
         // 处理打字缓冲区
+        let mathJaxTimer = null;
         async function processTypingBuffer(messageId) {
             const messageDiv = document.getElementById(`message-${messageId}`);
             if (!messageDiv) {
                 console.error('消息元素不存在:', messageId);
                 return;
             }
-            
+
             const contentDiv = messageDiv.querySelector('.message-content');
             if (!contentDiv) {
                 console.error('内容元素不存在');
                 return;
             }
-            
+
             try {
                 while (typingBuffer.length > 0) {
                     const char = typingBuffer.charAt(0);
                     typingBuffer = typingBuffer.slice(1);
-                    
-                    contentDiv.innerHTML += char;
-                    
+
+                    contentDiv.textContent += char;
+
                     scrollToBottom();
-                    
+
                     await new Promise(resolve => setTimeout(resolve, typingSpeed));
                 }
+
+                // 打字完成后，触发 MathJax 渲染
                 isTyping = false;
+                renderMathInElement(contentDiv);
             } catch (e) {
                 console.error('打字效果出错:', e);
                 isTyping = false;
+            }
+        }
+
+        // 渲染元素中的数学公式
+        function renderMathInElement(element) {
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                MathJax.typesetPromise([element]).catch((err) => console.log('MathJax error: ', err));
+            }
+        }
+
+        // 追加内容到消息（用于错误消息等）
+        function appendToMessage(messageId, content) {
+            const messageDiv = document.getElementById(`message-${messageId}`);
+            if (messageDiv) {
+                const contentDiv = messageDiv.querySelector('.message-content');
+                if (contentDiv) {
+                    contentDiv.textContent += content;
+                    renderMathInElement(contentDiv);
+                }
             }
         }
 
@@ -1225,76 +1593,60 @@
             }
         }
 
-        // 显示错题本按钮
-        function showErrorBookButtons() {
-            // 先移除旧的按钮
-            const oldButtons = document.getElementById('error-book-buttons');
-            if (oldButtons) {
-                oldButtons.remove();
+        // 根据消息状态生成错题本按钮HTML
+        function generateErrorBookButtonHTML(message) {
+            const status = message.errorBookStatus || 'pending';
+            const msgId = message.id;
+
+            if (status === 'added') {
+                return `
+                    <div class="error-book-action" data-msg-id="${msgId}">
+                        <button class="error-btn added" disabled>✓ 已加入错题本</button>
+                        <span class="error-time">已保存</span>
+                    </div>
+                `;
             }
-            
-            // 创建按钮容器
-            const buttonsContainer = document.createElement('div');
-            buttonsContainer.id = 'error-book-buttons';
-            buttonsContainer.className = 'error-book-buttons';
-            
-            // 创建加入错题本按钮
-            const addButton = document.createElement('button');
-            addButton.className = 'error-book-btn add';
-            addButton.textContent = '加入错题本';
-            addButton.onclick = addToErrorBook;
-            
-            // 创建不加入错题本按钮
-            const cancelButton = document.createElement('button');
-            cancelButton.className = 'error-book-btn cancel';
-            cancelButton.textContent = '不加入错题本';
-            cancelButton.onclick = hideErrorBookButtons;
-            
-            // 添加按钮到容器
-            buttonsContainer.appendChild(addButton);
-            buttonsContainer.appendChild(cancelButton);
-            
-            // 添加到输入区域上方
-            const inputArea = document.querySelector('.input-area');
-            if (inputArea) {
-                inputArea.parentNode.insertBefore(buttonsContainer, inputArea);
+
+            if (status === 'skipped') {
+                return `
+                    <div class="error-book-action" data-msg-id="${msgId}">
+                        <button class="error-btn skipped" disabled>⏭️ 已跳过</button>
+                    </div>
+                `;
             }
+
+            // pending 状态
+            return `
+                <div class="error-book-action" data-msg-id="${msgId}">
+                    <button class="error-btn add" onclick="handleAddToErrorBook('${msgId}')">
+                        📚 加入错题本
+                    </button>
+                    <button class="error-btn skip" onclick="handleSkipErrorBook('${msgId}')">
+                        ❌ 不加入
+                    </button>
+                </div>
+            `;
         }
 
-        // 隐藏错题本按钮
-        function hideErrorBookButtons() {
-            const buttons = document.getElementById('error-book-buttons');
-            if (buttons) {
-                buttons.remove();
-            }
-        }
-
-        // 添加到错题本
-        async function addToErrorBook() {
+        // 处理"加入错题本"点击事件
+        async function handleAddToErrorBook(messageId) {
             const chat = chats.find(c => c.id === currentChatId);
-            if (!chat || chat.messages.length < 2) {
-                alert('没有足够的对话内容');
+            const aiMessage = chat.messages.find(m => m.id === messageId);
+
+            if (!aiMessage) {
+                showToast('❌ 未找到对应的AI回复', 'error');
                 return;
             }
-            
-            // 获取最后一条用户消息和AI回复
-            let userMessage = null;
-            let aiMessage = null;
-            
-            for (let i = chat.messages.length - 1; i >= 0; i--) {
-                if (chat.messages[i].sender === 'ai' && !aiMessage) {
-                    aiMessage = chat.messages[i];
-                } else if (chat.messages[i].sender === 'user' && !userMessage) {
-                    userMessage = chat.messages[i];
-                    break;
-                }
-            }
-            
-            if (!userMessage || !aiMessage) {
-                alert('无法找到对话内容');
+
+            // 找到关联的用户问题（上一条user消息）
+            const msgIndex = chat.messages.findIndex(m => m.id === messageId);
+            const userMessage = chat.messages[msgIndex - 1];
+
+            if (!userMessage) {
+                showToast('❌ 未找到对应的问题', 'error');
                 return;
             }
-            
+
             // 构建错题数据
             const errorData = {
                 question: userMessage.content,
@@ -1306,27 +1658,99 @@
                 mastery_level: 3,
                 is_mastered: false
             };
-            
+
             try {
-                // 发送到后端API
+                // 调用后端API
                 const response = await fetch('/api/error-book', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(errorData)
                 });
-                
+
                 if (response.ok) {
-                    alert('已成功加入错题本！');
-                    hideErrorBookButtons();
+                    const result = await response.json();
+
+                    // 更新本地消息状态
+                    aiMessage.errorBookStatus = 'added';
+                    aiMessage.errorBookId = result.id || result.error_item?.id;
+                    saveChats();
+
+                    // 局部刷新按钮
+                    updateMessageErrorButton(messageId, 'added');
+
+                    // 显示成功提示
+                    showToast('✅ 已成功加入错题本！', 'success');
+
+                    // 同步更新localStorage中的错题本数据
+                    try {
+                        const res = await fetch('/api/error-book');
+                        if (res.ok) {
+                            const allErrors = await res.json();
+                            localStorage.setItem('math_ai_error_book', JSON.stringify(allErrors));
+                        }
+                    } catch (syncError) {
+                        console.log('同步错题本数据失败:', syncError);
+                    }
                 } else {
-                    const error = await response.json();
-                    alert('添加失败: ' + (error.detail || '未知错误'));
+                    throw new Error((await response.json()).detail || '未知错误');
                 }
             } catch (error) {
-                alert('网络错误: ' + error.message);
+                showToast('❌ 添加失败: ' + error.message, 'error');
             }
+        }
+
+        // 处理"不加入错题本"点击事件
+        function handleSkipErrorBook(messageId) {
+            const chat = chats.find(c => c.id === currentChatId);
+            const message = chat.messages.find(m => m.id === messageId);
+
+            if (!message) return;
+
+            // 更新本地状态
+            message.errorBookStatus = 'skipped';
+            saveChats();
+
+            // 局部刷新按钮
+            updateMessageErrorButton(messageId, 'skipped');
+        }
+
+        // 局部刷新单条消息的错题本按钮
+        function updateMessageErrorButton(messageId, status) {
+            const actionDiv = document.querySelector(`.error-book-action[data-msg-id="${messageId}"]`);
+            if (!actionDiv) return;
+
+            // 找到对应的AI消息
+            const chat = chats.find(c => c.id === currentChatId);
+            const message = chat.messages.find(m => m.id === messageId);
+
+            if (!message) return;
+
+            // 替换按钮HTML
+            actionDiv.innerHTML = generateErrorBookButtonHTML(message);
+        }
+
+        // 显示轻量级Toast提示
+        function showToast(message, type = 'info') {
+            // 移除已存在的toast
+            const existingToast = document.querySelector('.toast-container');
+            if (existingToast) existingToast.remove();
+
+            // 创建toast容器
+            const toast = document.createElement('div');
+            toast.className = `toast-container toast-${type}`;
+            toast.innerHTML = `
+                <span class="toast-message">${message}</span>
+                <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+            `;
+
+            document.body.appendChild(toast);
+
+            // 3秒后自动消失
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.remove();
+                }
+            }, 3000);
         }
 
         // 更新消息时间
@@ -1416,7 +1840,11 @@
                 content: content,
                 sender: sender,
                 timestamp: new Date().toLocaleString(),
-                type: type
+                type: type,
+
+                // 错题本状态字段
+                errorBookStatus: 'pending',
+                errorBookId: null
             };
 
             chat.messages.push(newMessage);
@@ -1454,19 +1882,26 @@
             chat.messages.forEach(message => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${message.sender === 'user' ? 'user-message' : 'ai-message'}`;
-                
+
                 if (message.type === 'image') {
                     messageDiv.innerHTML = `
                         <div class="image-message"><img src="${message.content}" class="message-image" alt="图片"></div>
                         <div class="message-time">${message.timestamp}</div>
                     `;
                 } else {
+                    // 为AI消息生成错题本按钮
+                    let errorBookButtonHTML = '';
+                    if (message.sender === 'ai') {
+                        errorBookButtonHTML = generateErrorBookButtonHTML(message);
+                    }
+
                     messageDiv.innerHTML = `
                         <div class="message-content">${message.content}</div>
+                        ${errorBookButtonHTML}
                         <div class="message-time">${message.timestamp}</div>
                     `;
                 }
-                
+
                 chatContainer.appendChild(messageDiv);
             });
 
@@ -1503,6 +1938,29 @@
             }
         }
 
+        // 显示错题本按钮（图片识别完成后调用）
+        function showErrorBookButtons() {
+            // 查找最后一条AI消息
+            const chat = chats.find(c => c.id === currentChatId);
+            if (!chat) return;
+            
+            // 找到最后一条AI消息
+            const lastAiMessage = [...chat.messages].reverse().find(m => m.sender === 'ai');
+            if (!lastAiMessage) return;
+            
+            // 如果已经在pending状态，不需要额外操作（renderChat会处理）
+            // 这里只需要重新渲染当前聊天界面
+            renderChat(currentChatId);
+            
+            // 渲染数学公式
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                setTimeout(() => {
+                    const chatContainer = document.getElementById('chat-container');
+                    MathJax.typesetPromise([chatContainer]).catch((err) => console.log('MathJax error: ', err));
+                }, 100);
+            }
+        }
+
         // 清空聊天
         function clearChat() {
             const chat = chats.find(c => c.id === currentChatId);
@@ -1514,7 +1972,11 @@
                     content: '你好！我是你的数学AI助手，有什么我可以帮助你的吗？',
                     sender: 'ai',
                     timestamp: new Date().toLocaleString(),
-                    type: 'text'
+                    type: 'text',
+
+                    // 错题本状态字段
+                    errorBookStatus: 'pending',
+                    errorBookId: null
                 }
             ];
 

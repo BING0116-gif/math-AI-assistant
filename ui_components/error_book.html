@@ -152,6 +152,39 @@
             background-color: #fff1e6;
         }
 
+        /* 右键菜单样式 */
+        .context-menu {
+            position: fixed;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 2000;
+            min-width: 120px;
+            padding: 4px 0;
+            display: none;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            transition: background-color 0.2s;
+        }
+
+        .context-menu-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .context-menu-item.danger {
+            color: #ff4d4f;
+        }
+
+        .context-menu-item.danger:hover {
+            background-color: #fff1f0;
+        }
+
         /* 主内容区 */
         .main-content {
             flex: 1;
@@ -600,12 +633,95 @@
                 const historyItem = document.createElement('div');
                 historyItem.className = 'history-item';
                 historyItem.onclick = () => window.location.href = `index.html#${chat.id}`;
+                // 添加右键事件
+                historyItem.oncontextmenu = (e) => showContextMenu(e, chat.id);
                 historyItem.innerHTML = `
                     <div class="history-title">${chat.title}</div>
                     <div class="history-time">${chat.lastMessageTime}</div>
                 `;
                 historyList.appendChild(historyItem);
             });
+        }
+
+        // 显示右键菜单
+        function showContextMenu(e, chatId) {
+            e.preventDefault();
+            
+            // 创建右键菜单
+            const contextMenu = document.createElement('div');
+            contextMenu.className = 'context-menu';
+            contextMenu.id = 'context-menu';
+            contextMenu.innerHTML = `
+                <div class="context-menu-item" onclick="renameChat('${chatId}')">✏️ 重命名</div>
+                <div class="context-menu-item danger" onclick="deleteChat('${chatId}')">🗑️ 删除对话</div>
+            `;
+            
+            // 设置菜单位置
+            const x = e.clientX;
+            const y = e.clientY;
+            
+            // 确保菜单不超出视窗
+            const menuWidth = 120;
+            const menuHeight = 40;
+            const adjustedX = x + menuWidth > window.innerWidth ? x - menuWidth : x;
+            const adjustedY = y + menuHeight > window.innerHeight ? y - menuHeight : y;
+            
+            contextMenu.style.left = adjustedX + 'px';
+            contextMenu.style.top = adjustedY + 'px';
+            contextMenu.style.display = 'block';
+            
+            // 移除已存在的菜单
+            const existingMenu = document.getElementById('context-menu');
+            if (existingMenu) {
+                existingMenu.remove();
+            }
+            
+            document.body.appendChild(contextMenu);
+            
+            // 点击其他地方关闭菜单
+            document.addEventListener('click', hideContextMenu);
+        }
+
+        // 隐藏右键菜单
+        function hideContextMenu() {
+            const contextMenu = document.getElementById('context-menu');
+            if (contextMenu) {
+                contextMenu.remove();
+            }
+            document.removeEventListener('click', hideContextMenu);
+        }
+
+        // 删除对话
+        function deleteChat(chatId) {
+            hideContextMenu();
+            
+            // 确认删除
+            if (!confirm('确定要删除这个对话吗？此操作不可恢复。')) {
+                return;
+            }
+            
+            // 从数组中移除
+            const index = chats.findIndex(c => c.id === chatId);
+            if (index !== -1) {
+                chats.splice(index, 1);
+                localStorage.setItem('math_ai_chats', JSON.stringify(chats));
+                renderHistoryList();
+            }
+        }
+
+        // 重命名对话
+        function renameChat(chatId) {
+            hideContextMenu();
+            
+            const chat = chats.find(c => c.id === chatId);
+            if (!chat) return;
+            
+            const newTitle = prompt('请输入新的对话名称:', chat.title);
+            if (newTitle && newTitle.trim() !== '') {
+                chat.title = newTitle.trim();
+                localStorage.setItem('math_ai_chats', JSON.stringify(chats));
+                renderHistoryList();
+            }
         }
 
         // 渲染错题本
