@@ -910,6 +910,156 @@
                 transform: translateX(-50%) translateY(0);
             }
         }
+
+        /* 错题本模态框样式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .modal-dialog {
+            background-color: #fff;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-dialog h3 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #1890ff;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .preview-box {
+            padding: 12px;
+            background-color: #f5f5f5;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+            min-height: 60px;
+        }
+
+        .form-group textarea,
+        .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .form-group textarea:focus,
+        .form-group input:focus {
+            border-color: #1890ff;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+        }
+
+        .tag-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .tag-btn {
+            padding: 6px 16px;
+            border: 1px solid #d9d9d9;
+            border-radius: 20px;
+            background-color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            color: #666;
+        }
+
+        .tag-btn:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+
+        .tag-btn.selected {
+            background-color: #1890ff;
+            border-color: #1890ff;
+            color: #fff;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 25px;
+            justify-content: flex-end;
+        }
+
+        .btn-primary {
+            padding: 10px 24px;
+            background-color: #1890ff;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover {
+            background-color: #40a9ff;
+        }
+
+        .btn-secondary {
+            padding: 10px 24px;
+            background-color: #fff;
+            color: #666;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
     </style>
 </head>
 <body>
@@ -1628,7 +1778,7 @@
             `;
         }
 
-        // 处理"加入错题本"点击事件
+        // 处理"加入错题本"点击事件 - 增强版
         async function handleAddToErrorBook(messageId) {
             const chat = chats.find(c => c.id === currentChatId);
             const aiMessage = chat.messages.find(m => m.id === messageId);
@@ -1647,41 +1797,176 @@
                 return;
             }
 
-            // 构建错题数据
-            const errorData = {
-                question: userMessage.content,
-                question_type: userMessage.type || 'text',
-                correct_answer: aiMessage.content,
-                error_reason: '用户主动添加',
+            // 智能构建错题数据
+            let requestData = {
+                question: "",
+                question_type: "text",
+                image_path: null,
+                error_reason: "",
                 categories: [],
-                notes: '',
+                original_answer: "",
+                correct_answer: aiMessage.content,
+                notes: "",
                 mastery_level: 3,
                 is_mastered: false
             };
 
+            // 智能判断题目类型并提取数据
+            if (userMessage.type === 'image' || (userMessage.content && userMessage.content.startsWith('data:image'))) {
+                requestData.question_type = "image";
+                requestData.question = userMessage.imageData || userMessage.content;
+
+                // 尝试从对话上下文中获取用户的问题描述
+                const prevUserMessages = chat.messages.filter(m => m.role === 'user' && m.id !== userMessage.id);
+                if (prevUserMessages.length > 0) {
+                    const lastUserMsg = prevUserMessages[prevUserMessages.length - 1];
+                    requestData.original_answer = lastUserMsg.content || "";
+                }
+            } else {
+                requestData.question_type = "text";
+                requestData.question = userMessage.content || "未知题目";
+                requestData.original_answer = "";
+            }
+
+            // 显示添加到错题本的详细对话框
+            showAddToErrorBookDialog(requestData, messageId);
+        }
+
+        // 显示添加到错题本的详细对话框
+        function showAddToErrorBookDialog(initialData, messageId) {
+            // 移除已存在的对话框
+            const existingModal = document.getElementById('error-book-modal');
+            if (existingModal) existingModal.remove();
+
+            // 创建模态框
+            const modalBox = document.createElement('div');
+            modalBox.id = 'error-book-modal';
+            modalBox.className = 'modal-overlay';
+            modalBox.innerHTML = `
+                <div class="modal-dialog">
+                    <h3>📚 添加到错题本</h3>
+
+                    <div class="form-group">
+                        <label>题目预览：</label>
+                        <div class="preview-box" id="question-preview">
+                            ${initialData.question_type === 'image' ?
+                                `<img src="${initialData.question}" style="max-width:100%; max-height:200px; border-radius:8px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                 <span style="display:none;">[图片题目]</span>` :
+                                `<div style="padding:12px; background:#f5f5f5; border-radius:6px; max-height:150px; overflow-y:auto; font-size:14px;">
+                                    ${escapeHtml(initialData.question.substring(0, 200))}${initialData.question.length > 200 ? '...' : ''}
+                                 </div>`
+                            }
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="errorReasonInput">✏️ 错误原因 <span style="color:red">*</span>：</label>
+                        <textarea id="errorReasonInput" placeholder="请描述你做错这道题的原因（例如：忘记公式、计算错误、概念不清等）..." required rows="3"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label>🏷️ 分类标签：</label>
+                        <div class="tag-selector" id="tag-selector">
+                            <button type="button" class="tag-btn" data-tag="极限">极限</button>
+                            <button type="button" class="tag-btn" data-tag="导数">导数</button>
+                            <button type="button" class="tag-btn" data-tag="积分">积分</button>
+                            <button type="button" class="tag-btn" data-tag="微分方程">微分方程</button>
+                            <button type="button" class="tag-btn" data-tag="级数">级数</button>
+                            <button type="button" class="tag-btn" data-tag="多元函数">多元函数</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notesInput">📝 笔记（可选）：</label>
+                        <textarea id="notesInput" placeholder="补充说明或解题技巧..." rows="2"></textarea>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn-primary" id="confirmAddBtn">✅ 确认添加</button>
+                        <button type="button" class="btn-secondary" id="cancelAddBtn">取消</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modalBox);
+
+            window._tempErrorBookData = initialData;
+            window._tempErrorMessageId = messageId;
+
+            // 绑定标签选择事件
+            const tagButtons = modalBox.querySelectorAll('.tag-btn');
+            tagButtons.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    this.classList.toggle('selected');
+                });
+            });
+
+            document.getElementById('confirmAddBtn').addEventListener('click', function() {
+                confirmAddToErrorBook();
+            });
+
+            document.getElementById('cancelAddBtn').addEventListener('click', function() {
+                closeErrorBookModal();
+            });
+
+            modalBox.addEventListener('click', function(e) {
+                if (e.target === modalBox) {
+                    closeErrorBookModal();
+                }
+            });
+
+            document.addEventListener('keydown', function escHandler(e) {
+                if (e.key === 'Escape') {
+                    closeErrorBookModal();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            });
+        }
+
+        async function confirmAddToErrorBook() {
+            const errorReason = document.getElementById('errorReasonInput').value.trim();
+            const notes = document.getElementById('notesInput').value.trim();
+
+            if (!errorReason) {
+                showToast('❌ 请填写错误原因', 'error');
+                document.getElementById('errorReasonInput').focus();
+                return;
+            }
+
+            const selectedTags = Array.from(document.querySelectorAll('.tag-btn.selected'))
+                                   .map(btn => btn.dataset.tag);
+
+            const finalData = {
+                ...window._tempErrorBookData,
+                error_reason: errorReason,
+                categories: selectedTags,
+                notes: notes
+            };
+
             try {
-                // 调用后端API
+                showToast('⏳ 正在添加到错题本...', 'info');
+
                 const response = await fetch('/api/error-book', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(errorData)
+                    body: JSON.stringify(finalData)
                 });
 
                 if (response.ok) {
                     const result = await response.json();
 
-                    // 更新本地消息状态
-                    aiMessage.errorBookStatus = 'added';
-                    aiMessage.errorBookId = result.id || result.error_item?.id;
-                    saveChats();
+                    const chat = chats.find(c => c.id === currentChatId);
+                    const aiMessage = chat.messages.find(m => m.id === window._tempErrorMessageId);
+                    if (aiMessage) {
+                        aiMessage.errorBookStatus = 'added';
+                        aiMessage.errorBookId = result.id || result.data?.id;
+                        saveChats();
+                        updateMessageErrorButton(window._tempErrorMessageId, 'added');
+                    }
 
-                    // 局部刷新按钮
-                    updateMessageErrorButton(messageId, 'added');
-
-                    // 显示成功提示
+                    closeErrorBookModal();
                     showToast('✅ 已成功加入错题本！', 'success');
 
-                    // 同步更新localStorage中的错题本数据
                     try {
                         const res = await fetch('/api/error-book');
                         if (res.ok) {
@@ -1691,12 +1976,32 @@
                     } catch (syncError) {
                         console.log('同步错题本数据失败:', syncError);
                     }
+
+                    delete window._tempErrorBookData;
+                    delete window._tempErrorMessageId;
+
                 } else {
-                    throw new Error((await response.json()).detail || '未知错误');
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || '未知错误');
                 }
             } catch (error) {
                 showToast('❌ 添加失败: ' + error.message, 'error');
             }
+        }
+
+        function closeErrorBookModal() {
+            const modal = document.getElementById('error-book-modal');
+            if (modal) {
+                modal.remove();
+            }
+            delete window._tempErrorBookData;
+            delete window._tempErrorMessageId;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // 处理"不加入错题本"点击事件

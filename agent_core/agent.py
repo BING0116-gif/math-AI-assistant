@@ -185,26 +185,34 @@ class SimpleAgent:
             llm_description = ""
             
             # 异步处理VL识别流
+            async_iterator = self.vision_tool.recognize_stream_async(user_input)
             try:
-                # 添加超时控制
-                async for chunk in asyncio.wait_for(self.vision_tool.recognize_stream_async(user_input), timeout=30.0):
-                    if chunk["type"] == "token":
-                        vl_full_response += chunk["content"]
-                        yield chunk["content"]
-                    elif chunk["type"] == "complete":
-                        vl_full_response = chunk.get("raw_response", "")
-                        llm_description = chunk.get("llm_description", "")
-                        yield "\n\n"
-                        break
-                    elif chunk["type"] == "error":
-                        yield f"\n\n错误: {chunk['content']}"
-                        return
+                async with asyncio.timeout(30.0):
+                    async for chunk in async_iterator:
+                        if chunk["type"] == "token":
+                            vl_full_response += chunk["content"]
+                            yield chunk["content"]
+                        elif chunk["type"] == "complete":
+                            vl_full_response = chunk.get("raw_response", "")
+                            llm_description = chunk.get("llm_description", "")
+                            yield "\n\n"
+                            break
+                        elif chunk["type"] == "error":
+                            yield f"\n\n错误: {chunk['content']}"
+                            return
             except asyncio.TimeoutError:
                 yield "\n\n错误: 图片识别超时"
                 return
             except Exception as e:
                 yield f"\n\n错误: {str(e)}"
                 return
+            finally:
+                if hasattr(async_iterator, 'aclose'):
+                    try:
+                        await async_iterator.aclose()
+                    except Exception:
+                        # 忽略aclose时的异常，确保资源清理不会影响主流程
+                        pass
             
             if not llm_description:
                 yield "\n\n错误: 图片识别失败"

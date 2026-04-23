@@ -10,19 +10,24 @@ from typing import Tuple, List, Dict, Any
 
 
 class ErrorBookValidator:
-    """错题本数据验证器"""
+    """错题本数据验证器 - 支持智能验证（根据题目类型动态调整限制）"""
 
     # 必填字段列表
     REQUIRED_FIELDS = ['question', 'correct_answer', 'error_reason']
 
-    # 字段最大长度限制
+    # 基础字段最大长度限制（用于文本类型题目）
     MAX_LENGTHS = {
-        'question': 10000,
-        'correct_answer': 50000,
-        'error_reason': 2000,
-        'original_answer': 5000,
-        'notes': 5000,
-        'categories': 10,  # 分类数量限制
+        'correct_answer': 100000,  # 正确答案100000字符（支持详细解题过程）
+        'error_reason': 5000,     # 错误原因5000字符
+        'original_answer': 10000, # 原始答案10000字符
+        'notes': 10000,           # 笔记10000字符
+        'categories': 15,         # 分类数量限制增加到15个
+    }
+
+    # 题目字段长度限制（根据类型动态选择）
+    QUESTION_MAX_LENGTHS = {
+        'text': 30000,            # 文本题目：30,000字符
+        'image': 2000000          # 图片题目：2,000,000字符（约1.5MB图片）
     }
 
     @classmethod
@@ -51,7 +56,7 @@ class ErrorBookValidator:
                 }
                 errors.append(f"{field_names.get(field, field)}不能为空")
 
-        # 2. 检查字段长度限制
+        # 2. 检查字段长度限制（智能验证）
         length_errors = cls._validate_field_lengths(data)
         errors.extend(length_errors)
 
@@ -69,10 +74,26 @@ class ErrorBookValidator:
 
     @classmethod
     def _validate_field_lengths(cls, data: Dict[str, Any]) -> List[str]:
-        """验证各字段长度是否符合要求"""
+        """验证各字段长度是否符合要求（支持智能验证）"""
         errors = []
 
-        for field, max_len in cls.MAX_LENGTHS.items():
+        # 获取题目类型，用于动态调整question字段的限制
+        question_type = data.get('question_type', 'text')
+        
+        # 如果是自动检测的类型，检查实际内容
+        if question_type == 'auto' or not question_type:
+            question = data.get('question', '')
+            if question and question.startswith('data:image/'):
+                question_type = 'image'
+            else:
+                question_type = 'text'
+
+        # 构建完整的长度限制字典（包含动态的question限制）
+        max_lengths = cls.MAX_LENGTHS.copy()
+        max_lengths['question'] = cls.QUESTION_MAX_LENGTHS.get(question_type, 
+                                                            cls.QUESTION_MAX_LENGTHS['text'])
+
+        for field, max_len in max_lengths.items():
             value = data.get(field)
 
             if value is None:
@@ -80,7 +101,15 @@ class ErrorBookValidator:
 
             if isinstance(value, str):
                 if len(value) > max_len:
-                    errors.append(f"{field}字段长度超过限制（{max_len}字符）")
+                    # 为question字段提供更详细的错误信息
+                    if field == 'question':
+                        actual_len = len(value)
+                        errors.append(
+                            f"{field}字段长度超过限制（{actual_len:,}字符 > {max_len:,}字符，"
+                            f"当前类型: {question_type}）"
+                        )
+                    else:
+                        errors.append(f"{field}字段长度超过限制（{max_len}字符）")
 
             elif isinstance(value, list):
                 if len(value) > max_len:

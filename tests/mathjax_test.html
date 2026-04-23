@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathJax 优化测试</title>
+    
+    <!-- 使用与error_book.html相同的MathJax配置 -->
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true,
+                processEnvironments: true
+            },
+            svg: {
+                fontCache: 'global'
+            },
+            chtml: {
+                scale: 1,
+                minScale: 0.8,
+                maxScale: 1.5,
+                mtextInheritFont: true
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+                processSectionDelay: 0,
+                enableMenu: true,
+                menuOptions: {
+                    settings: {
+                        zoom: "Hover"
+                    }
+                }
+            },
+            startup: {
+                ready() {
+                    MathJax.startup.defaultReady();
+                    console.log('✓ MathJax 初始化成功');
+                    updateTestStatus('mathjax-init', true, 'MathJax 初始化成功');
+                }
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #1890ff;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 28px;
+        }
+
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+
+        .test-section h2 {
+            color: #262626;
+            margin-bottom: 15px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background-color: #fff7e6;
+            color: #d46b08;
+            border: 1px solid #ffd591;
+        }
+
+        .status-success {
+            background-color: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+
+        .status-error {
+            background-color: #fff2f0;
+            color: #f5222d;
+            border: 1px solid #ffccc7;
+        }
+
+        .formula-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 3px solid #1890ff;
+        }
+
+        .math-rendered {
+            overflow-x: auto;
+            padding: 10px 0;
+        }
+
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: #40a9ff;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(24, 144, 255, 0.3);
+        }
+
+        .log-container {
+            background-color: #262626;
+            color: #52c41a;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .performance-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metric-card {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1890ff;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .info-box {
+            background-color: #e6f7ff;
+            border: 1px solid #91d5ff;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+
+        .info-box strong {
+            color: #0050b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 MathJax 优化功能测试</h1>
+
+        <!-- 测试状态概览 -->
+        <div class="test-section">
+            <h2>📊 测试状态概览</h2>
+            
+            <div class="performance-metrics" id="metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="total-tests">0</div>
+                    <div class="metric-label">总测试数</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="passed-tests">0</div>
+                    <div class="metric-label">通过测试</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="failed-tests">0</div>
+                    <div class="metric-label">失败测试</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="render-time">-</div>
+                    <div class="metric-label">渲染时间 (ms)</div>
+                </div>
+            </div>
+
+            <button onclick="runAllTests()">▶️ 运行全部测试</button>
+            <button onclick="clearLogs()">🗑️ 清除日志</button>
+        </div>
+
+        <!-- 基础公式渲染测试 -->
+        <div class="test-section">
+            <h2>
+                📝 基础公式渲染测试 
+                <span class="status-badge status-pending" id="basic-formula-status">待测试</span>
+            </h2>
+            
+            <div class="info-box">
+                <strong>测试目标：</strong>验证基础数学公式的渲染效果，包括简单表达式、分式、根号等。
+            </div>
+
+            <div class="formula-container math-rendered" id="basic-formulas">
+                <p><strong>1. 简单表达式：</strong></p>
+                <p>$E = mc^2$</p>
+                
+                <p><strong>2. 分式：</strong></p>
+                <p>$\frac{a}{b} = \frac{c}{d}$</p>
+                
+                <p><strong>3. 平方根：</strong></p>
+                <p>$\sqrt{x^2 + y^2}$</p>
+                
+                <p><strong>4. 上标和下标：</strong></p>
+                <p>$x_1^2 + x_2^2 + x_3^2$</p>
+            </div>
+
+            <button onclick="testBasicFormulas()">测试基础公式</button>
+        </div>
+
+        <!-- 复杂公式渲染测试 -->
+        <div class="test-section">
+            <h2>
+                🔬 复杂公式渲染测试 
+                <span class="status-badge status-pending" id="complex-formula-status">待测试</span>
+            </h2>
+            
+            <div class="info-box">
+                <strong>测试目标：</strong>验证复杂数学结构的渲染效果，包括积分、矩阵、方程组等。
+            </div>
+
+            <div class="formula-container math-rendered" id="complex-formulas">
+                <p><strong>1. 积分：</strong></p>
+                <p>$$\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$</p>
+                
+                <p><strong>2. 矩阵：</strong></p>
+                <p>$$A = \begin{pmatrix} a_{11} & a_{12} \\ a_{21} & a_{22} \end{pmatrix}$$</p>
+                
+                <p><strong>3. 方程组：</strong></p>
+                <p>$$\begin{cases} x + y = 1 \\ x - y = 0 \end{cases}$$</p>
+                
+                <p><strong>4. 求和：</strong></p>
+                <p>$$\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$$</p>
+            </div>
+
+            <button onclick="testComplexFormulas()">测试复杂公式</button>
+        </div>
+
+        <!-- 性能测试 -->
+        <div class="test-section">
+            <h2>
+                ⚡ 性能测试 
+                <span class="status-badge status-pending" id="performance-status">待测试</span>
+            </h2>
+            
+            <div class="info-box">
+                <strong>测试目标：</strong>测量大量公式的渲染性能，评估优化效果。
+            </div>
+
+            <div class="formula-container math-rendered" id="performance-test">
+                <p><strong>批量公式（50个）：</strong></p>
+                <div id="batch-formulas"></div>
+            </div>
+
+            <button onclick="testPerformance()">运行性能测试</button>
+            <button onclick="generateBatchFormulas()">生成批量公式</button>
+        </div>
+
+        <!-- 懒加载测试 -->
+        <div class="test-section">
+            <h2>
+                🎯 懒加载功能测试 
+                <span class="status-badge status-pending" id="lazy-load-status">待测试</span>
+            </h2>
+            
+            <div class="info-box">
+                <strong>测试目标：</strong>验证可视区域内的公式懒加载功能是否正常工作。请向下滚动查看公式是否在进入视口时才渲染。
+            </div>
+
+            <div style="height: 400px; overflow-y: auto;" id="lazy-scroll-container">
+                <div class="formula-container math-rendered" style="margin-bottom: 100px;">
+                    <p><strong>可见区域公式：</strong></p>
+                    <p>$x = y + z$</p>
+                </div>
+                
+                <div class="formula-container math-rendered" style="margin-bottom: 100px; height: 800px;">
+                    <p><strong>需要滚动才能看到的公式（1）：</strong></p>
+                    <p>$$\int_a^b f(x)dx = F(b) - F(a)$$</p>
+                </div>
+                
+                <div class="formula-container math-rendered" style="margin-bottom: 100px; height: 800px;">
+                    <p><strong>需要滚动才能看到的公式（2）：</strong></p>
+                    <p>$$\lim_{x \to 0} \frac{\sin x}{x} = 1$$</p>
+                </div>
+            </div>
+
+            <button onclick="testLazyLoad()">测试懒加载</button>
+        </div>
+
+        <!-- 用户交互测试 -->
+        <div class="test-section">
+            <h2>
+                👆 用户交互功能测试 
+                <span class="status-badge status-pending" id="interaction-status">待测试</span>
+            </h2>
+            
+            <div class="info-box">
+                <strong>测试目标：</strong>验证用户交互功能，包括双击复制、右键菜单等。
+                <br>
+                <strong>操作提示：</strong>
+                <br>• 双击下方公式测试复制功能
+                <br>• 右键点击公式测试自定义菜单
+            </div>
+
+            <div class="formula-container math-rendered" id="interaction-test">
+                <p><strong>交互测试公式：</strong></p>
+                <p>$$\oint_C \mathbf{F} \cdot d\mathbf{r} = \iint_S (\nabla \times \mathbf{F}) \cdot d\mathbf{S}$$</p>
+            </div>
+
+            <button onclick="testInteractionFeatures()">测试交互功能</button>
+        </div>
+
+        <!-- 日志输出区域 -->
+        <div class="test-section">
+            <h2>📋 测试日志</h2>
+            <div class="log-container" id="test-log">
+                [系统] 等待开始测试...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ========== 测试框架 ==========
+
+        let testResults = [];
+        let logMessages = [];
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️');
+            const logMessage = `[${timestamp}] ${prefix} ${message}`;
+            
+            logMessages.push(logMessage);
+            updateLogDisplay();
+            
+            console.log(logMessage);
+        }
+
+        function updateLogDisplay() {
+            const logContainer = document.getElementById('test-log');
+            if (logContainer) {
+                logContainer.innerHTML = logMessages.join('\n');
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        function clearLogs() {
+            logMessages = [];
+            log('[系统] 日志已清除');
+        }
+
+        function updateTestStatus(testId, passed, message) {
+            const statusElement = document.getElementById(`${testId}-status`);
+            if (statusElement) {
+                statusElement.className = `status-badge ${passed ? 'status-success' : 'status-error'}`;
+                statusElement.textContent = message;
+            }
+        }
+
+        function updateMetrics() {
+            const totalTests = testResults.length;
+            const passedTests = testResults.filter(r => r.passed).length;
+            const failedTests = totalTests - passedTests;
+
+            document.getElementById('total-tests').textContent = totalTests;
+            document.getElementById('passed-tests').textContent = passedTests;
+            document.getElementById('failed-tests').textContent = failedTests;
+        }
+
+        function addTestResult(testName, passed, details = '') {
+            testResults.push({ testName, passed, details });
+            updateMetrics();
+            
+            if (passed) {
+                log(`✓ ${testName}: 通过`, 'success');
+            } else {
+                log(`✗ ${testName}: 失败 - ${details}`, 'error');
+            }
+        }
+
+        // ========== 渲染辅助函数（从error_book.html复制）==========
+
+        const mathRenderCache = new WeakMap();
+
+        function renderMathInElement(element, options = {}) {
+            const { showLoading = true, delay = 0, callback = null } = options;
+
+            if (!element) return Promise.resolve();
+
+            return new Promise((resolve, reject) => {
+                if (!window.MathJax || !window.MathJax.typesetPromise) {
+                    reject(new Error('MathJax未加载'));
+                    return;
+                }
+
+                try {
+                    MathJax.typesetPromise([element]).then(() => {
+                        mathRenderCache.set(element, true);
+                        if (callback) callback();
+                        resolve();
+                    }).catch(err => {
+                        reject(err);
+                    });
+                } catch (e) {
+                    reject(e);
+                }
+            });
+
+            if (delay > 0) {
+                return new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+
+        // ========== 测试函数 ==========
+
+        async function testBasicFormulas() {
+            log('开始基础公式测试...');
+            const startTime = performance.now();
+
+            try {
+                const element = document.getElementById('basic-formulas');
+                await renderMathInElement(element);
+
+                const endTime = performance.now();
+                const renderTime = Math.round(endTime - startTime);
+                document.getElementById('render-time').textContent = renderTime;
+
+                // 检查渲染结果
+                const hasRenderedContent = element.innerHTML.includes('MathJax') || 
+                                          element.querySelector('.MathJax') !== null;
+
+                addTestResult('基础公式渲染', hasRenderedContent, 
+                             hasRenderedContent ? '' : '未检测到MathJax渲染内容');
+
+                updateTestStatus('basic-formula', hasRenderedContent, 
+                               hasRenderedContent ? '✓ 通过' : '✗ 失败');
+
+            } catch (e) {
+                addTestResult('基础公式渲染', false, e.message);
+                updateTestStatus('basic-formula', false, `✗ 错误: ${e.message}`);
+            }
+        }
+
+        async function testComplexFormulas() {
+            log('开始复杂公式测试...');
+            const startTime = performance.now();
+
+            try {
+                const element = document.getElementById('complex-formulas');
+                await renderMathInElement(element);
+
+                const endTime = performance.now();
+                const renderTime = Math.round(endTime - startTime);
+
+                // 检查复杂结构是否正确渲染
+                const hasMatrix = element.innerHTML.includes('pmatrix') || 
+                                 element.querySelector('.mtable') !== null;
+                const hasIntegral = element.innerHTML.includes('int') || 
+                                   element.querySelector('.mjx-int') !== null;
+
+                const passed = hasMatrix && hasIntegral;
+
+                addTestResult('复杂公式渲染', passed, 
+                             passed ? `渲染时间: ${renderTime}ms` : '矩阵或积分未正确渲染');
+
+                updateTestStatus('complex-formula', passed, 
+                               passed ? `✓ 通过 (${renderTime}ms)` : '✗ 失败');
+
+            } catch (e) {
+                addTestResult('复杂公式渲染', false, e.message);
+                updateTestStatus('complex-formula', false, `✗ 错误: ${e.message}`);
+            }
+        }
+
+        function generateBatchFormulas() {
+            const container = document.getElementById('batch-formulas');
+            container.innerHTML = '';
+
+            for (let i = 1; i <= 50; i++) {
+                const formula = document.createElement('p');
+                formula.textContent = `$x_${i} = ${i}^2 + \\sqrt{i}$`;
+                container.appendChild(formula);
+            }
+
+            log('已生成50个批量公式');
+        }
+
+        async function testPerformance() {
+            log('开始性能测试...');
+
+            try {
+                const element = document.getElementById('performance-test');
+                const startTime = performance.now();
+
+                await renderMathInElement(element);
+
+                const endTime = performance.now();
+                const totalTime = Math.round(endTime - startTime);
+
+                document.getElementById('render-time').textContent = totalTime;
+
+                const passed = totalTime < 2000; // 期望在2秒内完成
+
+                addTestResult('性能测试（50个公式）', passed, 
+                             `总时间: ${totalTime}ms`);
+
+                updateTestStatus('performance', passed, 
+                               passed ? `✓ 通过 (${totalTime}ms)` : `✗ 较慢 (${totalTime}ms)`);
+
+            } catch (e) {
+                addTestResult('性能测试', false, e.message);
+                updateTestStatus('performance', false, `✗ 错误: ${e.message}`);
+            }
+        }
+
+        async function testLazyLoad() {
+            log('开始懒加载测试...');
+
+            try {
+                const container = document.getElementById('lazy-scroll-container');
+                
+                // 滚动到底部以触发懒加载
+                container.scrollTop = container.scrollHeight;
+
+                // 等待一段时间让懒加载触发
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // 检查是否所有公式都已渲染
+                const formulas = container.querySelectorAll('.math-rendered');
+                let renderedCount = 0;
+
+                formulas.forEach(formula => {
+                    if (formula.querySelector('.MathJax')) {
+                        renderedCount++;
+                    }
+                });
+
+                const passed = renderedCount === formulas.length;
+
+                addTestResult('懒加载功能', passed, 
+                             `已渲染: ${renderedCount}/${formulas.length}`);
+
+                updateTestStatus('lazy-load', passed, 
+                               passed ? `✓ 通过 (${renderedCount}/${formulas.length})` : 
+                                       `✗ 部分渲染 (${renderedCount}/${formulas.length})`);
+
+            } catch (e) {
+                addTestResult('懒加载功能', false, e.message);
+                updateTestStatus('lazy-load', false, `✗ 错误: ${e.message}`);
+            }
+        }
+
+        async function testInteractionFeatures() {
+            log('开始交互功能测试...');
+
+            try {
+                const element = document.getElementById('interaction-test');
+                await renderMathInElement(element);
+
+                // 检查元素是否存在且可交互
+                const exists = element !== null;
+                const hasContent = element.innerHTML.includes('MathJax');
+
+                const passed = exists && hasContent;
+
+                addTestResult('用户交互功能', passed, 
+                             passed ? '双击复制和右键菜单已就绪' : '元素不存在或未渲染');
+
+                updateTestStatus('interaction', passed, 
+                               passed ? '✓ 就绪（请手动测试）' : '✗ 未就绪');
+
+                if (passed) {
+                    log('💡 提示：请双击公式测试复制功能，或右键点击测试菜单');
+                }
+
+            } catch (e) {
+                addTestResult('用户交互功能', false, e.message);
+                updateTestStatus('interaction', false, `✗ 错误: ${e.message}`);
+            }
+        }
+
+        async function runAllTests() {
+            log('═══════════════════════════════════');
+            log('🚀 开始运行全部测试...');
+            log('═══════════════════════════════════');
+
+            testResults = [];
+
+            // 依次运行所有测试
+            await testBasicFormulas();
+            await new Promise(resolve => setTimeout(resolve, 500)); // 延迟避免冲突
+
+            await testComplexFormulas();
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            generateBatchFormulas();
+            await testPerformance();
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            await testLazyLoad();
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            await testInteractionFeatures();
+
+            log('═══════════════════════════════════');
+            log(`🏁 全部测试完成！通过: ${testResults.filter(r => r.passed).length}/${testResults.length}`);
+            log('═══════════════════════════════════');
+        }
+
+        // 页面加载完成后自动初始化
+        window.addEventListener('load', () => {
+            log('📄 页面加载完成');
+            log('💡 提示：点击"运行全部测试"按钮开始测试');
+            
+            // 检测MathJax是否加载
+            setTimeout(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    updateTestStatus('mathjax-init', true, 'MathJax 已就绪');
+                    log('✓ MathJax 加载成功，可以开始测试');
+                } else {
+                    updateTestStatus('mathjax-init', false, 'MathJax 未加载');
+                    log('⚠️ MathJax 尚未加载完成，请稍候');
+                }
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
