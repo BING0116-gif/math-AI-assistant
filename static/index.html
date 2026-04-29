@@ -302,9 +302,19 @@
 
         .ai-message {
             align-self: flex-start;
-            background-color: #fff;
-            border: 1px solid #e0e0e0;
+            background-color: transparent;
+            border: none;
             border-bottom-left-radius: 2px;
+            max-width: 85%;
+            padding: 8px 0;
+        }
+
+        .ai-message .message-content {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+            line-height: 1.8;
         }
 
         .message-time {
@@ -421,75 +431,180 @@
             font-size: 14px;
         }
 
-        /* Markdown样式 */
-        .message-content h1 {
-            font-size: 20px;
-            font-weight: bold;
-            margin: 10px 0;
+        /* Markdown样式 - 增强版 */
+        .message-content {
+            font-size: 15px;
+            line-height: 1.8;
             color: #333;
+        }
+
+        .message-content h1 {
+            font-size: 22px;
+            font-weight: 600;
+            margin: 20px 0 12px 0;
+            color: #1a1a1a;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #1890ff;
         }
 
         .message-content h2 {
-            font-size: 18px;
-            font-weight: bold;
-            margin: 8px 0;
-            color: #333;
+            font-size: 19px;
+            font-weight: 600;
+            margin: 18px 0 10px 0;
+            color: #262626;
+            display: flex;
+            align-items: center;
+        }
+
+        .message-content h2::before {
+            content: '';
+            width: 4px;
+            height: 19px;
+            background: #1890ff;
+            margin-right: 10px;
+            border-radius: 2px;
         }
 
         .message-content h3 {
-            font-size: 16px;
-            font-weight: bold;
-            margin: 6px 0;
+            font-size: 17px;
+            font-weight: 600;
+            margin: 16px 0 8px 0;
             color: #333;
         }
 
+        .message-content p {
+            margin: 12px 0;
+            text-align: justify;
+        }
+
         .message-content strong {
-            font-weight: bold;
-            color: #333;
+            font-weight: 600;
+            color: #1a1a1a;
         }
 
         .message-content em {
             font-style: italic;
-            color: #666;
+            color: #595959;
         }
 
         .message-content code {
-            background-color: #f0f0f0;
-            padding: 2px 4px;
+            background-color: #f6f8fa;
+            padding: 3px 6px;
             border-radius: 4px;
-            font-family: 'Courier New', monospace;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 13px;
+            color: #d73a49;
+            border: 1px solid #e1e4e8;
         }
 
         .message-content pre {
-            background-color: #f5f5f5;
-            padding: 10px;
-            border-radius: 6px;
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 8px;
             overflow-x: auto;
-            margin: 10px 0;
+            margin: 16px 0;
+            border: 1px solid #e1e4e8;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
         .message-content pre code {
             background-color: transparent;
             padding: 0;
+            border: none;
+            color: #24292e;
+            font-size: 14px;
+            line-height: 1.6;
         }
 
-        .message-content ul {
-            margin: 8px 0;
-            padding-left: 20px;
+        .message-content ul,
+        .message-content ol {
+            margin: 12px 0;
+            padding-left: 24px;
         }
 
         .message-content li {
-            margin: 4px 0;
+            margin: 8px 0;
+            line-height: 1.7;
+            position: relative;
+        }
+
+        .message-content ul li::marker {
+            color: #1890ff;
+            font-weight: bold;
+        }
+
+        .message-content ol li::marker {
+            color: #1890ff;
+            font-weight: 600;
+        }
+
+        .message-content blockquote {
+            margin: 16px 0;
+            padding: 12px 20px;
+            border-left: 4px solid #1890ff;
+            background-color: #f0f7ff;
+            border-radius: 0 8px 8px 0;
+            color: #4a5568;
         }
 
         .message-content a {
             color: #1890ff;
             text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
         }
 
         .message-content a:hover {
-            text-decoration: underline;
+            border-bottom-color: #1890ff;
+        }
+
+        /* 数学公式专用样式 - 增强版 */
+        .message-content .MathJax {
+            font-size: 1.15em !important;
+        }
+
+        .message-content mjx-container[display="true"] {
+            margin: 20px 0 !important;
+            padding: 16px 20px !important;
+            background-color: #fafbfc !important;
+            border-radius: 8px !important;
+            overflow-x: auto !important;
+        }
+
+        /* 行内公式样式 */
+        .message-content mjx-container[display="false"] {
+            display: inline-block !important;
+            margin: 0 2px !important;
+            vertical-align: middle !important;
+        }
+
+        /* 公式容器特殊处理 */
+        .message-content:has(mjx-container[display="true"]) {
+            margin: 18px 0;
+        }
+
+        /* 数学步骤容器 */
+        .math-step {
+            margin: 14px 0;
+            padding: 12px 16px;
+            background-color: #f8f9fa;
+            border-left: 3px solid #1890ff;
+            border-radius: 4px;
+        }
+
+        /* 解题过程高亮 */
+        .solution-highlight {
+            background: linear-gradient(120deg, #e6f7ff 0%, #bae7ff 100%);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        /* 分隔线 */
+        .message-content hr {
+            margin: 24px 0;
+            border: none;
+            height: 1px;
+            background: linear-gradient(to right, transparent, #e0e0e0, transparent);
         }
 
         .input-container {
@@ -1531,7 +1646,10 @@
 
                 // 创建AI消息占位符
                 const messageId = createMessagePlaceholder('ai');
-                
+
+                // 重置内容缓冲区
+                rawContentBuffer = '';
+
                 // 显示停止按钮
                 showStopButton(messageId);
 
@@ -1615,8 +1733,9 @@
             }
         }
 
-        // 处理打字缓冲区
+        // 处理打字缓冲区 - 增强版（支持实时格式化）
         let mathJaxTimer = null;
+        let rawContentBuffer = '';  // 存储原始文本内容
         async function processTypingBuffer(messageId) {
             const messageDiv = document.getElementById(`message-${messageId}`);
             if (!messageDiv) {
@@ -1631,20 +1750,41 @@
             }
 
             try {
-                while (typingBuffer.length > 0) {
-                    const char = typingBuffer.charAt(0);
-                    typingBuffer = typingBuffer.slice(1);
+                while (typingBuffer.length > 0 || isTyping) {
+                    if (typingBuffer.length > 0) {
+                        const char = typingBuffer.charAt(0);
+                        typingBuffer = typingBuffer.slice(1);
+                        rawContentBuffer += char;
 
-                    contentDiv.textContent += char;
+                        // 每30个字符或遇到特殊字符时重新渲染
+                        if (rawContentBuffer.length % 30 === 0 ||
+                            char === '\n' || char === ' ' ||
+                            typingBuffer.length === 0) {
 
-                    scrollToBottom();
+                            // 使用formatText进行实时格式化
+                            const formattedHTML = formatText(rawContentBuffer);
+                            contentDiv.innerHTML = formattedHTML;
+                        }
 
-                    await new Promise(resolve => setTimeout(resolve, typingSpeed));
+                        scrollToBottom();
+                    }
+
+                    if (typingBuffer.length > 0) {
+                        await new Promise(resolve => setTimeout(resolve, typingSpeed));
+                    } else if (isTyping) {
+                        // 等待新内容
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
                 }
 
-                // 打字完成后，触发 MathJax 渲染
+                // 打字完成后，完整渲染
+                contentDiv.textContent = rawContentBuffer;
+                renderMarkdown(contentDiv);
+
+                // 触发 MathJax 渲染
                 isTyping = false;
                 renderMathInElement(contentDiv);
+
             } catch (e) {
                 console.error('打字效果出错:', e);
                 isTyping = false;
@@ -2078,37 +2218,121 @@
         // Markdown渲染
         function renderMarkdown(element) {
             if (!element) return;
-            
+
             let text = element.textContent;
-            
+
+            // 保护数学公式不被处理
+            const mathBlocks = [];
+            text = text.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
+                const index = mathBlocks.length;
+                mathBlocks.push(`$$${math}$$`);
+                return `%%MATHBLOCK${index}%%`;
+            });
+            text = text.replace(/\$([^\$\n]+?)\$/g, (match, math) => {
+                const index = mathBlocks.length;
+                mathBlocks.push(`$${math}$`);
+                return `%%MATHINLINE${index}%%`;
+            });
+
+            // 段落处理 - 双换行转为段落
+            text = text.replace(/\n\n+/g, '</p><p>');
+
+            // 单换行转为<br>（但在列表和代码块中除外）
+            text = text.replace(/(?<!<\/(?:li|ul|ol|pre)>)\n(?!<(?:li|ul|ol|pre))/g, '<br>');
+
             // 标题
             text = text.replace(/^### (.*$)/gim, '<h3>$1</h3>');
             text = text.replace(/^## (.*$)/gim, '<h2>$1</h2>');
             text = text.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-            
-            // 粗体
+
+            // 粗体和斜体
             text = text.replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>');
-            
-            // 斜体
             text = text.replace(/\*(.*?)\*/gim, '<em>$1</em>');
-            
-            // 代码块
-            text = text.replace(/```([\s\S]*?)```/gim, '<pre><code>$1</code></pre>');
-            
+
+            // 代码块（多行）
+            text = text.replace(/```(\w*)\n?([\s\S]*?)```/gim, '<pre><code class="language-$1">$2</code></pre>');
+
             // 行内代码
-            text = text.replace(/`(.*?)`/gim, '<code>$1</code>');
-            
-            // 列表
-            text = text.replace(/^- (.*$)/gim, '<li>$1</li>');
-            text = text.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-            
+            text = text.replace(/`([^`\n]+)`/gim, '<code>$1</code>');
+
+            // 有序列表
+            text = text.replace(/^\d+\.\s+(.*$)/gim, '<li>$1</li>');
+
+            // 无序列表
+            text = text.replace(/^[-*+]\s+(.*$)/gim, '<li>$1</li>');
+
+            // 包装连续的列表项
+            text = text.replace((/<li>[\s\S]*?<\/li>/g), (match) => {
+                if (match.includes('</li>') && match.match(/<li>/g).length > 0) {
+                    return '<ul>' + match + '</ul>';
+                }
+                return match;
+            });
+
+            // 引用块
+            text = text.replace(/^>\s+(.*$)/gim, '<blockquote>$1</blockquote>');
+
+            // 分隔线
+            text = text.replace(/^---+$/gim, '<hr>');
+
             // 链接
-            text = text.replace(/\[(.*?)\]\((.*?)\)/gim, '<a href="$2" target="_blank">$1</a>');
-            
-            // 保留原始HTML（如LaTeX公式）
-            // 注意：这里简单处理，实际应用中可能需要更复杂的解析
-            
+            text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank">$1</a>');
+
+            // 恢复数学公式
+            for (let i = 0; i < mathBlocks.length; i++) {
+                text = text.replace(new RegExp(`%%MATHBLOCK${i}%%`, 'g'), mathBlocks[i]);
+                text = text.replace(new RegExp(`%%MATHINLINE${i}%%`, 'g'), mathBlocks[i]);
+            }
+
+            // 包装在段落中（如果没有被其他标签包裹）
+            if (!text.startsWith('<') && !text.startsWith('$$')) {
+                text = '<p>' + text + '</p>';
+            }
+
             element.innerHTML = text;
+        }
+
+        // 智能格式化文本 - 用于流式响应
+        function formatText(text) {
+            if (!text) return '';
+
+            let formatted = text;
+
+            // 保护数学公式
+            const mathBlocks = [];
+            formatted = formatted.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+                const index = mathBlocks.length;
+                mathBlocks.push(match);
+                return `%%MATHBLOCK${index}%%`;
+            });
+            formatted = formatted.replace(/\$[^\$\n]+?\$/g, (match) => {
+                const index = mathBlocks.length;
+                mathBlocks.push(match);
+                return `%%MATHINLINE${index}%%`;
+            });
+
+            // 基本格式化：双换行 -> 段落分隔
+            formatted = formatted.replace(/\n\n+/g, '</p><p>');
+
+            // 标题检测（行首）
+            formatted = formatted.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+            formatted = formatted.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+            formatted = formatted.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+
+            // 粗体
+            formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+            // 列表项
+            formatted = formatted.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+            formatted = formatted.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+
+            // 恢复数学公式
+            for (let i = 0; i < mathBlocks.length; i++) {
+                formatted = formatted.replace(new RegExp(`%%MATHBLOCK${i}%%`, 'g'), mathBlocks[i]);
+                formatted = formatted.replace(new RegExp(`%%MATHINLINE${i}%%`, 'g'), mathBlocks[i]);
+            }
+
+            return formatted;
         }
 
         // 显示图片预览
@@ -2205,6 +2429,14 @@
                         ${errorBookButtonHTML}
                         <div class="message-time">${message.timestamp}</div>
                     `;
+
+                    // 对AI消息内容进行Markdown渲染
+                    if (message.sender === 'ai') {
+                        const contentDiv = messageDiv.querySelector('.message-content');
+                        if (contentDiv) {
+                            renderMarkdown(contentDiv);
+                        }
+                    }
                 }
 
                 chatContainer.appendChild(messageDiv);
