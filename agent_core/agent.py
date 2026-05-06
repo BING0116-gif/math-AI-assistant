@@ -108,7 +108,7 @@ class MathAgent:
         Returns:
             AgentStrategy 实例
         """
-        tools = list(self._registry._tools.values()) if hasattr(self._registry, "_tools") else []
+        tools = self._registry.get_all_tools() if hasattr(self._registry, "get_all_tools") else []
 
         thought_recorder = ThoughtRecorder()
 
@@ -124,13 +124,16 @@ class MathAgent:
             ("human", "{input}"),
         ])
 
-        # 非流式链，用于获取完整响应
-        llm_chain_sync = prompt | self._llm | StrOutputParser()
+        # 流式链（无 StrOutputParser）：用于 astream_events 捕获 token 级别事件
+        llm_chain_stream = prompt | self._llm
+        # 完整链（有 StrOutputParser）：用于非流式 ainvoke()
+        llm_chain_sync = llm_chain_stream | StrOutputParser()
 
         # 统一使用 ReActStrategy
         logger.info("使用 ReActStrategy（异步流式输出）")
         return ReActStrategy(
-            llm_chain=llm_chain_sync,
+            llm_chain=llm_chain_stream,
+            llm_chain_sync=llm_chain_sync,
             registry=self._registry,
             tools=tools,
             max_iterations=self._max_iterations,
@@ -205,19 +208,17 @@ class MathAgent:
         """
         流式处理图片输入。
 
-        优化点：
-        1. 降低提示信息延迟
-        2. 减少识别结果逐字符输出的延迟
-        3. 快速进入解题阶段
+        流程：
+        1. 提示正在识别
+        2. 调用 VisionTool 识别图片
+        3. 输出识别结果
+        4. 调用 ReAct 策略解题
         """
         if not self._registry.has_tool("vision_tool"):
-            yield "【VisionTool 未注册，无法处理图片】"
+            yield "**【VisionTool 未注册，无法处理图片】**\n\n"
             return
 
-        start_msg = "【正在识别图片内容...】\n\n"
-        for char in start_msg:
-            yield char
-            await asyncio.sleep(0.002)
+        yield "**【正在识别图片内容...】**\n\n"
 
         input_data = ToolInput(
             query=image_path,
@@ -227,28 +228,21 @@ class MathAgent:
         result = await self._registry.execute_safe("vision_tool", input_data)
 
         if not result.success:
-            yield f"【图片识别失败：{result.error}】"
+            yield f"**【图片识别失败】**: {result.error}\n\n"
             return
 
         recognized_text = result.result or ""
-        header = "【图片识别结果】\n\n"
 
-        for char in header:
-            yield char
-            await asyncio.sleep(0.002)
-
-        for char in recognized_text:
-            yield char
-            await asyncio.sleep(0.001)
-
-        yield "\n\n---\n\n**开始解题...**\n\n"
+        yield "**【图片识别结果】**\n\n"
+        yield recognized_text
+        yield "\n\n---\n\n**【开始解题】**\n\n"
 
         try:
             async for chunk in self._strategy.stream(recognized_text, session_id, context):
                 yield chunk
         except Exception as e:
             logger.error(f"解题过程出错: {e}")
-            yield f"\n\n【解题出错：{e}】"
+            yield f"\n\n**【解题出错】**: {e}"
 
     def clear_history(self, session_id: Optional[str] = None) -> None:
         """清空指定会话的对话记忆。"""

@@ -3,17 +3,14 @@ fastapi>=0.104.0
 
 # AI & LLM
 langchain>=0.1.0
+langchain-core>=0.1.0
 langchain-openai>=0.0.5
 openai>=1.0.0
 
 # Image Processing
 Pillow>=9.0.0
 
-# Math Processing
-sympy>=1.12
-
 # Utilities
-pathlib2>=2.3.0
 httpx>=0.25.0
 
 # Server
@@ -22,3 +19,6 @@ uvicorn>=0.24.0
 # Data Validation
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
+
+# Security
+PyJWT>=2.8.0

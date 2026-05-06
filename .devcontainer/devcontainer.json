@@ -1,0 +1,22 @@
+{
+    "name": "mathai-dev",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10",
+    "features": {},
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+            ],
+            "settings": {
+                "python.pythonPath": "/usr/local/bin/python",
+                "editor.formatOnSave": true
+            }
+        }
+    },
+    "forwardPorts": [
+        8000
+    ],
+    "postCreateCommand": "pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple",
+    "remoteUser": "vscode"
+}

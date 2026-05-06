@@ -4,8 +4,8 @@
 用于验证错题数据的完整性和格式正确性
 """
 
-import re
 import base64
+import re
 from typing import Tuple, List, Dict, Any
 
 

@@ -1460,7 +1460,7 @@
 
         // 全局变量
         let currentAbortController = null;
-        let typingSpeed = 20; // 打字速度（毫秒/字符）
+        let typingSpeed = 8; // 打字速度（毫秒/字符）- 性能优化：从20ms降至8ms
 
         // 发送消息
         async function sendMessage() {
@@ -1756,8 +1756,8 @@
                         typingBuffer = typingBuffer.slice(1);
                         rawContentBuffer += char;
 
-                        // 每30个字符或遇到特殊字符时重新渲染
-                        if (rawContentBuffer.length % 30 === 0 ||
+                        // 每50个字符或遇到特殊字符时重新渲染（性能优化：减少DOM操作频率）
+                        if (rawContentBuffer.length % 50 === 0 ||
                             char === '\n' || char === ' ' ||
                             typingBuffer.length === 0) {
 

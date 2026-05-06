@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: sh -c "pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple && python main.py"
+    networks:
+      - mathai-network
+
+networks:
+  mathai-network:
+    driver: bridge

@@ -11,7 +11,6 @@
   - 进阶解法：提供更多技巧
   - 步骤依据：每个步骤都有原理说明
   - 易错点提醒：帮助避免常见错误
-  - 数学验证：集成 SymPy 库验证解答正确性
 
 - **图片识别**：支持粘贴截图题目
   - Ctrl+V 直接粘贴图片
@@ -58,7 +57,6 @@
 | AI 模型 | 阿里云通义千问 (Qwen-Max) | - | 文本理解与数学解题 |
 | 多模态 | Qwen-VL | - | 图片识别与数学公式提取 |
 | 对话框架 | LangChain | >=0.1.0 | LLM应用开发工具链 |
-| 数学验证 | SymPy | >=1.12 | 数学符号计算与验证 |
 | 前端 | HTML5 + CSS3 + JavaScript | - | 用户界面实现 |
 | 服务器 | Uvicorn | >=0.24.0 | ASGI服务器 |
 | 数据验证 | Pydantic | >=2.0.0 | API请求响应验证 |
@@ -69,8 +67,7 @@
 
 1. **多模态融合**：结合Qwen-Max文本模型和Qwen-VL多模态模型，实现文本和图片的综合处理
 2. **流式响应**：使用Server-Sent Events (SSE)技术，实现实时的流式输出，提升用户体验
-3. **智能验证**：集成SymPy数学库，对AI生成的数学解决方案进行验证，确保正确性
-4. **多模型自动切换**：在图片识别模块实现多模型自动切换机制，提高识别成功率
+3. **多模型自动切换**：在图片识别模块实现多模型自动切换机制，提高识别成功率
 5. **异步处理**：充分利用FastAPI的异步特性和httpx的异步请求，提高系统响应速度和并发处理能力
 6. **模块化设计**：清晰的模块划分，便于维护和扩展
 7. **完整的错误处理**：全面的错误捕获和处理机制，确保系统稳定运行
@@ -83,7 +80,6 @@ math AI assistant/
 ├── agent_core/
 │   └── agent.py          # AI Agent 核心逻辑
 ├── tools/
-│   ├── math_solver.py     # 数学求解工具
 │   └── vision_tool.py     # 图片识别工具
 ├── error_book.py          # 错题本管理模块
 ├── data_processing/
@@ -196,17 +192,6 @@ python main.py
 3. 右键点击会话可进行重命名或删除操作
 
 ## 开发说明
-
-### 添加新工具
-
-在 `agent_core/agent.py` 中注册新工具：
-
-```python
-# 初始化工具
-math_solver = MathSolverTool()
-# 注册到agent
-agent = SimpleAgent(tools={"math_solver": math_solver}, api_key=api_key, vision_tool=vision_tool)
-```
 
 ### 修改解题风格
 
