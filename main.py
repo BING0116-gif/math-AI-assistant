@@ -1,37 +1,161 @@
-from tools.math_solver import MathSolverTool
 from tools.vision_tool import VisionTool
-from agent_core.agent import SimpleAgent
+from tools import get_registry, ToolNotFoundError
+from agent_core import MathAgent
 from error_book import ErrorBookManager, ErrorItem
 from data_processing.validators import ErrorBookValidator
 from data_processing.formatters import ErrorBookFormatter
+import asyncio
 import os
 import base64
 import json
-from fastapi import FastAPI, HTTPException
+import time
+from collections import defaultdict
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse,StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 
-app = FastAPI()
+from app.config.settings import settings
+from app.middleware.auth import (
+    verify_access_token,
+    init_default_admin,
+    create_token_pair,
+)
+from app.middleware.security import (
+    validate_input,
+    validate_request_data,
+    is_safe_image_data,
+    SecurityValidationError,
+)
+from app.api.auth import router as auth_router
 
-# 配置CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
 )
 
-# Pydantic模型
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    max_age=settings.CORS_MAX_AGE,
+)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' https://cdn.jsdelivr.net; "
+        "connect-src 'self' https://dashscope.aliyuncs.com; "
+        "frame-ancestors 'none'"
+    )
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT_WINDOW = 60
+RATE_LIMIT_MAX = settings.RATE_LIMIT_PER_MINUTE
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.url.path.startswith("/static") or request.url.path in ["/", "/error_book"]:
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    requests = _rate_limit_store[client_ip]
+    requests[:] = [t for t in requests if now - t < RATE_LIMIT_WINDOW]
+
+    if len(requests) >= RATE_LIMIT_MAX:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "请求过于频繁，请稍后再试"},
+        )
+
+    requests.append(now)
+    return await call_next(request)
+
+
+NO_AUTH_PATHS = {
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/refresh",
+    "/api/chat",
+    "/api/chat/react",
+    "/api/recognize",
+    "/api/error-book",
+    "/api/tools",
+    "/api/tools/stats",
+    "/api/tools/search",
+    "/api/tools/",
+    "/api/agent/thought/",
+    "/api/agent/stats",
+    "/",
+    "/error_book",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+
+    if path in NO_AUTH_PATHS or path.startswith("/static") or path.startswith("/api/auth"):
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "未提供认证令牌，请先登录"},
+        )
+
+    token = auth_header[7:]
+    user_id = verify_access_token(token, settings.JWT_SECRET_KEY, settings.JWT_ALGORITHM)
+
+    if user_id is None:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "认证令牌无效或已过期，请重新登录"},
+        )
+
+    request.state.user_id = user_id
+    return await call_next(request)
+
+
+app.include_router(auth_router)
+
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
 
+
 class RecognizeRequest(BaseModel):
     image: str
     session_id: str = "default"
+
 
 class ErrorItemRequest(BaseModel):
     id: str = ""
@@ -47,6 +171,7 @@ class ErrorItemRequest(BaseModel):
     mastery_level: int = 3
     is_mastered: bool = False
 
+
 class ErrorUpdateRequest(BaseModel):
     question: str | None = None
     question_type: str | None = None
@@ -60,248 +185,358 @@ class ErrorUpdateRequest(BaseModel):
     mastery_level: int | None = None
     is_mastered: bool | None = None
 
-def load_env_file(file_path=".env"):
-    """手动加载.env文件"""
-    api_key = None
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip()
-                    if key == "DASHSCOPE_API_KEY":
-                        api_key = value
-                        break
-    return api_key
 
-# 从.env文件读取API密钥
-api_key = load_env_file(".env")
+api_key = settings.DASHSCOPE_API_KEY
 
-# 初始化 Tools
-math_solver = MathSolverTool()
-vision_tool = VisionTool(api_key=api_key)
-# 初始化 Agent （注册工具）
-agent = SimpleAgent(tools={"math_solver": math_solver}, api_key=api_key, vision_tool=vision_tool)
-# 初始化错题本管理器
+registry = get_registry()
+agent = MathAgent(api_key=api_key, registry=registry)
+
 error_book_manager = ErrorBookManager()
 
-# 流式生成器函数
-async def stream_chat_response(message, session_id):
-    """生成器函数，逐token返回响应"""
-    try:
-        # 调用agent的stream_process方法
-        async for chunk in agent.stream_process(message, session_id=session_id):
-            if chunk:
-                # 检查chunk是否为有效的JSON
-                try:
-                    json.dumps({'content': chunk})
-                except (TypeError, ValueError) as json_error:
-                    yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}'})}\n\n"
-                    return
-                yield f"data: {json.dumps({'content': chunk})}\n\n"
-        # 发送结束标志
-        yield "data: [DONE]\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'content': f'错误: {str(e)}'})}\n\n"
+init_default_admin(settings.JWT_SECRET_KEY)
 
-# 流式生成器函数（图片识别）
-async def stream_recognize_response(image_data, session_id):
-    """生成器函数，逐token返回图片识别响应"""
+
+async def stream_chat_response(message, session_id):
+    """流式聊天响应。直接转发 agent.stream() 的每个 chunk。"""
     try:
-        # 处理base64图片数据
-        if image_data.startswith('data:image/'):
-            # 移除data URL前缀
-            image_data = image_data.split(',')[1]
-        
-        # 保存图片到临时文件
-        import tempfile
-        import os
-        
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-            temp_file.write(base64.b64decode(image_data))
-            temp_file_path = temp_file.name
-        
-        # 调用agent的stream_process方法处理图片
-        async for chunk in agent.stream_process(temp_file_path, session_id=session_id):
+        async for chunk in agent.stream(message, session_id=session_id):
             if chunk:
-                # 确保chunk是字符串
                 if not isinstance(chunk, str):
                     chunk = str(chunk)
-                yield f"data: {json.dumps({'content': chunk})}\n\n"
-        
-        # 删除临时文件
-        os.unlink(temp_file_path)
-        
-        # 发送结束标志
-        yield "data: [DONE]\n\n"
+                try:
+                    yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
+                except (TypeError, ValueError) as json_error:
+                    yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
+
+        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+
     except Exception as e:
-        yield f"data: {json.dumps({'content': f'错误: {str(e)}'})}\n\n"
-        yield "data: [DONE]\n\n"
+        import traceback
+        logger.error(f"流式聊天失败: {e}\n{traceback.format_exc()}")
+        yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 
-# API端点：对话（流式响应）
-@app.post('/api/chat')
-async def chat(request: ChatRequest):
-    user_input = request.message
-    session_id = request.session_id
-    
-    if not user_input:
+
+async def stream_recognize_response(image_data, session_id):
+    """
+    流式响应图片识别结果（性能优化版）。
+
+    优化点：
+    1. 降低提示信息延迟
+    2. 快速进入核心处理流程
+    """
+    try:
+        if image_data.startswith("data:image/"):
+            image_data = image_data.split(",")[1]
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+            temp_file.write(base64.b64decode(image_data))
+            temp_file_path = temp_file.name
+
+        try:
+            start_msg = "**【正在识别图片内容...】**\n\n"
+            yield f"data: {json.dumps({'content': start_msg, 'type': 'status'})}\n\n"
+
+            async for chunk in agent.stream(temp_file_path, session_id=session_id):
+                if chunk:
+                    if not isinstance(chunk, str):
+                        chunk = str(chunk)
+                    yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
+
+            yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+        finally:
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+
+    except Exception as e:
+        import traceback
+        logger.error(f"图片识别流式处理失败: {e}\n{traceback.format_exc()}")
+        yield f"data: {json.dumps({'content': f'服务器内部错误: {str(e)}', 'type': 'error'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest, http_request: Request):
+    try:
+        validated_message = validate_input(
+            request.message, "message", max_length=settings.INPUT_MAX_LENGTH
+        )
+        validated_session = validate_input(
+            request.session_id, "session_id", max_length=128
+        )
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not validated_message:
         raise HTTPException(status_code=400, detail="请输入消息")
-    
+
     return StreamingResponse(
-        stream_chat_response(user_input, session_id),
-        media_type="text/event-stream"
+        stream_chat_response(validated_message, validated_session),
+        media_type="text/event-stream",
     )
 
-# API端点：图片识别（流式响应）
-@app.post('/api/recognize')
-async def recognize(request: RecognizeRequest):
-    image_data = request.image
-    session_id = request.session_id
-    
-    if not image_data:
+
+async def stream_react_response(message, session_id):
+    """MathAgent（ReAct 模式）流式响应生成器。直接转发每个 chunk。"""
+    try:
+        async for chunk in agent.stream(message, session_id=session_id):
+            if chunk:
+                if not isinstance(chunk, str):
+                    chunk = str(chunk)
+                try:
+                    yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
+                except (TypeError, ValueError) as json_error:
+                    yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+    except Exception as e:
+        import traceback
+        logger.error(f"流式 React 响应失败: {e}\n{traceback.format_exc()}")
+        yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+
+
+@app.post("/api/chat/react")
+async def chat_react(request: ChatRequest, http_request: Request):
+    """ReAct Agent 聊天接口（向后兼容，与 /api/chat 使用同一 MathAgent 实例）。"""
+    try:
+        validated_message = validate_input(
+            request.message, "message", max_length=settings.INPUT_MAX_LENGTH
+        )
+        validated_session = validate_input(
+            request.session_id, "session_id", max_length=128
+        )
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not validated_message:
+        raise HTTPException(status_code=400, detail="请输入消息")
+
+    return StreamingResponse(
+        stream_react_response(validated_message, validated_session),
+        media_type="text/event-stream",
+    )
+
+
+@app.get("/api/agent/thought/{session_id}")
+async def get_thought_history(session_id: str):
+    """获取指定会话的 ReAct 思维过程历史。"""
+    recorder = agent.get_thought_recorder()
+    processes = recorder.get_session_processes(session_id, limit=10)
+    return {
+        "session_id": session_id,
+        "processes": [p.to_dict() for p in processes],
+        "total": len(processes),
+    }
+
+
+@app.get("/api/agent/stats")
+async def get_agent_stats():
+    """获取 Agent 统计信息。"""
+    recorder = agent.get_thought_recorder()
+    return recorder.get_stats()
+
+
+@app.post("/api/recognize")
+async def recognize(request: RecognizeRequest, http_request: Request):
+    try:
+        if not is_safe_image_data(request.image):
+            raise SecurityValidationError("图片数据格式不合法", "invalid_image")
+        validated_session = validate_input(
+            request.session_id, "session_id", max_length=128
+        )
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not request.image:
         raise HTTPException(status_code=400, detail="请提供图片数据")
-    
+
     return StreamingResponse(
-        stream_recognize_response(image_data, session_id),
-        media_type="text/event-stream"
+        stream_recognize_response(request.image, validated_session),
+        media_type="text/event-stream",
     )
 
-# API端点：错题本 - 获取所有错题
-@app.get('/api/error-book')
+
+@app.get("/api/error-book")
 def get_error_book():
     try:
         errors = error_book_manager.get_all()
         return [error.to_dict() for error in errors]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="服务器内部错误")
 
-# API端点：错题本 - 添加错题
-@app.post('/api/error-book')
+
+@app.post("/api/error-book")
 def add_error(request: ErrorItemRequest):
     try:
-        # Step 1: 数据校验 - 验证字段完整性和格式
         raw_data = request.dict()
-        is_valid, validation_errors = ErrorBookValidator.validate(raw_data)
-        
+        try:
+            validated_data = validate_request_data(raw_data, max_length=settings.INPUT_MAX_LENGTH, skip_sql_check=True)
+        except SecurityValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        is_valid, validation_errors = ErrorBookValidator.validate(validated_data)
+
         if not is_valid:
             raise HTTPException(
-                status_code=400, 
-                detail=f"数据验证失败: {'; '.join(validation_errors)}"
+                status_code=400,
+                detail=f"数据验证失败: {'; '.join(validation_errors)}",
             )
-        
-        # Step 2: 数据格式化 - 智能提取和标准化处理
-        formatted_data = ErrorBookFormatter.format(raw_data)
-        
-        # Step 3: 创建错题对象并保存
+
+        formatted_data = ErrorBookFormatter.format(validated_data)
+
         error_item = ErrorItem(
-            id=formatted_data.get('id', ''),
-            question=formatted_data.get('question', ''),
-            question_type=formatted_data.get('question_type', 'text'),
-            image_path=formatted_data.get('image_path'),
-            error_reason=formatted_data.get('error_reason', ''),
-            categories=formatted_data.get('categories', []),
-            original_answer=formatted_data.get('original_answer', ''),
-            correct_answer=formatted_data.get('correct_answer', ''),
-            notes=formatted_data.get('notes', ''),
-            added_at=formatted_data.get('added_at', ''),
-            mastery_level=formatted_data.get('mastery_level', 3),
-            is_mastered=formatted_data.get('is_mastered', False)
+            id=formatted_data.get("id", ""),
+            question=formatted_data.get("question", ""),
+            question_type=formatted_data.get("question_type", "text"),
+            image_path=formatted_data.get("image_path"),
+            error_reason=formatted_data.get("error_reason", ""),
+            categories=formatted_data.get("categories", []),
+            original_answer=formatted_data.get("original_answer", ""),
+            correct_answer=formatted_data.get("correct_answer", ""),
+            notes=formatted_data.get("notes", ""),
+            added_at=formatted_data.get("added_at", ""),
+            mastery_level=formatted_data.get("mastery_level", 3),
+            is_mastered=formatted_data.get("is_mastered", False),
         )
-        
+
         error_id = error_book_manager.add(error_item)
-        
-        # Step 4: 返回完整的格式化数据（包含处理后的新字段）
+
         return {
             "id": error_id,
             "status": "success",
             "message": "错题添加成功",
             "data": {
                 **error_item.to_dict(),
-                "display_question": formatted_data.get('display_question', ''),
-                "recognized_text": formatted_data.get('recognized_text', ''),
-                "answer_preview": formatted_data.get('answer_preview', ''),
-                "has_image": formatted_data.get('has_image', False),
-                "categories": formatted_data.get('categories', [])
-            }
+                "display_question": formatted_data.get("display_question", ""),
+                "recognized_text": formatted_data.get("recognized_text", ""),
+                "answer_preview": formatted_data.get("answer_preview", ""),
+                "has_image": formatted_data.get("has_image", False),
+                "categories": formatted_data.get("categories", []),
+            },
         }
     except HTTPException as e:
         raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+        raise HTTPException(status_code=500, detail="服务器内部错误")
 
-# API端点：错题本 - 更新错题
-@app.put('/api/error-book/{error_id}')
+
+@app.put("/api/error-book/{error_id}")
 def update_error(error_id: str, request: ErrorUpdateRequest):
     try:
-        # 构建更新数据
-        update_data = {}
-        if request.question is not None:
-            update_data['question'] = request.question
-        if request.question_type is not None:
-            update_data['question_type'] = request.question_type
-        if request.image_path is not None:
-            update_data['image_path'] = request.image_path
-        if request.error_reason is not None:
-            update_data['error_reason'] = request.error_reason
-        if request.categories is not None:
-            update_data['categories'] = request.categories
-        if request.original_answer is not None:
-            update_data['original_answer'] = request.original_answer
-        if request.correct_answer is not None:
-            update_data['correct_answer'] = request.correct_answer
-        if request.notes is not None:
-            update_data['notes'] = request.notes
-        if request.added_at is not None:
-            update_data['added_at'] = request.added_at
-        if request.mastery_level is not None:
-            update_data['mastery_level'] = request.mastery_level
-        if request.is_mastered is not None:
-            update_data['is_mastered'] = request.is_mastered
-        
-        success = error_book_manager.update(error_id, **update_data)
-        return {"success": success}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            validated_id = validate_input(error_id, "error_id", max_length=64)
+        except SecurityValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-# API端点：错题本 - 删除错题
-@app.delete('/api/error-book/{error_id}')
+        update_data = {}
+        fields = [
+            "question", "question_type", "image_path", "error_reason",
+            "categories", "original_answer", "correct_answer", "notes",
+            "added_at", "mastery_level", "is_mastered",
+        ]
+        for field in fields:
+            value = getattr(request, field, None)
+            if value is not None:
+                try:
+                    update_data[field] = validate_input(value, field, max_length=settings.INPUT_MAX_LENGTH)
+                except SecurityValidationError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+
+        success = error_book_manager.update(validated_id, **update_data)
+        return {"success": success}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="服务器内部错误")
+
+
+@app.delete("/api/error-book/{error_id}")
 def delete_error(error_id: str):
     try:
-        success = error_book_manager.remove(error_id)
+        validated_id = validate_input(error_id, "error_id", max_length=64)
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        success = error_book_manager.remove(validated_id)
         return {"success": success}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="服务器内部错误")
 
-# 挂载静态文件目录
+
+@app.exception_handler(SecurityValidationError)
+async def security_validation_handler(request: Request, exc: SecurityValidationError):
+    return JSONResponse(
+        status_code=400,
+        content={"detail": str(exc), "threat_type": exc.threat_type},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "服务器内部错误"},
+    )
+
+
+@app.get("/api/tools")
+async def list_tools():
+    """返回所有已注册工具的完整信息列表。"""
+    tools = registry.list_tools()
+    return {"tools": tools, "total": len(tools)}
+
+
+@app.get("/api/tools/{tool_name}")
+async def get_tool_info(tool_name: str):
+    """返回指定工具的完整信息。"""
+    try:
+        tool = registry.get_tool(tool_name)
+        return tool.get_info()
+    except ToolNotFoundError:
+        raise HTTPException(status_code=404, detail=f"工具未注册: '{tool_name}'")
+
+
+@app.get("/api/tools/stats")
+async def get_tool_stats():
+    """返回工具执行统计信息。"""
+    return registry.get_execution_stats()
+
+
+@app.get("/api/tools/search")
+async def search_tools(capability: str):
+    """按能力标签搜索已注册的工具。"""
+    tools = registry.search_tools(capability)
+    return {"capability": capability, "tools": tools}
+
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# 静态文件服务 (需要在挂载静态目录之后定义)
-@app.get('/')
-def index():
-    return FileResponse('static/index.html')
 
-@app.get('/error_book')
+@app.get("/")
+def index():
+    return FileResponse("static/index.html")
+
+
+@app.get("/error_book")
 def error_book():
-    return FileResponse('static/error_book.html')
+    return FileResponse("static/error_book.html")
+
 
 if __name__ == "__main__":
-    # 确保static目录存在
-    if not os.path.exists('static'):
-        os.makedirs('static')
-
-    # 复制HTML文件到static目录
-    import shutil
-    if os.path.exists('ui_components/index.html'):
-        shutil.copy('ui_components/index.html', 'static/')
-    if os.path.exists('ui_components/error_book.html'):
-        shutil.copy('ui_components/error_book.html', 'static/')
+    if not os.path.exists("static"):
+        os.makedirs("static")
 
     print("\n服务器启动中...")
     print("访问地址: http://localhost:8000")
     print("API文档: http://localhost:8000/docs")
+    print("\n[安全] CORS已限制为:", settings.CORS_ORIGINS)
+    print("[安全] JWT认证已启用")
+    print("[安全] 输入过滤已启用")
+    print("[安全] 速率限制: {}次/分钟".format(settings.RATE_LIMIT_PER_MINUTE))
 
-    # 使用uvicorn启动服务器
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
