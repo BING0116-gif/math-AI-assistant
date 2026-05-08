@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>渲染功能测试</title>
+  <link rel="stylesheet" href="./frontend/dist/assets/index-DdWwSgcH.css">
+  <link rel="stylesheet" href="./frontend/dist/assets/ChatView-CFPRYv-9.css">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      padding: 24px;
+      margin: 20px 0;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h2 {
+      color: #2563eb;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 8px;
+    }
+    .test-case {
+      margin: 16px 0;
+      padding: 16px;
+      background: #f9fafb;
+      border-left: 4px solid #10b981;
+      border-radius: 4px;
+    }
+    .label {
+      font-weight: 600;
+      color: #6b7280;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 12px 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 14px;
+    }
+    code {
+      background: #fef3c7;
+      padding: 2px 6px;
+      border-radius: 3px;
+      color: #92400e;
+      font-size: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+    }
+    th, td {
+      border: 1px solid #d1d5db;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+      font-weight: 600;
+    }
+    blockquote {
+      border-left: 4px solid #2563eb;
+      padding: 12px 16px;
+      margin: 12px 0;
+      background: #eff6ff;
+      color: #1e40af;
+    }
+    hr {
+      border: none;
+      height: 1px;
+      background: linear-gradient(to right, transparent, #d1d5db, transparent);
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 数学AI助手 - 渲染功能测试</h1>
+  
+  <div class="test-section">
+    <h2>1. Markdown 基础语法测试</h2>
+    
+    <div class="test-case">
+      <div class="label">标题层级</div>
+      <h1>一级标题 H1</h1>
+      <h2>二级标题 H2</h2>
+      <h3>三级标题 H3</h3>
+    </div>
+
+    <div class="test-case">
+      <div class="label">文本格式化</div>
+      <p><strong>加粗文本</strong></p>
+      <p><em>斜体文本</em></p>
+      <p><strong><em>加粗斜体</em></strong></p>
+      <p><del>删除线文本</del></p>
+      <p>行内代码：<code>console.log('Hello')</code></p>
+      <p>下标：H<sub>2</sub>O &nbsp; 上标：x<sup>2</sup></p>
+    </div>
+
+    <div class="test-case">
+      <div class="label">列表</div>
+      <ul>
+        <li>无序列表项 1</li>
+        <li>无序列表项 2
+          <ol>
+            <li>有序嵌套项 A</li>
+            <li>有序嵌套项 B</li>
+          </ol>
+        </li>
+        <li>无序列表项 3</li>
+      </ul>
+      
+      <ol>
+        <li>第一步骤</li>
+        <li>第二步骤</li>
+        <li>第三步骤</li>
+      </ol>
+    </div>
+
+    <div class="test-case">
+      <div class="label">代码块</div>
+      <pre><code>function fibonacci(n) {
+  if (n <= 1) return n
+  return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+console.log(fibonacci(10)) // 输出: 55</code></pre>
+    </div>
+
+    <div class="test-case">
+      <div class="label">引用和分隔线</div>
+      <blockquote>
+        这是一段引用文本，用于展示blockquote的渲染效果。可以包含多行内容。
+      </blockquote>
+      <hr>
+      <p>上面的横线是分隔线（horizontal rule）</p>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>2. KaTeX 数学公式渲染测试</h2>
+    
+    <div class="test-case">
+      <div class="label">行内公式（Inline Math）</div>
+      <p>爱因斯坦质能方程：$E = mc^2$</p>
+      <p>二次方程求根公式：$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$</p>
+      <p>欧拉恒等式：$e^{i\pi} + 1 = 0$</p>
+      <p>求和符号：$\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$</p>
+      <p>积分公式：$\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$</p>
+    </div>
+
+    <div class="test-case">
+      <div class="label">块级公式（Display Math）</div>
+      <p>麦克斯韦方程组：</p>
+      $$\begin{aligned}
+      \nabla \cdot \mathbf{E} &= \frac{\rho}{\epsilon_0} \\
+      \nabla \cdot \mathbf{B} &= 0 \\
+      \nabla \times \mathbf{E} &= -\frac{\partial \mathbf{B}}{\partial t} \\
+      \nabla \times \mathbf{B} &= \mu_0\mathbf{J} + \mu_0\epsilon_0\frac{\partial \mathbf{E}}{\partial t}
+      \end{aligned}$$
+
+      <p>傅里叶变换：</p>
+      $$\hat{f}(\xi) = \int_{-\infty}^{\infty} f(x) e^{-2\pi i x \xi} dx$$
+
+      <p>矩阵运算：</p>
+      $$\mathbf{A} = \begin{pmatrix}
+      a_{11} & a_{12} & \cdots & a_{1n} \\
+      a_{21} & a_{22} & \cdots & a_{2n} \\
+      \vdots & \vdots & \ddots & \vdots \\
+      a_{m1} & a_{m2} & \cdots & a_{mn}
+      \end{pmatrix}$$
+    </div>
+
+    <div class="test-case">
+      <div class="label">复杂公式组合</div>
+      <p>极限定义：</p>
+      $$\lim_{x \to 0} \frac{\sin x}{x} = 1$$
+      
+      <p>泰勒展开：</p>
+      $$f(x) = f(a) + f'(a)(x-a) + \frac{f''(a)}{2!}(x-a)^2 + \cdots + \frac{f^{(n)}(a)}{n!}(x-a)^n + R_n$$
+      
+      <p>希腊字母集合：</p>
+      $\alpha, \beta, \gamma, \delta, \epsilon, \zeta, \eta, \theta, \lambda, \mu, \pi, \sigma, \omega$
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>3. 表格渲染测试</h2>
+    
+    <div class="test-case">
+      <table>
+        <thead>
+          <tr>
+            <th>函数名称</th>
+            <th>表达式</th>
+            <th>导数</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>幂函数</td>
+            <td>$x^n$</td>
+            <td>$nx^{n-1}$</td>
+          </tr>
+          <tr>
+            <td>指数函数</td>
+            <td>$e^x$</td>
+            <td>$e^x$</td>
+          </tr>
+          <tr>
+            <td>对数函数</td>
+            <td>$\ln x$</td>
+            <td>$\frac{1}{x}$</td>
+          </tr>
+          <tr>
+            <td>正弦函数</td>
+            <td>$\sin x$</td>
+            <td>$\cos x$</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>4. HTML 安全过滤测试</h2>
+    
+    <div class="test-case">
+      <div class="label">应该被过滤的危险标签</div>
+      <p>以下内容如果显示为原始代码，说明过滤生效：</p>
+      <p>&lt;script&gt;alert('XSS')&lt;/script&gt;</p>
+      <p>&lt;img src=x onerror=alert(1)&gt;</p>
+      <p>&lt;iframe src="https://evil.com"&gt;&lt;/iframe&gt;</p>
+    </div>
+
+    <div class="test-case">
+      <div class="label">允许的安全标签</div>
+      <p><a href="https://example.com" target="_blank">安全链接（应正常显示）</a></p>
+      <p><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='50'%3E%3Crect fill='%232563eb' width='100' height='50'/%3E%3Ctext x='50' y='30' text-anchor='middle' fill='white'%3E图片%3C/text%3E%3C/svg%3E" alt="测试图片"></p>
+    </div>
+  </div>
+
+  <div class="test-section">
+    <h2>5. 混合内容渲染测试</h2>
+    
+    <div class="test-case">
+      <div class="label">数学解答示例（模拟AI输出）</div>
+      <h3>题目：求极限 $\lim_{x \to 0} \frac{\tan x - \sin x}{x^3}$</h3>
+      
+      <p><strong>解题步骤：</strong></p>
+      <ol>
+        <li>首先，我们将分子进行变形：
+          $$\tan x - \sin x = \frac{\sin x}{\cos x} - \sin x = \sin x \left(\frac{1}{\cos x} - 1\right) = \sin x \cdot \frac{1 - \cos x}{\cos x}$$
+        </li>
+        
+        <li>利用等价无穷小替换：
+          <ul>
+            <li>当 $x \to 0$ 时，$\sin x \sim x$</li>
+            <li>当 $x \to 0$ 时，$1 - \cos x \sim \frac{x^2}{2}$</li>
+            <li>当 $x \to 0$ 时，$\cos x \to 1$</li>
+          </ul>
+        </li>
+        
+        <li>代入原式计算：
+          $$\lim_{x \to 0} \frac{\sin x \cdot \frac{1-\cos x}{\cos x}}{x^3} = \lim_{x \to 0} \frac{x \cdot \frac{x^2}{2}}{x^3 \cdot 1} = \frac{1}{2}$$
+        </li>
+      </ol>
+      
+      <blockquote>
+        <strong>最终答案：</strong> $\boxed{\dfrac{1}{2}}$
+      </blockquote>
+      
+      <hr>
+      
+      <p><em>注：本题也可使用洛必达法则或泰勒展开求解。</em></p>
+    </div>
+  </div>
+
+  <script src="./frontend/dist/assets/katex-CjHiWPWQ.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof katex !== 'undefined') {
+        katex.renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+            {left: '\\(', right: '\\)', display: false},
+            {left: '\\[', right: '\\]', display: true}
+          ],
+          throwOnError: false,
+          errorColor: '#cc0000'
+        });
+        console.log('✅ KaTeX 渲染完成');
+      } else {
+        console.error('❌ KaTeX 未加载');
+      }
+    });
+  </script>
+</body>
+</html>

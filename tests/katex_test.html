@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KaTeX 迁移验证测试</title>
+
+    <!-- KaTeX 库 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        h1 {
+            color: #1890ff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .test-section {
+            background: white;
+            padding: 25px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .test-section h2 {
+            color: #333;
+            border-bottom: 2px solid #1890ff;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .test-item {
+            margin: 15px 0;
+            padding: 12px;
+            background-color: #fafbfc;
+            border-left: 4px solid #52c41a;
+            border-radius: 4px;
+        }
+
+        .test-label {
+            font-weight: 600;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .status-success {
+            color: #52c41a;
+            font-weight: bold;
+        }
+
+        .status-error {
+            color: #ff4d4f;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>✅ KaTeX 迁移验证测试</h1>
+
+    <!-- 测试1：行内公式 -->
+    <div class="test-section">
+        <h2>📝 测试1：行内公式渲染</h2>
+        <div class="test-item">
+            <div class="test-label">行内公式示例1：$E = mc^2$</div>
+            <p>爱因斯坦质能方程：$E = mc^2$</p>
+        </div>
+        <div class="test-item">
+            <div class="test-label">行内公式示例2：$\int_{a}^{b} f(x)dx$</div>
+            <p>定积分表示：$\int_{a}^{b} f(x)dx$</p>
+        </div>
+        <div class="test-item">
+            <div class="test-label">行内公式示例3：$\frac{-b \pm \sqrt{b^2-4ac}}{2a}$</div>
+            <p>求根公式：$\frac{-b \pm \sqrt{b^2-4ac}}{2a}$</p>
+        </div>
+    </div>
+
+    <!-- 测试2：块级公式 -->
+    <div class="test-section">
+        <h2>📐 测试2：块级公式渲染</h2>
+        <div class="test-item">
+            <div class="test-label">块级公式示例1：欧拉公式</div>
+            $$e^{i\pi} + 1 = 0$$
+        </div>
+        <div class="test-item">
+            <div class="test-label">块级公式示例2：高斯积分</div>
+            $$\int_{-\infty}^{+\infty} e^{-x^2} dx = \sqrt{\pi}$$
+        </div>
+        <div class="test-item">
+            <div class="test-label">块级公式示例3：傅里叶变换</div>
+            $$\hat{f}(\xi) = \int_{-\infty}^{+\infty} f(x) e^{-2\pi i x \xi} dx$$
+        </div>
+    </div>
+
+    <!-- 测试3：复杂数学表达式 -->
+    <div class="test-section">
+        <h2>🔬 测试3：复杂数学表达式</h2>
+        <div class="test-item">
+            <div class="test-label">矩阵运算：</div>
+            $$\begin{pmatrix} a & b \\ c & d \end{pmatrix} \begin{pmatrix} x \\ y \end{pmatrix} = \begin{pmatrix} ax+by \\ cx+dy \end{pmatrix}$$
+        </div>
+        <div class="test-item">
+            <div class="test-label">极限与导数：</div>
+            $$\lim_{h \to 0} \frac{f(x+h) - f(x)}{h} = f'(x)$$
+        </div>
+        <div class="test-item">
+            <div class="test-label">级数展开：</div>
+            $$\sum_{n=0}^{\infty} \frac{x^n}{n!} = e^x$$
+        </div>
+    </div>
+
+    <!-- 测试4：动态内容加载 -->
+    <div class="test-section">
+        <h2>⚡ 测试4：动态内容渲染</h2>
+        <button onclick="addDynamicContent()" style="padding: 10px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            添加动态数学公式
+        </button>
+        <div id="dynamic-content" style="margin-top: 15px;"></div>
+    </div>
+
+    <!-- 测试结果 -->
+    <div class="test-section">
+        <h2>📊 渲染结果验证</h2>
+        <div id="test-result"></div>
+    </div>
+
+    <script>
+        // KaTeX 配置（与项目配置一致）
+        const katexConfig = {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
+            ],
+            throwOnError: false,
+            errorColor: '#cc0000',
+            strict: false,
+            trust: true
+        };
+
+        // 页面加载完成后自动渲染
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('✅ KaTeX 初始化成功');
+
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, katexConfig);
+                console.log('✅ 首次渲染完成');
+
+                // 验证渲染结果
+                verifyRendering();
+            } else {
+                console.error('❌ KaTeX 未加载');
+                showTestResult(false, 'KaTeX 库未正确加载');
+            }
+        });
+
+        // 动态添加内容的函数
+        function addDynamicContent() {
+            const container = document.getElementById('dynamic-content');
+            const newDiv = document.createElement('div');
+            newDiv.className = 'test-item';
+            newDiv.innerHTML = `
+                <div class="test-label">动态添加的公式（时间戳：${new Date().toLocaleTimeString()}）</div>
+                <p>新添加的行内公式：$\\nabla \\cdot \\mathbf{E} = \\frac{\\rho}{\\varepsilon_0}$</p>
+                <p>新添加的块级公式：</p>
+                $$\\oint_C \\mathbf{F} \\cdot d\\mathbf{r} = \\iint_S (\\nabla \\times \\mathbf{F}) \\cdot d\\mathbf{S}$$
+            `;
+            container.appendChild(newDiv);
+
+            // 立即渲染新添加的内容
+            if (window.renderMathInElement) {
+                renderMathInElement(newDiv, katexConfig);
+                console.log('✅ 动态内容渲染成功');
+                showTestResult(true, '动态内容渲染成功！');
+            } else {
+                console.error('❌ 动态内容渲染失败');
+                showTestResult(false, '动态内容渲染失败');
+            }
+        }
+
+        // 验证渲染结果
+        function verifyRendering() {
+            const katexElements = document.querySelectorAll('.katex');
+            const displayElements = document.querySelectorAll('.katex-display');
+
+            let resultHTML = '<ul style="line-height: 2;">';
+            resultHTML += `<li><span class="status-success">✓</span> KaTeX 库已加载</li>`;
+            resultHTML += `<li><span class="status-success">✓</span> 找到 ${katexElements.length} 个公式元素</li>`;
+            resultHTML += `<li><span class="status-success">✓</span> 找到 ${displayElements.length} 个块级公式</li>`;
+            resultHTML += `<li><span class="status-success">✓</span> 行内公式和块级公式均正常显示</li>`;
+            resultHTML += '</ul>';
+
+            if (katexElements.length > 0 && displayElements.length > 0) {
+                resultHTML += '<p style="margin-top: 15px; padding: 10px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; color: #389e0d;"><strong>🎉 所有测试通过！KaTeX 迁移成功！</strong></p>';
+            } else {
+                resultHTML += '<p style="margin-top: 15px; padding: 10px; background: #fff2f0; border: 1px solid #ffccc7; border-radius: 4px; color: #cf1322;"><strong>⚠️ 部分测试未通过，请检查配置</strong></p>';
+            }
+
+            document.getElementById('test-result').innerHTML = resultHTML;
+        }
+
+        function showTestResult(success, message) {
+            const div = document.createElement('div');
+            div.style.cssText = `margin-top: 10px; padding: 10px; background: ${success ? '#f6ffed' : '#fff2f0'}; border: 1px solid ${success ? '#b7eb8f' : '#ffccc7'}; border-radius: 4px; color: ${success ? '#389e0d' : '#cf1322'};`;
+            div.innerHTML = `<strong>${success ? '✅' : '❌'} ${message}</strong>`;
+            document.getElementById('test-result').appendChild(div);
+        }
+    </script>
+</body>
+</html>

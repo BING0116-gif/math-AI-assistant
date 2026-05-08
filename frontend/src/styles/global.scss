@@ -1,0 +1,64 @@
+@use 'variables' as *;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-family: $font-sans;
+  font-size: 15px;
+  color: $text-primary;
+  background: $bg-primary;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $text-tertiary;
+  border-radius: $radius-full;
+  &:hover {
+    background: $text-secondary;
+  }
+}
+
+a {
+  color: $primary;
+  text-decoration: none;
+  transition: color $transition-fast;
+  &:hover {
+    color: $primary-dark;
+  }
+}
+
+.el-button--primary {
+  --el-button-bg-color: #{$primary};
+  --el-button-border-color: #{$primary};
+  --el-button-hover-bg-color: #{$primary-dark};
+  --el-button-hover-border-color: #{$primary-dark};
+}
+
+.el-message {
+  border-radius: $radius-md !important;
+  box-shadow: $shadow-lg !important;
+}
+
+.el-dialog {
+  border-radius: $radius-lg !important;
+  overflow: hidden;
+}

@@ -118,7 +118,7 @@ NO_AUTH_PATHS = {
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
 
-    if path in NO_AUTH_PATHS or path.startswith("/static") or path.startswith("/api/auth"):
+    if path in NO_AUTH_PATHS or path.startswith("/static") or path.startswith("/assets") or path.startswith("/@vite") or path.startswith("/api/auth"):
         return await call_next(request)
 
     if request.method == "OPTIONS":
@@ -513,16 +513,17 @@ async def search_tools(capability: str):
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
 
 @app.get("/")
 def index():
-    return FileResponse("static/index.html")
+    return FileResponse("frontend/dist/index.html")
 
 
 @app.get("/error_book")
 def error_book():
-    return FileResponse("static/error_book.html")
+    return FileResponse("frontend/dist/index.html")
 
 
 if __name__ == "__main__":

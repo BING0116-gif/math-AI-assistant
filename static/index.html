@@ -4,20 +4,52 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>数学AI助手</title>
-    
-    <!-- MathJax 用于渲染数学公式 -->
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <!-- KaTeX 用于渲染数学公式 (从MathJax迁移) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <script>
-        MathJax = {
-            tex: {
-                inlineMath: [['$', '$'], ['\\(', '\\)']],
-                displayMath: [['$$', '$$'], ['\\[', '\\]']]
-            },
-            svg: { fontCache: 'global' }
+        // KaTeX 全局配置 - 与原MathJax保持一致的渲染效果
+        window.katexConfig = {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
+            ],
+            throwOnError: false,
+            errorColor: '#cc0000',
+            strict: false,
+            trust: true,
+            macros: {
+                "\\R": "\\mathbb{R}",
+                "\\N": "\\mathbb{N}",
+                "\\Z": "\\mathbb{Z}"
+            }
         };
+
+        // KaTeX 渲染函数 - 替代原 MathJax.typesetPromise
+        function renderMathInElement(element) {
+            if (!element) return;
+
+            if (window.renderMathInElement && typeof window.renderMathInElement === 'function') {
+                try {
+                    renderMathInElement(element, window.katexConfig);
+                } catch (err) {
+                    console.warn('KaTeX 渲染警告:', err.message);
+                }
+            }
+        }
+
+        // 页面加载完成后自动渲染所有数学公式
+        document.addEventListener('DOMContentLoaded', function() {
+            if (window.renderMathInElement) {
+                renderMathInElement(document.body, window.katexConfig);
+            }
+        });
     </script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
-    
+
     <style>
         * {
             margin: 0;
@@ -558,12 +590,12 @@
             border-bottom-color: #1890ff;
         }
 
-        /* 数学公式专用样式 - 增强版 */
-        .message-content .MathJax {
+        /* 数学公式专用样式 - KaTeX 版本（从MathJax迁移） */
+        .message-content .katex {
             font-size: 1.15em !important;
         }
 
-        .message-content mjx-container[display="true"] {
+        .message-content .katex-display {
             margin: 20px 0 !important;
             padding: 16px 20px !important;
             background-color: #fafbfc !important;
@@ -572,14 +604,14 @@
         }
 
         /* 行内公式样式 */
-        .message-content mjx-container[display="false"] {
+        .message-content .katex {
             display: inline-block !important;
             margin: 0 2px !important;
             vertical-align: middle !important;
         }
 
         /* 公式容器特殊处理 */
-        .message-content:has(mjx-container[display="true"]) {
+        .message-content:has(.katex-display) {
             margin: 18px 0;
         }
 
@@ -1606,12 +1638,10 @@
                     renderHistoryList();
                     renderChat(currentChatId);
                     
-                    // 渲染数学公式
-                    if (window.MathJax && window.MathJax.typesetPromise) {
-                        setTimeout(() => {
-                            MathJax.typesetPromise([chatContainer]).catch((err) => console.log('MathJax error: ', err));
-                        }, 100);
-                    }
+                    // 渲染数学公式（KaTeX版本）
+                    setTimeout(() => {
+                        renderMathInElement(chatContainer);
+                    }, 100);
                 
                 } catch (error) {
                     hideStopButton();
@@ -1781,7 +1811,7 @@
                 contentDiv.textContent = rawContentBuffer;
                 renderMarkdown(contentDiv);
 
-                // 触发 MathJax 渲染
+                // 触发 KaTeX 渲染
                 isTyping = false;
                 renderMathInElement(contentDiv);
 
@@ -1791,12 +1821,8 @@
             }
         }
 
-        // 渲染元素中的数学公式
-        function renderMathInElement(element) {
-            if (window.MathJax && window.MathJax.typesetPromise) {
-                MathJax.typesetPromise([element]).catch((err) => console.log('MathJax error: ', err));
-            }
-        }
+        // 渲染元素中的数学公式（KaTeX版本 - 已在头部定义）
+        // renderMathInElement 函数已在页面加载时全局定义
 
         // 追加内容到消息（用于错误消息等）
         function appendToMessage(messageId, content) {
@@ -1874,11 +1900,9 @@
                 const contentDiv = messageDiv.querySelector('.message-content');
                 if (contentDiv) {
                     contentDiv.innerHTML += content;
-                    
-                    // 渲染数学公式
-                    if (window.MathJax && window.MathJax.typesetPromise) {
-                        MathJax.typesetPromise([contentDiv]).catch((err) => console.log('MathJax error: ', err));
-                    }
+
+                    // 渲染数学公式（KaTeX版本）
+                    renderMathInElement(contentDiv);
                 }
             }
         }
@@ -2387,14 +2411,12 @@
             saveChats();
             renderHistoryList();
             renderChat(currentChatId);
-            
-            // 渲染数学公式
-            if (window.MathJax && window.MathJax.typesetPromise) {
-                setTimeout(() => {
-                    const chatContainer = document.getElementById('chat-container');
-                    MathJax.typesetPromise([chatContainer]).catch((err) => console.log('MathJax error: ', err));
-                }, 100);
-            }
+
+            // 渲染数学公式（KaTeX版本）
+            setTimeout(() => {
+                const chatContainer = document.getElementById('chat-container');
+                renderMathInElement(chatContainer);
+            }, 100);
         }
 
         // 渲染聊天内容
@@ -2444,11 +2466,9 @@
 
             // 滚动到底部
             chatContainer.scrollTop = chatContainer.scrollHeight;
-            
-            // 渲染数学公式
-            if (window.MathJax && window.MathJax.typesetPromise) {
-                MathJax.typesetPromise([chatContainer]).catch((err) => console.log('MathJax error: ', err));
-            }
+
+            // 渲染数学公式（KaTeX版本）
+            renderMathInElement(chatContainer);
         }
 
         // 显示加载状态
@@ -2488,14 +2508,12 @@
             // 如果已经在pending状态，不需要额外操作（renderChat会处理）
             // 这里只需要重新渲染当前聊天界面
             renderChat(currentChatId);
-            
-            // 渲染数学公式
-            if (window.MathJax && window.MathJax.typesetPromise) {
-                setTimeout(() => {
-                    const chatContainer = document.getElementById('chat-container');
-                    MathJax.typesetPromise([chatContainer]).catch((err) => console.log('MathJax error: ', err));
-                }, 100);
-            }
+
+            // 渲染数学公式（KaTeX版本）
+            setTimeout(() => {
+                const chatContainer = document.getElementById('chat-container');
+                renderMathInElement(chatContainer);
+            }, 100);
         }
 
         // 清空聊天
