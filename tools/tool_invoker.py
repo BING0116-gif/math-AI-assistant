@@ -10,9 +10,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-import re
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput
 from tools.registry import ToolRegistry
@@ -109,67 +108,6 @@ class ToolInvoker:
         """
         return "", {"query": text, "parameters": {}}
 
-    def _parse_tool_call_line(self, line: str) -> Optional[Tuple[str, str]]:
-        """
-        解析工具调用行。
-
-        支持格式：
-        - "Action: tool_name"
-        - "Action: tool_name(input)"
-        - "tool_name: ..."
-
-        Returns:
-            (tool_name, remaining) 元组。
-        """
-        line = line.strip()
-
-        patterns = [
-            r"^Action:\s*(\w+)\s*(.*)$",
-            r"^(\w+):\s*(.*)$",
-        ]
-
-        for pattern in patterns:
-            match = re.match(pattern, line, re.IGNORECASE)
-            if match:
-                groups = match.groups()
-                tool_name = groups[0].strip()
-                remaining = groups[1].strip() if len(groups) > 1 else ""
-                return tool_name, remaining
-
-        return None
-
-    def extract_tool_call(self, agent_output: str) -> Optional[Dict[str, str]]:
-        """
-        从 Agent 输出中提取工具调用信息。
-
-        解析格式：
-        Action: tool_name
-        Action Input: {...}
-
-        Args:
-            agent_output: Agent 输出的原始文本。
-
-        Returns:
-            {"tool": tool_name, "input": action_input} 或 None。
-        """
-        lines = agent_output.strip().split("\n")
-        tool_name = ""
-        action_input = ""
-
-        for line in lines:
-            line = line.strip()
-            if line.startswith("Action:"):
-                parsed = self._parse_tool_call_line(line)
-                if parsed:
-                    tool_name = parsed[0]
-            elif line.startswith("Action Input:"):
-                action_input = line[len("Action Input:"):].strip()
-
-        if tool_name and tool_name.lower() != "final answer":
-            return {"tool": tool_name, "input": action_input}
-
-        return None
-
     async def invoke(
         self,
         tool_name: str,
@@ -250,50 +188,3 @@ class ToolInvoker:
             return str(output)
 
         return f"【错误】{result.error}"
-
-    async def invoke_from_text(
-        self,
-        action_text: str,
-        session_id: str = "default",
-    ) -> Tuple[bool, str]:
-        """
-        从文本直接调用工具（自动解析工具名和参数）。
-
-        Args:
-            action_text: 包含工具名和参数的文本。
-            session_id: 会话 ID（用于上下文）。
-
-        Returns:
-            (success, result_or_error) 元组。
-        """
-        parsed = self.extract_tool_call(action_text)
-        if not parsed:
-            return False, "无法从文本中提取工具调用信息"
-
-        tool_name = parsed["tool"]
-        action_input = parsed["input"]
-
-        if not self._registry.has_tool(tool_name):
-            return False, f"工具未注册: '{tool_name}'"
-
-        try:
-            tool_name, params = self.parse_action_input(action_input)
-
-            if tool_name and self._registry.has_tool(tool_name):
-                final_tool = tool_name
-            else:
-                final_tool = parsed["tool"]
-
-            input_data = ToolInput(
-                query=params.get("query", action_input),
-                parameters=params.get("parameters", {}),
-                context={"session_id": session_id},
-            )
-
-            result = await self.invoke(final_tool, input_data, retry=False)
-            return result.success, self.format_result_for_llm(result)
-
-        except ToolInvokeError as e:
-            return False, str(e)
-        except Exception as e:
-            return False, f"工具调用异常: {e}"

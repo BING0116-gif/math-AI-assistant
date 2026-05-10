@@ -88,13 +88,13 @@ async def test_sse_format():
     print("SSE 格式测试")
     print("=" * 60)
 
-    from main import stream_chat_response
+    from main import _stream_agent_response
 
     print("\n测试 SSE 格式:")
     print("-" * 40)
 
     count = 0
-    async for sse_line in stream_chat_response("你好", "test_session"):
+    async for sse_line in _stream_agent_response("你好", "test_session"):
         if sse_line.startswith("data: "):
             count += 1
             if count <= 5:

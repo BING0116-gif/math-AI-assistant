@@ -29,7 +29,14 @@ _VL_MODELS = [
 
 
 def _load_api_key(file_path: str = ".env") -> Optional[str]:
-    """从环境变量或 .env 文件加载 API Key。"""
+    """从项目配置（pydantic-settings）或环境变量加载 API Key。"""
+    try:
+        from app.config.settings import settings
+        if settings.DASHSCOPE_API_KEY:
+            return settings.DASHSCOPE_API_KEY
+    except Exception:
+        pass
+
     api_key = os.environ.get("DASHSCOPE_API_KEY")
     if api_key:
         return api_key
@@ -657,6 +664,3 @@ class VisionToolAdapter(BaseTool):
                 tool_name=self.name,
                 execution_time_ms=elapsed_ms,
             )
-
-
-import asyncio

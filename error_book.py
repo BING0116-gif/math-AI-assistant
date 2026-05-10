@@ -3,13 +3,14 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 @dataclass
@@ -62,7 +63,7 @@ class ErrorBookManager:
         self.data_dir.mkdir(parents=True, exist_ok=True)
     
     def _load(self) -> None:
-        """从文件加载数据"""
+        """从文件加载数据（同步，仅在初始化时调用）"""
         if self.data_file.exists():
             try:
                 with open(self.data_file, "r", encoding="utf-8") as f:
@@ -74,35 +75,67 @@ class ErrorBookManager:
             self._items = []
     
     def _save(self) -> None:
-        """保存数据到文件"""
+        """保存数据到文件（同步版本）"""
         with open(self.data_file, "w", encoding="utf-8") as f:
             json.dump([item.to_dict() for item in self._items], f, ensure_ascii=False, indent=2)
+
+    async def _async_save(self) -> None:
+        """异步保存数据到文件（避免阻塞事件循环）"""
+        await asyncio.to_thread(self._save)
     
     def add(self, item: ErrorItem) -> str:
-        """添加错题"""
+        """添加错题（同步接口，FastAPI 自动在线程池运行）"""
         if not item.id:
             item.id = str(uuid.uuid4())[:8]
-        self._items.insert(0, item)  # 新错题插入到最前面
+        self._items.insert(0, item)
         self._save()
+        return item.id
+
+    async def add_async(self, item: ErrorItem) -> str:
+        """添加错题（异步接口）"""
+        if not item.id:
+            item.id = str(uuid.uuid4())[:8]
+        self._items.insert(0, item)
+        await self._async_save()
         return item.id
     
     def remove(self, item_id: str) -> bool:
-        """删除错题"""
+        """删除错题（同步接口）"""
         original_len = len(self._items)
         self._items = [item for item in self._items if item.id != item_id]
         if len(self._items) < original_len:
             self._save()
             return True
         return False
+
+    async def remove_async(self, item_id: str) -> bool:
+        """删除错题（异步接口）"""
+        original_len = len(self._items)
+        self._items = [item for item in self._items if item.id != item_id]
+        if len(self._items) < original_len:
+            await self._async_save()
+            return True
+        return False
     
     def update(self, item_id: str, **kwargs) -> bool:
-        """更新错题"""
+        """更新错题（同步接口）"""
         for item in self._items:
             if item.id == item_id:
                 for key, value in kwargs.items():
                     if hasattr(item, key):
                         setattr(item, key, value)
                 self._save()
+                return True
+        return False
+
+    async def update_async(self, item_id: str, **kwargs) -> bool:
+        """更新错题（异步接口）"""
+        for item in self._items:
+            if item.id == item_id:
+                for key, value in kwargs.items():
+                    if hasattr(item, key):
+                        setattr(item, key, value)
+                await self._async_save()
                 return True
         return False
     

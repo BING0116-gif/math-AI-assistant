@@ -166,18 +166,3 @@ def is_safe_image_data(data: str) -> bool:
         return True
 
     return False
-
-
-def sanitize_error_message(error: Exception) -> str:
-    msg = str(error)
-    sensitive_patterns = [
-        (re.compile(r"(api[_-]?key\s*[=:]\s*)\S+", re.IGNORECASE), r"\1[REDACTED]"),
-        (re.compile(r"(password\s*[=:]\s*)\S+", re.IGNORECASE), r"\1[REDACTED]"),
-        (re.compile(r"(secret\s*[=:]\s*)\S+", re.IGNORECASE), r"\1[REDACTED]"),
-        (re.compile(r"(token\s*[=:]\s*)\S+", re.IGNORECASE), r"\1[REDACTED]"),
-        (re.compile(r"/[\w/.]+\.py"), "[PATH_REDACTED]"),
-        (re.compile(r"Traceback[\s\S]*"), "[TRACEBACK_REDACTED]"),
-    ]
-    for pattern, replacement in sensitive_patterns:
-        msg = pattern.sub(replacement, msg)
-    return msg

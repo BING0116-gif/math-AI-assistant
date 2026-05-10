@@ -101,15 +101,15 @@ class TestErrorBookValidator:
 
     def test_field_length_limit(self):
         """测试字段长度限制"""
-        long_question = "x" * 11000  # 超过10000字符限制
-        
+        long_question = "x" * 35000  # 超过当前30000字符限制
+
         data = {
             "question": long_question,
             "correct_answer": "answer",
             "error_reason": "reason"
         }
         is_valid, errors = ErrorBookValidator.validate(data)
-        
+
         assert is_valid is False
         assert any("长度超过限制" in err for err in errors)
 

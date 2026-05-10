@@ -81,26 +81,17 @@ class ExceptionTool(BaseTool):
 
 
 class MockVisionTool:
-    """模拟 VisionTool，用于测试 VisionToolAdapter。"""
-
     def __init__(self, should_fail: bool = False):
         self._should_fail = should_fail
 
-    def recognize(self, image_source, user_prompt=None):
+    async def recognize_stream(self, image_source, user_prompt=None):
         if self._should_fail:
-            return {
-                "success": False,
-                "llm_description": "",
-                "raw_response": "",
-                "error": "Mock recognition error",
-                "model_used": "",
-            }
-        return {
-            "success": True,
-            "llm_description": "Mock image description",
-            "raw_response": "Mock raw response",
-            "model_used": "mock-vl",
-        }
+            yield {"type": "complete", "content": "Mock recognition error", "success": False,
+                   "llm_description": "", "raw_response": "", "model_used": ""}
+        else:
+            yield {"type": "complete", "content": "识别完成", "success": True,
+                   "llm_description": "Mock image description",
+                   "raw_response": "Mock raw response", "model_used": "mock-vl"}
 
 
 # ---------------------------------------------------------------------------

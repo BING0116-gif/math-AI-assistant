@@ -142,45 +142,141 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 @use '@/styles/variables' as *;
 
 .eb-header-content {
-  display: flex; align-items: center; justify-content: space-between; flex: 1;
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  flex: 1;
 }
 
-.eb-title { font-size: 17px; font-weight: 700; color: $text-primary; }
+.eb-title { 
+  font-size: 18px; 
+  font-weight: 700; 
+  color: $text-primary; 
+  background: linear-gradient(135deg, $text-primary 0%, $primary 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 
 .back-link {
-  font-size: 13px; color: $primary; text-decoration: none; font-weight: 500;
-  padding: 6px 14px; border-radius: $radius-full; transition: all $transition-fast;
-  &:hover { background: $primary-bg; }
+  font-size: 13px; 
+  color: $primary; 
+  text-decoration: none; 
+  font-weight: 600;
+  padding: 8px 18px; 
+  border-radius: $radius-full; 
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(99, 102, 241, 0.06);
+  border: 1.5px solid rgba(99, 102, 241, 0.15);
+
+  &:hover { 
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(129, 140, 248, 0.12) 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+  }
 }
 
 .error-book-view {
-  flex: 1; overflow-y: auto; padding: 24px;
-  max-width: 1000px; margin: 0 auto; width: 100%;
+  flex: 1; 
+  overflow-y: auto; 
+  padding: 28px 28px 40px;
+  max-width: 1100px; 
+  margin: 0 auto; 
+  width: 100%;
+  
+  &::-webkit-scrollbar {
+    width: 6px;
+    
+    &-thumb {
+      background: rgba(148, 163, 184, 0.3);
+      border-radius: $radius-full;
+      
+      &:hover {
+        background: rgba(148, 163, 184, 0.5);
+      }
+    }
+  }
 }
 
 .error-list {
-  display: flex; flex-direction: column; gap: 14px;
-  min-height: 200px; position: relative;
+  display: flex; 
+  flex-direction: column; 
+  gap: 16px;
+  min-height: 200px; 
+  position: relative;
 }
 
 .empty-state {
-  text-align: center; padding: 60px 20px;
-  .empty-icon { font-size: 52px; margin-bottom: 14px; }
-  .empty-text { font-size: 17px; color: $text-secondary; font-weight: 600; margin-bottom: 8px; }
-  .empty-hint { font-size: 14px; color: $text-tertiary; }
+  text-align: center; 
+  padding: 80px 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.8) 100%);
+  backdrop-filter: blur(10px);
+  border-radius: $radius-xl;
+  border: 2px dashed rgba(226, 232, 240, 0.5);
+  
+  .empty-icon { 
+    font-size: 56px; 
+    margin-bottom: 16px;
+    animation: float 3s ease-in-out infinite;
+  }
+  
+  .empty-text { 
+    font-size: 18px; 
+    color: $text-secondary; 
+    font-weight: 700; 
+    margin-bottom: 10px;
+  }
+  
+  .empty-hint { 
+    font-size: 14px; 
+    color: $text-tertiary;
+    line-height: 1.6;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
 }
 
 .list-item-enter-active {
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .list-item-leave-active {
-  transition: all 0.25s ease;
-  position: absolute; width: 100%;
+  transition: all 0.3s ease;
+  position: absolute; 
+  width: 100%;
 }
-.list-item-enter-from { opacity: 0; transform: translateY(24px) scale(0.96); }
-.list-item-leave-to { opacity: 0; transform: translateX(-30px); }
+.list-item-enter-from { 
+  opacity: 0; 
+  transform: translateY(30px) scale(0.96); 
+}
+.list-item-leave-to { 
+  opacity: 0; 
+  transform: translateX(-40px) scale(0.9); 
+}
 
 @media (max-width: 768px) {
-  .error-book-view { padding: 16px; }
+  .error-book-view { 
+    padding: 20px 16px 32px; 
+  }
+
+  .eb-title {
+    font-size: 16px;
+  }
+
+  .empty-state {
+    padding: 60px 16px;
+    
+    .empty-icon {
+      font-size: 48px;
+    }
+    
+    .empty-text {
+      font-size: 16px;
+    }
+  }
 }
 </style>

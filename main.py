@@ -5,10 +5,12 @@ from error_book import ErrorBookManager, ErrorItem
 from data_processing.validators import ErrorBookValidator
 from data_processing.formatters import ErrorBookFormatter
 import asyncio
+import logging
 import os
 import base64
 import json
 import time
+import traceback
 from collections import defaultdict
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +30,8 @@ from app.middleware.security import (
     is_safe_image_data,
     SecurityValidationError,
 )
+
+logger = logging.getLogger(__name__)
 from app.api.auth import router as auth_router
 
 app = FastAPI(
@@ -98,6 +102,7 @@ NO_AUTH_PATHS = {
     "/api/auth/refresh",
     "/api/chat",
     "/api/chat/react",
+    "/api/chat/multimodal",
     "/api/recognize",
     "/api/error-book",
     "/api/tools",
@@ -157,6 +162,12 @@ class RecognizeRequest(BaseModel):
     session_id: str = "default"
 
 
+class MultimodalChatRequest(BaseModel):
+    message: str = ""
+    image: str | None = None
+    session_id: str = "default"
+
+
 class ErrorItemRequest(BaseModel):
     id: str = ""
     question: str
@@ -196,8 +207,8 @@ error_book_manager = ErrorBookManager()
 init_default_admin(settings.JWT_SECRET_KEY)
 
 
-async def stream_chat_response(message, session_id):
-    """流式聊天响应。直接转发 agent.stream() 的每个 chunk。"""
+async def _stream_agent_response(message, session_id, context_label="聊天"):
+    """统一的 Agent 流式响应生成器。直接转发 agent.stream() 的每个 chunk。"""
     try:
         async for chunk in agent.stream(message, session_id=session_id):
             if chunk:
@@ -211,8 +222,7 @@ async def stream_chat_response(message, session_id):
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 
     except Exception as e:
-        import traceback
-        logger.error(f"流式聊天失败: {e}\n{traceback.format_exc()}")
+        logger.error(f"流式{context_label}失败: {e}\n{traceback.format_exc()}")
         yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 
@@ -251,9 +261,54 @@ async def stream_recognize_response(image_data, session_id):
                 os.unlink(temp_file_path)
 
     except Exception as e:
-        import traceback
         logger.error(f"图片识别流式处理失败: {e}\n{traceback.format_exc()}")
-        yield f"data: {json.dumps({'content': f'服务器内部错误: {str(e)}', 'type': 'error'})}\n\n"
+        yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
+        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+
+
+async def stream_multimodal_response(message, image_data, session_id):
+    """
+    流式响应多模态输入（图片+文字）。
+
+    将图片和文字合并后一起发送给Agent处理，确保AI能获得完整上下文。
+    """
+    try:
+        if image_data:
+            if image_data.startswith("data:image/"):
+                image_data = image_data.split(",")[1]
+
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+                temp_file.write(base64.b64decode(image_data))
+                temp_file_path = temp_file.name
+
+            try:
+                start_msg = "**【正在识别图片内容...】**\n\n"
+                yield f"data: {json.dumps({'content': start_msg, 'type': 'status'})}\n\n"
+
+                async for chunk in agent.stream_multimodal(temp_file_path, message, session_id=session_id):
+                    if chunk:
+                        if not isinstance(chunk, str):
+                            chunk = str(chunk)
+                        yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
+
+                yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+            finally:
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+        else:
+            async for chunk in agent.stream(message, session_id=session_id):
+                if chunk:
+                    if not isinstance(chunk, str):
+                        chunk = str(chunk)
+                    yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
+
+            yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+
+    except Exception as e:
+        logger.error(f"多模态流式处理失败: {e}\n{traceback.format_exc()}")
+        yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 
 
@@ -273,33 +328,21 @@ async def chat(request: ChatRequest, http_request: Request):
         raise HTTPException(status_code=400, detail="请输入消息")
 
     return StreamingResponse(
-        stream_chat_response(validated_message, validated_session),
+        _stream_agent_response(validated_message, validated_session),
         media_type="text/event-stream",
     )
 
 
-async def stream_react_response(message, session_id):
-    """MathAgent（ReAct 模式）流式响应生成器。直接转发每个 chunk。"""
-    try:
-        async for chunk in agent.stream(message, session_id=session_id):
-            if chunk:
-                if not isinstance(chunk, str):
-                    chunk = str(chunk)
-                try:
-                    yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
-                except (TypeError, ValueError) as json_error:
-                    yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
-        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
-    except Exception as e:
-        import traceback
-        logger.error(f"流式 React 响应失败: {e}\n{traceback.format_exc()}")
-        yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
-        yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
-
 
 @app.post("/api/chat/react")
 async def chat_react(request: ChatRequest, http_request: Request):
-    """ReAct Agent 聊天接口（向后兼容，与 /api/chat 使用同一 MathAgent 实例）。"""
+    """
+    ReAct Agent 聊天接口（已废弃，向后兼容）。
+
+    .. deprecated::
+        此端点与 /api/chat 功能完全重复，仅保留用于向后兼容。
+        新代码请使用 /api/chat。
+    """
     try:
         validated_message = validate_input(
             request.message, "message", max_length=settings.INPUT_MAX_LENGTH
@@ -314,7 +357,7 @@ async def chat_react(request: ChatRequest, http_request: Request):
         raise HTTPException(status_code=400, detail="请输入消息")
 
     return StreamingResponse(
-        stream_react_response(validated_message, validated_session),
+        _stream_agent_response(validated_message, validated_session, "React"),
         media_type="text/event-stream",
     )
 
@@ -354,6 +397,36 @@ async def recognize(request: RecognizeRequest, http_request: Request):
 
     return StreamingResponse(
         stream_recognize_response(request.image, validated_session),
+        media_type="text/event-stream",
+    )
+
+
+@app.post("/api/chat/multimodal")
+async def chat_multimodal(request: MultimodalChatRequest, http_request: Request):
+    """
+    多模态聊天接口（支持图片+文字同时输入）。
+
+    将图片和文字作为一个完整的请求发送给Agent处理，
+    确保AI能够获得完整的上下文信息。
+    """
+    try:
+        validated_message = validate_input(
+            request.message, "message", max_length=settings.INPUT_MAX_LENGTH
+        ) if request.message else ""
+        validated_session = validate_input(
+            request.session_id, "session_id", max_length=128
+        )
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not request.image and not validated_message:
+        raise HTTPException(status_code=400, detail="请提供图片或文字内容")
+
+    if request.image and not is_safe_image_data(request.image):
+        raise HTTPException(status_code=400, detail="图片数据格式不合法")
+
+    return StreamingResponse(
+        stream_multimodal_response(validated_message, request.image, validated_session),
         media_type="text/event-stream",
     )
 
@@ -511,6 +584,15 @@ async def search_tools(capability: str):
     tools = registry.search_tools(capability)
     return {"capability": capability, "tools": tools}
 
+
+if not os.path.exists("static"):
+    os.makedirs("static")
+
+if not os.path.exists("frontend/dist"):
+    os.makedirs("frontend/dist")
+
+if not os.path.exists("frontend/dist/assets"):
+    os.makedirs("frontend/dist/assets")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")

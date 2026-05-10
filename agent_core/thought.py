@@ -109,25 +109,6 @@ class ThoughtProcess:
         result["total_elapsed_ms"] = self.total_elapsed_ms
         return result
 
-    def to_json(self) -> str:
-        """序列化为 JSON。"""
-        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
-
-    def get_thought_chain(self) -> List[Dict[str, str]]:
-        """获取纯思维链（用于调试和展示）。"""
-        chain = []
-        for step in self.steps:
-            if step.step_type == ThoughtStepType.THOUGHT:
-                chain.append({"type": "thought", "content": step.content})
-            elif step.step_type == ThoughtStepType.ACTION:
-                chain.append({
-                    "type": "action",
-                    "content": f"{step.tool_name}: {step.content}",
-                })
-            elif step.step_type == ThoughtStepType.OBSERVATION:
-                chain.append({"type": "observation", "content": step.content})
-        return chain
-
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ThoughtProcess":
         """从字典恢复。"""

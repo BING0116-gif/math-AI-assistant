@@ -87,7 +87,7 @@ import MessageItem from '@/components/chat/MessageItem.vue'
 import InputArea from '@/components/chat/InputArea.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
-import { sendChatMessage, sendRecognizeRequest, parseSSEStream } from '@/api/chat'
+import { sendChatMessage, sendRecognizeRequest, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
 import { renderMathInElement, renderMathSync } from '@/utils/mathRender'
 import { formatStreamText, renderMarkdown } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
@@ -140,10 +140,129 @@ function scrollToBottom() {
 
 async function handleCombinedSend({ text, image }) {
   if (image) {
-    await handleImageSend(image)
-  }
-  if (text && text.trim()) {
+    await handleMultimodalSend(text, image)
+  } else if (text && text.trim()) {
     await handleTextSend(text.trim())
+  }
+}
+
+async function handleMultimodalSend(text, imageData) {
+  if (streaming.value) return
+
+  const chatId = store.currentChatId
+
+  const userMessageContent = text && text.trim() ? text.trim() : ''
+  store.addMessage(chatId, {
+    content: imageData,
+    sender: 'user',
+    timestamp: new Date().toLocaleString(),
+    type: 'image',
+    text: userMessageContent
+  })
+  store.persistChats()
+  nextTick(() => scrollToBottom())
+
+  const msgId = generateUUID()
+  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: '正在识别...', type: 'text' })
+
+  streaming.value = true
+  streamingMessageId.value = msgId
+  streamingCharCount.value = 0
+
+  abortController.value = new AbortController()
+  let typingBuffer = ''
+  let isTyping = false
+  let rawContentBuffer = ''
+
+  try {
+    const response = await sendMultimodalRequest(userMessageContent, imageData, chatId, abortController.value.signal)
+
+    if (!response.ok) throw new Error('多模态请求失败')
+
+    const handleData = (data) => {
+      if (data.type === 'content' && data.content) {
+        typingBuffer += data.content
+        rawContentBuffer += data.content
+        if (!isTyping) {
+          isTyping = true
+          processMultimodalTyping()
+        }
+      }
+    }
+
+    const handleDone = () => {
+      streaming.value = false
+      streamingMessageId.value = null
+
+      let displayText = rawContentBuffer
+      store.updateMessage(chatId, msgId, {
+        content: displayText || '抱歉，未获取到有效回复。',
+        timestamp: new Date().toLocaleString()
+      })
+
+      nextTick(() => {
+        const el = document.getElementById(`msg-${msgId}`)
+        if (el) {
+          renderMathInElement(el)
+        }
+        scrollToBottom()
+      })
+    }
+
+    const handleError = () => {
+      streaming.value = false
+      streamingMessageId.value = null
+      store.updateMessage(chatId, msgId, {
+        content: '发生错误，请重试。',
+        timestamp: new Date().toLocaleString()
+      })
+    }
+
+    function processMultimodalTyping() {
+      const el = document.getElementById(`msg-${msgId}`)
+      if (!el || typingBuffer.length === 0) {
+        if (!streaming.value || typingBuffer.length === 0) {
+          isTyping = false
+          return
+        }
+        setTimeout(processMultimodalTyping, 50)
+        return
+      }
+
+      const chunk = typingBuffer.substring(0, 1)
+      typingBuffer = typingBuffer.substring(1)
+      streamingCharCount.value++
+
+      if (streamingCharCount.value % 30 === 0 || chunk === '\n' || typingBuffer.length === 0) {
+        const contentDiv = el.querySelector('.msg-content')
+        if (contentDiv) {
+          let display = formatStreamText(rawContentBuffer)
+          contentDiv.innerHTML = display
+
+          renderMathInElement(contentDiv)
+        }
+      }
+
+      scrollToBottom()
+      if (typingBuffer.length > 0) {
+        setTimeout(processMultimodalTyping, 8)
+      } else if (streaming.value) {
+        setTimeout(processMultimodalTyping, 50)
+      } else {
+        isTyping = false
+      }
+    }
+
+    await parseSSEStream(response, handleData, handleDone, handleError)
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      streaming.value = false
+      streamingMessageId.value = null
+      store.updateMessage(chatId, msgId, {
+        content: '发生错误: ' + err.message,
+        timestamp: new Date().toLocaleString()
+      })
+    }
   }
 }
 
@@ -259,77 +378,6 @@ async function handleTextSend(text) {
   }
 }
 
-async function handleImageSend(imageData) {
-  if (streaming.value) return
-
-  const chatId = store.currentChatId
-  store.addMessage(chatId, { content: imageData, sender: 'user', timestamp: new Date().toLocaleString(), type: 'image' })
-  store.persistChats()
-  nextTick(() => scrollToBottom())
-
-  const msgId = generateUUID()
-  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: '正在识别...', type: 'text' })
-
-  streaming.value = true
-  streamingMessageId.value = msgId
-  streamingCharCount.value = 0
-
-  let fullText = ''
-
-  try {
-    const response = await sendRecognizeRequest(imageData, chatId)
-
-    if (!response.ok) throw new Error('识别请求失败')
-
-    await parseSSEStream(response,
-      (data) => {
-        if (data.content) {
-          fullText += data.content
-          store.updateMessage(chatId, msgId, {
-            content: fullText,
-            timestamp: '识别中...'
-          })
-          nextTick(() => scrollToBottom())
-        }
-      },
-      () => {
-        streaming.value = false
-        streamingMessageId.value = null
-
-        let displayText = fullText
-        const marker = '【图片识别结果】\n'
-        const idx = fullText.indexOf(marker)
-        if (idx !== -1) displayText = fullText.substring(idx + marker.length)
-
-        store.updateMessage(chatId, msgId, {
-          content: displayText || fullText || '抱歉，图片识别失败。',
-          timestamp: new Date().toLocaleString()
-        })
-
-        nextTick(() => {
-          renderMathInElement(document.getElementById(`msg-${msgId}`))
-          scrollToBottom()
-        })
-      },
-      () => {
-        streaming.value = false
-        streamingMessageId.value = null
-        store.updateMessage(chatId, msgId, {
-          content: fullText || '识别发生错误',
-          timestamp: new Date().toLocaleString()
-        })
-      }
-    )
-  } catch (err) {
-    streaming.value = false
-    streamingMessageId.value = null
-    store.updateMessage(chatId, msgId, {
-      content: '图片识别错误: ' + err.message,
-      timestamp: new Date().toLocaleString()
-    })
-  }
-}
-
 function stopGeneration() {
   if (abortController.value) {
     abortController.value.abort()
@@ -421,47 +469,67 @@ function handleImgError(e) {
 }
 
 .chat-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   color: $text-primary;
+  background: linear-gradient(135deg, $text-primary 0%, $primary 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.header-actions { display: flex; gap: 10px; }
+.header-actions { 
+  display: flex; 
+  gap: 10px; 
+}
 
 .btn-action {
-  padding: 7px 16px;
-  border: 1px solid $border-color;
+  padding: 8px 18px;
+  border: 1.5px solid rgba(226, 232, 240, 0.6);
   border-radius: $radius-full;
-  background: white;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
   font-size: 13px;
   cursor: pointer;
   color: $text-secondary;
   font-family: inherit;
-  transition: all $transition-fast;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover:not(:disabled) {
     border-color: $primary;
     color: $primary;
+    background: rgba(99, 102, 241, 0.05);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
   }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  &:disabled { 
+    opacity: 0.5; 
+    cursor: not-allowed; 
+  }
 }
 
 .btn-stop {
-  padding: 7px 16px;
-  border: 1px solid #fca5a5;
+  padding: 8px 18px;
+  border: 1.5px solid rgba(239, 68, 68, 0.3);
   border-radius: $radius-full;
-  background: $danger-light;
-  color: $danger;
+  background: linear-gradient(135deg, rgba(254, 202, 202, 0.8) 0%, rgba(254, 226, 226, 0.9) 100%);
+  backdrop-filter: blur(8px);
+  color: #dc2626;
   font-size: 13px;
   cursor: pointer;
   font-family: inherit;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: all $transition-fast;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover {
-    background: #fecaca;
+    background: linear-gradient(135deg, #fecaca 0%, #fee2e2 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
   }
 }
 
@@ -470,38 +538,63 @@ function handleImgError(e) {
   border-radius: 50%;
   background: $danger;
   animation: pulse-dot 1.5s infinite;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.85); }
 }
 
 .messages-area {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 20px;
+  padding: 28px 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
+  scroll-behavior: smooth;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+    
+    &-thumb {
+      background: rgba(148, 163, 184, 0.3);
+      border-radius: $radius-full;
+      
+      &:hover {
+        background: rgba(148, 163, 184, 0.5);
+      }
+    }
+  }
 }
 
 .loading-indicator {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 12px 20px;
+  gap: 8px;
+  padding: 14px 20px;
   align-self: flex-start;
+  background: rgba(99, 102, 241, 0.05);
+  backdrop-filter: blur(10px);
+  border-radius: $radius-lg;
+  border: 1px solid rgba(99, 102, 241, 0.1);
 
   .dot {
-    width: 7px; height: 7px;
-    background: $primary;
+    width: 8px; height: 8px;
+    background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
     border-radius: 50%;
     animation: bounce 1.4s infinite both;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
     &:nth-child(1) { animation-delay: -0.32s; }
     &:nth-child(2) { animation-delay: -0.16s; }
   }
-  .loading-text { font-size: 13px; color: $text-tertiary; margin-left: 6px; }
+  .loading-text { 
+    font-size: 13px; 
+    color: $primary; 
+    margin-left: 6px;
+    font-weight: 500;
+  }
 }
 
 @keyframes bounce {
@@ -510,15 +603,15 @@ function handleImgError(e) {
 }
 
 .message-enter-active {
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .message-leave-active {
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
   position: absolute;
 }
 .message-enter-from {
   opacity: 0;
-  transform: translateY(20px) scale(0.95);
+  transform: translateY(30px) scale(0.95);
 }
 .message-leave-to {
   opacity: 0;
@@ -527,44 +620,69 @@ function handleImgError(e) {
 // Modal
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: fadeIn 0.3s;
+  animation: fadeIn 0.35s ease;
 }
 
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeIn { 
+  from { 
+    opacity: 0; 
+    backdrop-filter: blur(0);
+  } 
+  to { 
+    opacity: 1; 
+  } 
+}
 
 .error-modal-dialog {
-  background: white;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-radius: $radius-xl;
-  padding: 28px 32px;
-  max-width: 520px;
-  width: 92%;
+  padding: 32px 36px;
+  max-width: 540px;
+  width: 94%;
   max-height: 88vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-  animation: modalIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.9);
+  animation: modalIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  h3 { font-size: 20px; margin-bottom: 22px; color: $primary; }
+  h3 { 
+    font-size: 21px; 
+    margin-bottom: 24px; 
+    background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+  }
 }
 
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.9) translateY(20px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from { 
+    opacity: 0; 
+    transform: scale(0.92) translateY(30px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1) translateY(0); 
+  }
 }
 
 .form-group {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 
   label {
     display: block;
     font-size: 13.5px;
     font-weight: 600;
-    margin-bottom: 7px;
+    margin-bottom: 8px;
     color: $text-primary;
   }
   .required { color: $danger; }
@@ -572,62 +690,137 @@ function handleImgError(e) {
 
 .form-group textarea {
   width: 100%;
-  padding: 10px 14px;
-  border: 1px solid $border-color;
+  padding: 12px 16px;
+  border: 1.5px solid rgba(226, 232, 240, 0.6);
   border-radius: $radius-md;
   font-size: 14px;
   font-family: inherit;
   resize: vertical;
   outline: none;
-  transition: border-color $transition-fast;
+  transition: all 0.3s ease;
+  background: rgba(248, 250, 252, 0.8);
 
-  &:focus { border-color: $primary; box-shadow: 0 0 0 3px $primary-bg; }
+  &:focus { 
+    border-color: $primary; 
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.08); 
+    background: white;
+  }
+
+  &::placeholder {
+    color: $text-tertiary;
+  }
 }
 
-.preview-box { padding: 14px; background: $bg-tertiary; border-radius: $radius-md; min-height: 50px; border: 1px solid $border-light; }
-.preview-img { max-width: 100%; max-height: 180px; border-radius: $radius-sm; }
-.preview-text { font-size: 14px; color: $text-secondary; }
+.preview-box { 
+  padding: 16px; 
+  background: linear-gradient(135deg, rgba(241, 245, 249, 0.8) 0%, rgba(248, 250, 252, 0.9) 100%); 
+  border-radius: $radius-md; 
+  min-height: 50px; 
+  border: 1.5px solid rgba(226, 232, 240, 0.5); 
+}
+.preview-img { 
+  max-width: 100%; 
+  max-height: 180px; 
+  border-radius: $radius-sm; 
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.preview-text { 
+  font-size: 14px; 
+  color: $text-secondary; 
+  line-height: 1.6;
+}
 
-.tag-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-grid { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: 8px; 
+}
 
 .tag-btn {
-  padding: 7px 18px;
-  border: 1px solid $border-color;
+  padding: 8px 20px;
+  border: 1.5px solid rgba(226, 232, 240, 0.6);
   border-radius: $radius-full;
-  background: white;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
   font-size: 13px;
   cursor: pointer;
   color: $text-secondary;
   font-family: inherit;
-  transition: all $transition-fast;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-  &:hover { border-color: $primary; color: $primary; }
+  &:hover { 
+    border-color: $primary; 
+    color: $primary;
+    background: rgba(99, 102, 241, 0.04);
+    transform: translateY(-1px);
+  }
+  
   &.selected {
-    background: $primary; border-color: $primary; color: white;
+    background: linear-gradient(135deg, $primary 0%, $primary-light 100%); 
+    border-color: transparent; 
+    color: white;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
   }
 }
 
 .modal-buttons {
-  display: flex; gap: 12px; margin-top: 24px; justify-content: flex-end;
+  display: flex; 
+  gap: 12px; 
+  margin-top: 28px; 
+  justify-content: flex-end;
 
   button {
-    padding: 10px 24px;
+    padding: 11px 26px;
     border-radius: $radius-full;
     font-size: 14px;
     font-family: inherit;
     font-weight: 600;
     cursor: pointer;
-    transition: all $transition-fast;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     border: none;
   }
 }
 
 .btn-cancel {
-  background: $bg-tertiary; color: $text-secondary;
-  &:hover { background: $border-color; }
+  background: rgba(241, 245, 249, 0.9); 
+  color: $text-secondary;
+  
+  &:hover { 
+    background: rgba(226, 232, 240, 0.9);
+    transform: translateY(-1px);
+  }
 }
+
 .btn-confirm {
-  background: $primary; color: white;
-  &:hover { background: $primary-dark; transform: translateY(-1px); box-shadow: 0 4px 12px rgba($primary, 0.3); }
+  background: linear-gradient(135deg, $primary 0%, $primary-light 100%); 
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  
+  &:hover { 
+    background: linear-gradient(135deg, $primary-dark 0%, $primary 100%); 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3);
+  }
+  
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-title {
+    font-size: 15px;
+  }
+  
+  .messages-area {
+    padding: 20px 16px;
+    gap: 20px;
+  }
+  
+  .error-modal-dialog {
+    padding: 24px;
+    margin: 16px;
+  }
 }
 </style>

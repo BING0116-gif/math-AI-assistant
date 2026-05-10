@@ -17,6 +17,19 @@ export function sendRecognizeRequest(imageData, sessionId) {
   })
 }
 
+export function sendMultimodalRequest(message, imageData, sessionId, signal) {
+  return fetch('/api/chat/multimodal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: message || '',
+      image: imageData || null,
+      session_id: sessionId
+    }),
+    signal
+  })
+}
+
 export function parseSSEStream(response, onData, onDone, onError) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

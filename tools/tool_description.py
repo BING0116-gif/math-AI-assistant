@@ -152,57 +152,33 @@ class ToolDescriptionGenerator:
         """
         return [self.generate_function_call(tool) for tool in tools]
 
-    def generate_markdown_table(self, tools: List[BaseTool]) -> str:
+    def generate_structured_list(self, tools: List[BaseTool]) -> List[Dict[str, Any]]:
         """
-        生成 Markdown 表格格式的工具列表。
+        生成结构化的工具列表（字典格式）。
 
         Args:
-            tools: BaseTool 实例列表。
+            tools: BaseTool 实例列表（或工具信息字典列表）。
 
         Returns:
-            Markdown 表格字符串。
+            结构化的工具信息列表。
         """
-        if not tools:
-            return "| 工具名 | 描述 | 能力 | 版本 |\n|---|---|---|---|\n*(无工具)* |"
-
-        lines = ["| 工具名 | 描述 | 能力 | 版本 |", "|---|---|---|---|"]
+        result = []
         for tool in tools:
-            caps = ", ".join(c.value for c in tool.capabilities) if tool.capabilities else "-"
-            name = tool.name
-            desc = tool.description[:50] + ("..." if len(tool.description) > 50 else "")
-            lines.append(f"| {name} | {desc} | {caps} | {tool.version} |")
-
-        return "\n".join(lines)
-
-    def generate_json_output(self, tools: List[BaseTool]) -> str:
-        """
-        生成 JSON 格式的工具列表。
-
-        Args:
-            tools: BaseTool 实例列表。
-
-        Returns:
-            JSON 字符串。
-        """
-        schemas = self.generate_all_schemas(tools)
-        return json.dumps(schemas, ensure_ascii=False, indent=2)
-
-    def set_markdown_mode(self, enabled: bool) -> "ToolDescriptionGenerator":
-        """设置 Markdown 模式。"""
-        self._markdown_mode = enabled
-        return self
-
-    def set_include_examples(self, enabled: bool) -> "ToolDescriptionGenerator":
-        """设置是否包含示例。"""
-        self._include_examples = enabled
-        return self
-
-    def set_include_capabilities(self, enabled: bool) -> "ToolDescriptionGenerator":
-        """设置是否包含能力标签。"""
-        self._include_capabilities = enabled
-        return self
-
-    def set_include_parameters(self, enabled: bool) -> "ToolDescriptionGenerator":
-        """设置是否包含参数信息。"""
-        self._include_parameters = enabled
-        return self
+            if isinstance(tool, dict):
+                result.append({
+                    "name": tool.get("name", "unknown"),
+                    "description": tool.get("description", ""),
+                    "version": tool.get("version", "1.0.0"),
+                    "capabilities": tool.get("capabilities", []),
+                    "input_schema": tool.get("input_schema", {}),
+                })
+            else:
+                info = tool.get_info()
+                result.append({
+                    "name": info.get("name", "unknown"),
+                    "description": info.get("description", ""),
+                    "version": info.get("version", "1.0.0"),
+                    "capabilities": info.get("capabilities", []),
+                    "input_schema": info.get("input_schema", {}),
+                })
+        return result

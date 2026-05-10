@@ -5,11 +5,9 @@ prompts 包 — Prompt 工程管理模块。
 """
 
 from prompts.system_prompt import SystemPromptManager
-from prompts.tool_prompt import ToolPromptGenerator
 from prompts.react_prompt import ReActPromptTemplate
 
 __all__ = [
     "SystemPromptManager",
-    "ToolPromptGenerator",
     "ReActPromptTemplate",
 ]

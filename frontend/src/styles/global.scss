@@ -11,7 +11,8 @@ html, body {
   font-family: $font-sans;
   font-size: 15px;
   color: $text-primary;
-  background: $bg-primary;
+  background: linear-gradient(135deg, $gradient-sky-1 0%, $gradient-sky-2 25%, $gradient-sky-3 50%, $gradient-sky-4 75%, #a5f3fc 100%);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -30,10 +31,11 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: $text-tertiary;
+  background: rgba(148, 163, 184, 0.4);
   border-radius: $radius-full;
+  
   &:hover {
-    background: $text-secondary;
+    background: rgba(100, 116, 139, 0.6);
   }
 }
 
@@ -41,6 +43,7 @@ a {
   color: $primary;
   text-decoration: none;
   transition: color $transition-fast;
+  
   &:hover {
     color: $primary-dark;
   }
@@ -56,9 +59,38 @@ a {
 .el-message {
   border-radius: $radius-md !important;
   box-shadow: $shadow-lg !important;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.95) !important;
 }
 
 .el-dialog {
   border-radius: $radius-lg !important;
   overflow: hidden;
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+  }
+  50% { 
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.25);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
 }
