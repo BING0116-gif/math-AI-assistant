@@ -80,6 +80,7 @@ class MathAgent:
         self._session_histories: Dict[str, InMemoryChatMessageHistory] = {}
         self._strategy: Optional[AgentStrategy] = None
         self._enable_planner = enable_planner
+        self._planned_strategy: Optional[PlannedStrategy] = None
 
         # 统一 LLM 实例
         self._llm = ChatOpenAI(
