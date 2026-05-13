@@ -58,16 +58,17 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-        "img-src 'self' data: blob:; "
-        "font-src 'self' https://cdn.jsdelivr.net; "
-        "connect-src 'self' https://dashscope.aliyuncs.com; "
-        "frame-ancestors 'none'"
-    )
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if not settings.DEBUG:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' ws://localhost:* https://dashscope.aliyuncs.com; "
+            "frame-ancestors 'none'"
+        )
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
 
@@ -78,7 +79,10 @@ RATE_LIMIT_MAX = settings.RATE_LIMIT_PER_MINUTE
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path.startswith("/static") or request.url.path in ["/", "/error_book"]:
+    if request.url.path.startswith("/static") or request.url.path.startswith("/assets") or request.url.path.startswith("/@vite") or request.url.path.startswith("/frontend"):
+        return await call_next(request)
+
+    if request.method == "GET" and not request.url.path.startswith("/api/"):
         return await call_next(request)
 
     client_ip = request.client.host if request.client else "unknown"
@@ -127,6 +131,9 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     if request.method == "OPTIONS":
+        return await call_next(request)
+
+    if path == "/" or request.url.path.endswith(".js") or request.url.path.endswith(".css") or request.url.path.endswith(".html") or request.url.path.endswith(".woff") or request.url.path.endswith(".woff2") or request.url.path.endswith(".ttf") or request.url.path.endswith(".ico") or request.url.path.endswith(".svg") or request.url.path.endswith(".png") or request.url.path.endswith(".jpg") or request.url.path.endswith(".jpeg"):
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")
@@ -605,6 +612,14 @@ def index():
 
 @app.get("/error_book")
 def error_book():
+    return FileResponse("frontend/dist/index.html")
+
+
+@app.get("/chat")
+@app.get("/chat/{full_path:path}")
+@app.get("/error-book")
+@app.get("/error-book/{full_path:path}")
+async def spa_fallback(full_path: str = ""):
     return FileResponse("frontend/dist/index.html")
 
 

@@ -32,28 +32,30 @@ defineProps({
 
 .stat-card {
   flex: 1;
-  background: white;
-  border-radius: $radius-lg;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
   padding: 18px 20px;
   text-align: center;
-  box-shadow: $shadow-sm;
-  border: 1px solid $border-light;
-  transition: all $transition-base;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 
-  &:hover { transform: translateY(-2px); box-shadow: $shadow-md; }
+  &:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 
-  &.unmastered { border-left: 4px solid $warning; }
-  &.mastered { border-left: 4px solid $success; }
+  &.unmastered { border-left: 4px solid var(--warning); }
+  &.mastered { border-left: 4px solid var(--success); }
 }
 
 .stat-value {
-  font-size: 28px; font-weight: 800; color: $primary;
-  .unmastered & { color: $warning; }
-  .mastered & { color: $success; }
+  font-size: 28px; font-weight: 800; color: var(--primary);
+  .unmastered & { color: var(--warning); }
+  .mastered & { color: var(--success); }
 }
 
 .stat-label {
-  font-size: 13px; color: $text-tertiary; margin-top: 4px; font-weight: 500;
+  font-size: 13px; color: var(--text-tertiary); margin-top: 4px; font-weight: 500;
 }
 
 @media (max-width: 768px) {

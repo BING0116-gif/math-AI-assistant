@@ -111,12 +111,17 @@ function onImgError(e) {
 @use '@/styles/variables' as *;
 
 .error-card {
-  background: white; border-radius: $radius-lg;
-  box-shadow: $shadow-sm; border: 1px solid $border-light;
-  overflow: hidden; transition: all $transition-base;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 
-  &:hover { box-shadow: $shadow-md; }
-  &.expanded { box-shadow: $shadow-md; }
+  &:hover { box-shadow: var(--shadow-md); }
+  &.expanded { box-shadow: var(--shadow-md); }
 }
 
 .card-header {
@@ -130,36 +135,37 @@ function onImgError(e) {
 .question-area { margin-bottom: 10px; }
 
 .text-question {
-  font-size: 15px; font-weight: 600; line-height: 1.6; color: $text-primary;
+  font-size: 15px; font-weight: 600; line-height: 1.6;
+  color: var(--text-primary);
 }
 
 .image-question {
   display: flex; align-items: center; gap: 14px;
   .q-thumb {
     max-width: 110px; max-height: 75px; object-fit: cover;
-    border-radius: $radius-sm; border: 1px solid $border-color;
-    cursor: pointer; transition: transform $transition-fast;
+    border-radius: var(--radius-sm); border: 1px solid var(--border-default);
+    cursor: pointer; transition: transform var(--transition-fast);
     &:hover { transform: scale(1.05); }
   }
-  .recognized-preview { font-size: 13px; color: $text-tertiary; font-style: italic; }
+  .recognized-preview { font-size: 13px; color: var(--text-tertiary); font-style: italic; }
 }
 
 .card-meta {
-  display: flex; gap: 16px; align-items: center; font-size: 12px; color: $text-tertiary;
-  flex-wrap: wrap;
+  display: flex; gap: 16px; align-items: center; font-size: 12px;
+  color: var(--text-tertiary); flex-wrap: wrap;
 }
 
-.meta-stars { color: $accent; font-size: 13px; letter-spacing: 1px; }
+.meta-stars { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
 .meta-status { font-weight: 600;
-  &.done { color: $success; }
+  &.done { color: var(--success); }
 }
 
 .expand-btn {
-  background: none; border: none; font-size: 12px; color: $text-tertiary;
+  background: none; border: none; font-size: 12px; color: var(--text-tertiary);
   cursor: pointer; padding: 5px 8px; border-radius: 4px;
-  transition: all $transition-fast; margin-top: 2px;
-  &.rotated { transform: rotate(180deg); color: $primary; }
-  &:hover { background: $bg-tertiary; }
+  transition: all var(--transition-fast); margin-top: 2px;
+  &.rotated { transform: rotate(180deg); color: var(--primary); }
+  &:hover { background: var(--primary-ghost); }
 }
 
 .card-body {
@@ -177,36 +183,61 @@ function onImgError(e) {
 
 .section { margin-bottom: 16px; }
 .section-label { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
-.section-text { font-size: 14px; line-height: 1.8; color: $text-secondary; }
+.section-text { font-size: 14px; line-height: 1.8; color: var(--text-secondary); }
 
-.reason-section { padding: 12px 16px; background: $danger-light; border: 1px solid #fecaca; border-radius: $radius-md;
-  .section-label { color: $danger; }
+.reason-section {
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--radius-md);
+  .section-label { color: var(--danger); }
 }
-.answer-section { padding: 14px 18px; background: $success-light; border: 1px solid #a7f3d0; border-radius: $radius-md;
-  .section-label { color: $success; }
+.answer-section {
+  padding: 14px 18px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: var(--radius-md);
+  .section-label { color: var(--success); }
 }
-.notes-section { padding: 10px 14px; background: $warning-light; border: 1px solid #fde68a; border-radius: $radius-md; }
+.notes-section {
+  padding: 10px 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: var(--radius-md);
+}
 
 .math-area :deep(.katex) { font-size: 1.05em !important; }
 .math-area :deep(.katex-display) { margin: 12px 0 !important; }
 
 .tags-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.tag { padding: 4px 14px; background: $primary-bg; border-radius: $radius-full; font-size: 12px; color: $primary; font-weight: 500; }
+.tag {
+  padding: 4px 14px;
+  background: var(--primary-ghost);
+  border-radius: $radius-full;
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 500;
+}
 
-.card-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 14px; border-top: 1px solid $border-light; }
+.card-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding-top: 14px; border-top: 1px solid var(--border-light);
+}
 
 .act-btn {
   padding: 8px 18px; border-radius: $radius-full; font-size: 13px;
-  border: 1px solid $border-color; background: white; color: $text-secondary;
+  border: 1px solid var(--border-default); background: var(--bg-card);
+  color: var(--text-secondary);
   cursor: pointer; font-family: inherit; font-weight: 500;
-  transition: all $transition-fast;
+  transition: all var(--transition-fast);
 
-  &:hover { border-color: $primary; color: $primary; }
-  &.primary { background: $primary; border-color: $primary; color: white;
-    &:hover { background: $primary-dark; }
+  &:hover { border-color: var(--primary); color: var(--primary); }
+  &.primary {
+    background: var(--primary); border-color: var(--primary); color: white;
+    &:hover { background: var(--primary-hover); }
   }
-  &.danger { color: $danger;
-    &:hover { background: $danger-light; border-color: $danger; }
+  &.danger { color: var(--danger);
+    &:hover { background: rgba(239, 68, 68, 0.08); border-color: var(--danger); }
   }
 }
 
@@ -215,12 +246,12 @@ function onImgError(e) {
   display: flex; align-items: center; justify-content: center;
   animation: fadeIn 0.3s;
 }
-.viewer-img { max-width: 92vw; max-height: 90vh; object-fit: contain; border-radius: $radius-md; }
+.viewer-img { max-width: 92vw; max-height: 90vh; object-fit: contain; border-radius: var(--radius-md); }
 .viewer-close {
   position: absolute; top: 20px; right: 20px;
   width: 44px; height: 44px; border: none; border-radius: 50%;
   background: rgba(255,255,255,0.15); color: white;
-  font-size: 22px; cursor: pointer; transition: background $transition-fast;
+  font-size: 22px; cursor: pointer; transition: background var(--transition-fast);
   &:hover { background: rgba(255,255,255,0.25); }
 }
 </style>

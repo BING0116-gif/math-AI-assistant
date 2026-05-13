@@ -471,11 +471,7 @@ function handleImgError(e) {
 .chat-title {
   font-size: 17px;
   font-weight: 700;
-  color: $text-primary;
-  background: linear-gradient(135deg, $text-primary 0%, $primary 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .header-actions { 
@@ -485,23 +481,23 @@ function handleImgError(e) {
 
 .btn-action {
   padding: 8px 18px;
-  border: 1.5px solid rgba(226, 232, 240, 0.6);
+  border: 1.5px solid var(--border-light);
   border-radius: $radius-full;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--bg-card);
   backdrop-filter: blur(8px);
   font-size: 13px;
   cursor: pointer;
-  color: $text-secondary;
+  color: var(--text-secondary);
   font-family: inherit;
   font-weight: 500;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover:not(:disabled) {
-    border-color: $primary;
-    color: $primary;
-    background: rgba(99, 102, 241, 0.05);
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-ghost);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
+    box-shadow: var(--shadow-md);
   }
   
   &:disabled { 
@@ -514,9 +510,9 @@ function handleImgError(e) {
   padding: 8px 18px;
   border: 1.5px solid rgba(239, 68, 68, 0.3);
   border-radius: $radius-full;
-  background: linear-gradient(135deg, rgba(254, 202, 202, 0.8) 0%, rgba(254, 226, 226, 0.9) 100%);
+  background: rgba(239, 68, 68, 0.08);
   backdrop-filter: blur(8px);
-  color: #dc2626;
+  color: var(--danger);
   font-size: 13px;
   cursor: pointer;
   font-family: inherit;
@@ -527,16 +523,16 @@ function handleImgError(e) {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover {
-    background: linear-gradient(135deg, #fecaca 0%, #fee2e2 100%);
+    background: rgba(239, 68, 68, 0.12);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+    box-shadow: var(--shadow-md);
   }
 }
 
 .stop-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: $danger;
+  background: var(--danger);
   animation: pulse-dot 1.5s infinite;
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
 }
@@ -575,23 +571,23 @@ function handleImgError(e) {
   gap: 8px;
   padding: 14px 20px;
   align-self: flex-start;
-  background: rgba(99, 102, 241, 0.05);
+  background: var(--primary-ghost);
   backdrop-filter: blur(10px);
-  border-radius: $radius-lg;
-  border: 1px solid rgba(99, 102, 241, 0.1);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
 
   .dot {
     width: 8px; height: 8px;
-    background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
     border-radius: 50%;
     animation: bounce 1.4s infinite both;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
     &:nth-child(1) { animation-delay: -0.32s; }
     &:nth-child(2) { animation-delay: -0.16s; }
   }
   .loading-text { 
     font-size: 13px; 
-    color: $primary; 
+    color: var(--primary); 
     margin-left: 6px;
     font-weight: 500;
   }
@@ -620,7 +616,7 @@ function handleImgError(e) {
 // Modal
 .modal-backdrop {
   position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--bg-overlay);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   z-index: 9999;
@@ -641,25 +637,22 @@ function handleImgError(e) {
 }
 
 .error-modal-dialog {
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--bg-card);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-radius: $radius-xl;
+  border-radius: var(--radius-xl);
   padding: 32px 36px;
   max-width: 540px;
   width: 94%;
   max-height: 88vh;
   overflow-y: auto;
-  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-lg);
   animation: modalIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   h3 { 
     font-size: 21px; 
     margin-bottom: 24px; 
-    background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--primary);
     font-weight: 700;
   }
 }
@@ -683,40 +676,41 @@ function handleImgError(e) {
     font-size: 13.5px;
     font-weight: 600;
     margin-bottom: 8px;
-    color: $text-primary;
+    color: var(--text-primary);
   }
-  .required { color: $danger; }
+  .required { color: var(--danger); }
 }
 
 .form-group textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 1.5px solid rgba(226, 232, 240, 0.6);
-  border-radius: $radius-md;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-md);
   font-size: 14px;
   font-family: inherit;
   resize: vertical;
   outline: none;
   transition: all 0.3s ease;
-  background: rgba(248, 250, 252, 0.8);
+  background: var(--bg-card);
+  color: var(--text-primary);
 
   &:focus { 
-    border-color: $primary; 
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.08); 
-    background: white;
+    border-color: var(--primary); 
+    box-shadow: 0 0 0 4px var(--primary-ghost); 
+    background: var(--bg-card);
   }
 
   &::placeholder {
-    color: $text-tertiary;
+    color: var(--text-tertiary);
   }
 }
 
 .preview-box { 
   padding: 16px; 
-  background: linear-gradient(135deg, rgba(241, 245, 249, 0.8) 0%, rgba(248, 250, 252, 0.9) 100%); 
-  border-radius: $radius-md; 
+  background: var(--bg-card); 
+  border-radius: var(--radius-md); 
   min-height: 50px; 
-  border: 1.5px solid rgba(226, 232, 240, 0.5); 
+  border: 1.5px solid var(--border-light);
 }
 .preview-img { 
   max-width: 100%; 
@@ -726,7 +720,7 @@ function handleImgError(e) {
 }
 .preview-text { 
   font-size: 14px; 
-  color: $text-secondary; 
+  color: var(--text-secondary); 
   line-height: 1.6;
 }
 
@@ -738,29 +732,29 @@ function handleImgError(e) {
 
 .tag-btn {
   padding: 8px 20px;
-  border: 1.5px solid rgba(226, 232, 240, 0.6);
+  border: 1.5px solid var(--border-light);
   border-radius: $radius-full;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--bg-card);
   backdrop-filter: blur(8px);
   font-size: 13px;
   cursor: pointer;
-  color: $text-secondary;
+  color: var(--text-secondary);
   font-family: inherit;
   font-weight: 500;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover { 
-    border-color: $primary; 
-    color: $primary;
-    background: rgba(99, 102, 241, 0.04);
+    border-color: var(--primary); 
+    color: var(--primary);
+    background: var(--primary-ghost);
     transform: translateY(-1px);
   }
   
   &.selected {
-    background: linear-gradient(135deg, $primary 0%, $primary-light 100%); 
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); 
     border-color: transparent; 
     color: white;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    box-shadow: var(--shadow-md);
   }
 }
 
@@ -783,24 +777,24 @@ function handleImgError(e) {
 }
 
 .btn-cancel {
-  background: rgba(241, 245, 249, 0.9); 
-  color: $text-secondary;
+  background: var(--primary-ghost); 
+  color: var(--text-secondary);
   
   &:hover { 
-    background: rgba(226, 232, 240, 0.9);
+    background: var(--border-light);
     transform: translateY(-1px);
   }
 }
 
 .btn-confirm {
-  background: linear-gradient(135deg, $primary 0%, $primary-light 100%); 
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); 
   color: white;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  box-shadow: var(--shadow-glow);
   
   &:hover { 
-    background: linear-gradient(135deg, $primary-dark 0%, $primary 100%); 
+    filter: brightness(1.1);
     transform: translateY(-2px); 
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.3);
+    box-shadow: var(--shadow-glow);
   }
   
   &:active {

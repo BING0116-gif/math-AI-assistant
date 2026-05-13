@@ -3,15 +3,21 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
+    name: 'Home',
+    component: () => import('@/views/HomeView.vue'),
+    meta: { title: '数学AI助手', transition: 'slide-fade' }
+  },
+  {
+    path: '/chat',
     name: 'Chat',
     component: () => import('@/views/ChatView.vue'),
-    meta: { title: '数学AI助手', transition: 'slide-fade' }
+    meta: { title: '智能对话 - 数学AI助手', transition: 'slide-fade' }
   },
   {
     path: '/chat/:chatId',
     name: 'ChatDetail',
     component: () => import('@/views/ChatView.vue'),
-    meta: { title: '数学AI助手', transition: 'slide-fade' }
+    meta: { title: '智能对话 - 数学AI助手', transition: 'slide-fade' }
   },
   {
     path: '/error-book',

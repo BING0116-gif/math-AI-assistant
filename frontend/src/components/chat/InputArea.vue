@@ -101,10 +101,10 @@ function send() {
 
 .input-area-wrap {
   padding: 18px 24px 22px;
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--bg-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(226, 232, 240, 0.4);
+  border-top: 1px solid var(--border-light);
   flex-shrink: 0;
   position: relative;
 
@@ -191,7 +191,7 @@ function send() {
 
 .hint-text { 
   font-size: 13px; 
-  color: $primary; 
+  color: var(--primary); 
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -200,14 +200,14 @@ function send() {
   display: flex;
   gap: 12px;
   align-items: flex-end;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--bg-card);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   padding: 14px 18px;
   border-radius: $radius-xl;
-  border: 2px solid rgba(226, 232, 240, 0.5);
+  border: 2px solid var(--border-light);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-md);
 
   &:hover,
   &:focus-within {
@@ -216,7 +216,7 @@ function send() {
   }
 
   &:focus-within {
-    border-color: $primary-light;
+    border-color: var(--primary-hover);
     box-shadow: 0 8px 30px rgba(99, 102, 241, 0.12), 0 0 0 4px rgba(99, 102, 241, 0.06);
   }
 }
@@ -234,11 +234,11 @@ function send() {
   outline: none;
   transition: all 0.25s ease;
   background: transparent;
-  color: $text-primary;
+  color: var(--text-primary);
   line-height: 1.6;
 
   &::placeholder {
-    color: $text-tertiary;
+    color: var(--text-tertiary);
     font-style: italic;
   }
 
@@ -255,9 +255,9 @@ function send() {
 .send-btn {
   width: 48px; height: 48px;
   border-radius: $radius-lg;
-  border: 2px solid rgba(226, 232, 240, 0.5);
+  border: 2px solid var(--border-light);
   background: linear-gradient(135deg, rgba(241, 245, 249, 0.9) 0%, rgba(248, 250, 252, 0.95) 100%);
-  color: $text-tertiary;
+  color: var(--text-tertiary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -271,7 +271,7 @@ function send() {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
     opacity: 0;
     transition: opacity 0.35s ease;
   }

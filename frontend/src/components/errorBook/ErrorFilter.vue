@@ -56,37 +56,48 @@ function handleReset() {
 @use '@/styles/variables' as *;
 
 .filter-panel {
-  background: white; border-radius: $radius-lg; padding: 22px 24px;
-  box-shadow: $shadow-sm; border: 1px solid $border-light; margin-bottom: 22px;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
+  margin-bottom: 22px;
   position: relative;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
-.filter-title { font-size: 15px; font-weight: 700; color: $text-primary; margin-bottom: 16px; }
+.filter-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
 
 .filter-grid { display: flex; gap: 20px; }
 
 .filter-field {
   flex: 1;
-  label { display: block; font-size: 12.5px; font-weight: 600; color: $text-secondary; margin-bottom: 7px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 7px; }
 }
 
 .filter-input {
   width: 100%; padding: 10px 14px;
-  border: 1.5px solid $border-color; border-radius: $radius-md;
+  border: 1.5px solid var(--border-default); border-radius: var(--radius-md);
   font-size: 14px; font-family: inherit; outline: none;
-  transition: border-color $transition-fast;
-  background: $bg-tertiary;
+  transition: border-color var(--transition-fast);
+  background: var(--bg-card);
+  color: var(--text-primary);
 
-  &:focus { border-color: $primary; background: white; box-shadow: 0 0 0 3px rgba($primary, 0.06); }
+  &:focus {
+    border-color: var(--primary);
+    background: var(--bg-card);
+    box-shadow: 0 0 0 3px var(--primary-ghost);
+  }
 }
 
 .reset-btn {
   position: absolute; top: 22px; right: 24px;
   padding: 6px 16px; border-radius: $radius-full;
-  border: 1px solid $border-color; background: white;
-  font-size: 13px; cursor: pointer; color: $text-secondary; font-family: inherit;
-  transition: all $transition-fast;
-  &:hover { border-color: $primary; color: $primary; }
+  border: 1px solid var(--border-default); background: var(--bg-card);
+  font-size: 13px; cursor: pointer; color: var(--text-secondary); font-family: inherit;
+  transition: all var(--transition-fast);
+  &:hover { border-color: var(--primary); color: var(--primary); }
 }
 
 @media (max-width: 768px) {

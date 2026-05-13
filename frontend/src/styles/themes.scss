@@ -1,0 +1,79 @@
+// ========================================
+// 数学AI助手 - 主题 CSS 自定义属性定义
+// 亮色/暗色双主题完整令牌
+// ========================================
+
+// 亮色主题（默认）
+:root,
+[data-theme='light'] {
+  --primary: #FF6B6B;
+  --primary-hover: #F87171;
+  --primary-active: #DC2626;
+  --primary-ghost: rgba(245, 158, 11, 0.08);
+
+  --accent: #4F46E5;
+  --accent-ghost: rgba(79, 70, 229, 0.10);
+
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --info: #3B82F6;
+
+  --bg-main: #F3F6FA;
+  --bg-card: #FFFFFF;
+  --bg-sidebar: #F8FAFC;
+  --bg-topbar: #FFFFFF;
+  --bg-overlay: rgba(15, 23, 42, 0.3);
+
+  --text-primary: #1E293B;
+  --text-secondary: #64748B;
+  --text-tertiary: #94A3B8;
+
+  --border-default: #CBD5E1;
+  --border-light: #E2E8F0;
+  --border-subtle: #F1F5F9;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+
+  --transition-theme: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+// 暗色主题
+[data-theme='dark'] {
+  --primary: #F59E0B;
+  --primary-hover: #D97706;
+  --primary-active: #B45309;
+  --primary-ghost: rgba(245, 158, 11, 0.15);
+
+  --accent: #F59E0B;
+  --accent-ghost: rgba(245, 158, 11, 0.20);
+
+  --bg-main: #0f172a;
+  --bg-card: rgba(30, 41, 59, 0.95);
+  --bg-sidebar: rgba(30, 41, 59, 0.95);
+  --bg-topbar: rgba(51, 65, 85, 0.9);
+  --bg-overlay: rgba(15, 23, 42, 0.7);
+
+  --text-primary: #FFFFFF;
+  --text-secondary: rgba(255, 255, 255, 0.70);
+  --text-tertiary: rgba(255, 255, 255, 0.45);
+
+  --border-default: rgba(255, 255, 255, 0.25);
+  --border-light: rgba(255, 255, 255, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.10);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --shadow-glow: 0 0 30px rgba(245, 158, 11, 0.25);
+}

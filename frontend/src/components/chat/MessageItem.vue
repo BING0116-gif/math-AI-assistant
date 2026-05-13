@@ -89,7 +89,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
     max-width: 75%;
 
     .msg-body {
-      background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
       color: white;
       border-radius: $radius-xl $radius-xl 6px $radius-xl;
       padding: 16px 22px;
@@ -115,19 +115,19 @@ watch(() => [props.isStreaming, props.message.content], () => {
     align-self: flex-start;
 
     .msg-body {
-      background: rgba(255, 255, 255, 0.92);
+      background: var(--bg-card);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border-radius: 6px $radius-xl $radius-xl $radius-xl;
       padding: 18px 24px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
-      border: 1px solid rgba(226, 232, 240, 0.4);
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border-light);
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
       &:hover {
         box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06);
         transform: translateY(-1px);
-        border-color: rgba(226, 232, 240, 0.6);
+        border-color: var(--border-light);
       }
     }
 
@@ -144,7 +144,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
           transform: translateX(-50%);
           width: 40%;
           height: 2px;
-          background: linear-gradient(90deg, transparent 0%, $primary 50%, transparent 100%);
+          background: linear-gradient(90deg, transparent 0%, var(--primary) 50%, transparent 100%);
           animation: typing-indicator 1.5s ease-in-out infinite;
         }
       }
@@ -177,11 +177,11 @@ watch(() => [props.isStreaming, props.message.content], () => {
 .msg-avatar {
   width: 40px; height: 40px;
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(129, 140, 248, 0.15) 100%);
-  border-radius: $radius-lg;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: $primary;
+  color: var(--primary);
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   transition: all 0.3s ease;
@@ -208,9 +208,9 @@ watch(() => [props.isStreaming, props.message.content], () => {
     font-size: 22px; 
     font-weight: 700; 
     margin: 20px 0 14px; 
-    border-bottom: 2.5px solid linear-gradient(90deg, $primary 0%, $primary-light 100%);
+    border-bottom: 2.5px solid linear-gradient(90deg, var(--primary) 0%, var(--primary-hover) 100%);
     padding-bottom: 10px; 
-    background: linear-gradient(135deg, $text-primary 0%, $primary 100%);
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--primary) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -219,7 +219,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
     font-size: 19px; 
     font-weight: 600; 
     margin: 18px 0 12px; 
-    color: $primary-dark;
+    color: var(--primary-dark);
   }
   :deep(h3) { 
     font-size: 17px; 
@@ -228,7 +228,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
   }
   :deep(strong) { 
     font-weight: 700; 
-    color: $text-primary;
+    color: var(--text-primary);
   }
   :deep(code) {
     background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(254, 202, 202, 0.12) 100%);
@@ -243,7 +243,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
     background: linear-gradient(135deg, #1e293b 0%, #334155 100%); 
     color: #e2e8f0; 
     padding: 18px 22px;
-    border-radius: $radius-lg; 
+    border-radius: var(--radius-lg); 
     overflow-x: auto; 
     margin: 16px 0;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -259,11 +259,11 @@ watch(() => [props.isStreaming, props.message.content], () => {
   :deep(blockquote) {
     margin: 16px 0; 
     padding: 14px 20px;
-    border-left: 4px solid $primary; 
+    border-left: 4px solid var(--primary); 
     background: linear-gradient(90deg, rgba(99, 102, 241, 0.04) 0%, rgba(129, 140, 248, 0.02) 100%);
     border-radius: 0 $radius-md $radius-md 0;
     font-style: italic;
-    color: $text-secondary;
+    color: var(--text-secondary);
   }
   :deep(hr) { 
     margin: 22px 0; 
@@ -278,17 +278,17 @@ watch(() => [props.isStreaming, props.message.content], () => {
     margin: 20px 0 !important; 
     padding: 18px 24px !important;
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-    border-radius: $radius-lg !important;
+    border-radius: var(--radius-lg) !important;
     overflow-x: auto !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    border: 1px solid rgba(226, 232, 240, 0.4);
+    border: 1px solid var(--border-light);
   }
   :deep(.math-display) {
     display: block;
     margin: 20px 0;
     padding: 18px 24px;
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    border-radius: $radius-lg;
+    border-radius: var(--radius-lg);
     overflow-x: auto;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -312,7 +312,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
 
 .msg-image { 
   max-width: 280px; 
-  border-radius: $radius-lg; 
+  border-radius: var(--radius-lg); 
   display: block; 
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
   border: 2px solid rgba(255, 255, 255, 0.8);
@@ -340,7 +340,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
 
 .msg-time {
   font-size: 11.5px;
-  color: $text-tertiary;
+  color: var(--text-tertiary);
   margin-top: 10px;
   text-align: right;
   font-weight: 500;
@@ -350,13 +350,13 @@ watch(() => [props.isStreaming, props.message.content], () => {
 
 .msg-ai .msg-time { 
   text-align: left; 
-  color: $text-tertiary;
+  color: var(--text-tertiary);
 }
 
 .error-book-actions {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1.5px solid rgba(226, 232, 240, 0.35);
+  border-top: 1.5px solid var(--border-light);
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -368,7 +368,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  border: 1.5px solid rgba(226, 232, 240, 0.5);
+  border: 1.5px solid var(--border-light);
   font-family: inherit;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: inline-flex;
@@ -377,12 +377,12 @@ watch(() => [props.isStreaming, props.message.content], () => {
 
   &.add {
     background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(129, 140, 248, 0.12) 100%);
-    color: $primary;
+    color: var(--primary);
     border-color: rgba(99, 102, 241, 0.25);
     box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
 
     &:hover { 
-      background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
       color: white;
       transform: translateY(-2px); 
       box-shadow: 0 6px 20px rgba(99, 102, 241, 0.25);
@@ -396,7 +396,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
   
   &.skip {
     background: rgba(241, 245, 249, 0.9); 
-    color: $text-secondary;
+    color: var(--text-secondary);
     
     &:hover { 
       background: rgba(226, 232, 240, 0.9);
@@ -414,7 +414,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
   
   &.skipped {
     background: rgba(241, 245, 249, 0.6); 
-    color: $text-tertiary;
+    color: var(--text-tertiary);
     cursor: default; 
     text-decoration: line-through;
     opacity: 0.7;

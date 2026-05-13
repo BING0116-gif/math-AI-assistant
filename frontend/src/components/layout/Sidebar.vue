@@ -1,10 +1,10 @@
 <template>
-  <aside class="sidebar" :class="{ collapsed }">
+  <aside class="sidebar" :class="{ collapsed }" role="navigation" aria-label="主导航">
     <div class="sidebar-inner">
       <div class="sidebar-top">
         <div class="brand">
           <div class="brand-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
               <line x1="8" y1="7" x2="16" y2="7"/>
@@ -16,11 +16,14 @@
             <span>你的智能数学学习伙伴</span>
           </div>
         </div>
+        <div class="theme-toggle-wrapper">
+          <ThemeToggle />
+        </div>
       </div>
 
       <div class="sidebar-actions">
         <button class="btn-new-chat" @click="handleNewChat">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           新对话
@@ -38,9 +41,12 @@
               :class="{ active: chat.id === store.currentChatId }"
               @click="store.switchChat(chat.id)"
               @contextmenu.prevent="showContextMenu($event, chat)"
+              role="button"
+              :tabindex="0"
+              @keydown.enter="store.switchChat(chat.id)"
             >
               <div class="history-item-icon">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
                 </svg>
               </div>
@@ -57,7 +63,7 @@
       <div class="sidebar-footer">
         <router-link to="/error-book" class="btn-error-book">
           <span class="eb-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
             </svg>
@@ -72,11 +78,12 @@
         v-if="contextMenu.visible"
         class="context-overlay"
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        role="menu"
       >
-        <div class="ctx-item" @click.stop="handleRename">
+        <div class="ctx-item" @click.stop="handleRename" role="menuitem">
           <span>✏️</span> 重命名
         </div>
-        <div class="ctx-item danger" @click.stop="handleDelete">
+        <div class="ctx-item danger" @click.stop="handleDelete" role="menuitem">
           <span>🗑️</span> 删除对话
         </div>
       </div>
@@ -87,6 +94,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 
 const props = defineProps({ collapsed: Boolean })
 const emit = defineEmits(['toggle'])
@@ -153,16 +161,16 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   top: 0;
   width: $sidebar-width;
   height: 100vh;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--bg-sidebar);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(226, 232, 240, 0.4);
+  border-right: 1px solid var(--border-light);
   z-index: 100;
   transform: translateX(0);
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm);
 
   &.collapsed {
     transform: translateX(-100%);
@@ -179,9 +187,8 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 .sidebar-top {
   padding: 28px 22px 18px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.3);
+  border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(129, 140, 248, 0.05) 100%);
 }
 
 .brand {
@@ -193,39 +200,41 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 .brand-icon {
   width: 46px;
   height: 46px;
-  background: linear-gradient(135deg, $primary 0%, $primary-light 100%);
-  border-radius: $radius-lg;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   flex-shrink: 0;
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.25);
+  box-shadow: var(--shadow-glow);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover {
     transform: scale(1.08) rotate(-3deg);
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35);
+    box-shadow: var(--shadow-glow);
   }
 }
 
 .brand-text h1 {
   font-size: 18px;
   font-weight: 700;
-  color: $text-primary;
+  color: var(--text-primary);
   line-height: 1.3;
-  background: linear-gradient(135deg, $text-primary 0%, $primary 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .brand-text span {
   font-size: 12px;
-  color: $text-tertiary;
+  color: var(--text-tertiary);
   display: block;
   margin-top: 2px;
   letter-spacing: 0.02em;
+}
+
+.theme-toggle-wrapper {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .sidebar-actions {
@@ -236,10 +245,10 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 .btn-new-chat {
   width: 100%;
   padding: 13px 18px;
-  border: 2px dashed rgba(99, 102, 241, 0.25);
-  border-radius: $radius-lg;
-  background: linear-gradient(135deg, rgba(238, 242, 255, 0.8) 0%, rgba(255, 255, 255, 0.9) 100%);
-  color: $primary;
+  border: 2px dashed var(--primary);
+  border-radius: var(--radius-lg);
+  background: var(--primary-ghost);
+  color: var(--primary);
   font-size: 14px;
   font-weight: 600;
   font-family: inherit;
@@ -251,11 +260,11 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(129, 140, 248, 0.12) 100%);
-    border-color: $primary;
+    background: var(--primary-ghost);
     border-style: solid;
+    border-color: var(--primary);
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.2);
+    box-shadow: var(--shadow-glow);
   }
 
   &:active {
@@ -283,7 +292,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: $text-tertiary;
+  color: var(--text-tertiary);
   padding: 12px 16px 10px;
   font-weight: 700;
   flex-shrink: 0;
@@ -301,7 +310,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-radius: $radius-md;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   margin-bottom: 3px;
@@ -312,30 +321,31 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(129, 140, 248, 0.03) 100%);
+    background: var(--primary-ghost);
     opacity: 0;
     transition: opacity 0.25s ease;
   }
 
   &:hover {
-    background: rgba(241, 245, 249, 0.7);
-    
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+
     &::before {
       opacity: 1;
     }
   }
 
   &.active {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(129, 140, 248, 0.08) 100%);
-    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.12);
-    
-    .history-item-icon { 
-      color: $primary; 
+    background: var(--primary-ghost);
+    border: 1px solid rgba(245, 158, 11, 0.12);
+
+    .history-item-icon {
+      color: var(--primary);
       transform: scale(1.1);
     }
-    .history-title { 
-      color: $primary-dark; 
-      font-weight: 700; 
+    .history-title {
+      color: var(--primary);
+      font-weight: 700;
     }
   }
 
@@ -346,7 +356,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 }
 
 .history-item-icon {
-  color: $text-tertiary;
+  color: var(--text-tertiary);
   flex-shrink: 0;
   display: flex;
   transition: all 0.25s ease;
@@ -362,7 +372,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 .history-title {
   font-size: 13.5px;
-  color: $text-primary;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -372,12 +382,12 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 .history-time {
   font-size: 11px;
-  color: $text-tertiary;
+  color: var(--text-tertiary);
 }
 
 .empty-hint {
   text-align: center;
-  color: $text-tertiary;
+  color: var(--text-tertiary);
   font-size: 13px;
   padding: 40px 0;
   opacity: 0.7;
@@ -385,18 +395,17 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 .sidebar-footer {
   padding: 16px 18px;
-  border-top: 1px solid rgba(226, 232, 240, 0.3);
+  border-top: 1px solid var(--border-light);
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.5);
 }
 
 .btn-error-book {
   width: 100%;
   padding: 13px 18px;
-  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%);
-  border: 1px solid rgba(251, 146, 60, 0.3);
-  border-radius: $radius-lg;
-  color: #c2410c;
+  background: linear-gradient(135deg, var(--primary-ghost) 0%, var(--accent-ghost) 100%);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--primary);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -406,13 +415,11 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   justify-content: center;
   gap: 10px;
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.08);
 
   &:hover {
-    background: linear-gradient(135deg, #ffedd5 0%, #fed7aa 50%, #fdba74 100%);
+    background: var(--primary-ghost);
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(234, 88, 12, 0.2);
-    border-color: rgba(251, 146, 60, 0.5);
+    box-shadow: var(--shadow-glow);
   }
 
   &:active {
@@ -423,32 +430,32 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 .context-overlay {
   position: fixed;
   z-index: 9999;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--bg-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(226, 232, 240, 0.5);
-  border-radius: $radius-lg;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   min-width: 150px;
   padding: 6px 0;
   animation: ctxIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes ctxIn {
-  from { 
-    opacity: 0; 
-    transform: scale(0.9) translateY(-8px); 
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-8px);
   }
-  to { 
-    opacity: 1; 
-    transform: scale(1) translateY(0); 
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
 
 .ctx-item {
   padding: 10px 20px;
   font-size: 13.5px;
-  color: $text-primary;
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -456,15 +463,15 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
   transition: all 0.2s ease;
   font-weight: 500;
 
-  &:hover { 
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.06) 0%, transparent 100%); 
+  &:hover {
+    background: var(--primary-ghost);
     padding-left: 24px;
   }
-  
-  &.danger { 
-    color: $danger;
-    &:hover { 
-      background: linear-gradient(90deg, rgba(239, 68, 68, 0.08) 0%, transparent 100%);
+
+  &.danger {
+    color: var(--danger);
+    &:hover {
+      background: rgba(239, 68, 68, 0.08);
     }
   }
 }
@@ -474,7 +481,7 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 @media (max-width: 768px) {
   .sidebar {
     width: 280px;
-    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-lg);
   }
 }
 </style>

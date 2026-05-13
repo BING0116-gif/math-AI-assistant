@@ -119,18 +119,23 @@ onMounted(() => {
 @use '@/styles/variables' as *;
 
 .detail-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9999;
+  position: fixed; inset: 0; background: var(--bg-overlay); z-index: 9999;
   display: flex; align-items: center; justify-content: center;
-  backdrop-filter: blur(3px); animation: fadeIn 0.3s;
+  backdrop-filter: blur(4px); animation: fadeIn 0.3s;
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .detail-container {
-  background: white; border-radius: $radius-xl; width: min(92vw, 880px);
-  height: min(90vh, 750px); display: flex; flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  width: min(92vw, 880px);
+  height: min(90vh, 750px);
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-lg);
   animation: modalIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
 }
 
 @keyframes modalIn {
@@ -139,86 +144,92 @@ onMounted(() => {
 }
 
 .detail-header {
-  padding: 18px 24px; border-bottom: 1px solid $border-color;
+  padding: 18px 24px; border-bottom: 1px solid var(--border-light);
   display: flex; justify-content: space-between; align-items: center;
-  background: $bg-primary; border-radius: $radius-xl $radius-xl 0 0;
-  h2 { font-size: 18px; color: $primary; display: flex; align-items: center; gap: 8px; }
+  background: var(--bg-card); border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  h2 { font-size: 18px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
 }
 
 .close-btn {
-  background: none; border: none; font-size: 22px; color: $text-tertiary;
-  cursor: pointer; padding: 4px 10px; border-radius: $radius-sm;
-  &:hover { background: $bg-tertiary; color: $text-primary; }
+  background: none; border: none; font-size: 22px; color: var(--text-tertiary);
+  cursor: pointer; padding: 4px 10px; border-radius: var(--radius-sm);
+  &:hover { background: var(--primary-ghost); color: var(--text-primary); }
 }
 
 .detail-nav {
   padding: 10px 24px; display: flex; justify-content: space-between; align-items: center;
-  background: white; border-bottom: 1px solid $border-light;
+  background: var(--bg-card); border-bottom: 1px solid var(--border-light);
 }
 
 .nav-btn {
-  padding: 8px 18px; border: 1px solid $border-color; border-radius: $radius-full;
-  background: white; font-size: 13px; cursor: pointer; color: $text-secondary;
-  font-family: inherit; display: flex; align-items: center; gap: 6px; transition: all $transition-fast;
-  &:hover:not(:disabled) { border-color: $primary; color: $primary; }
+  padding: 8px 18px; border: 1px solid var(--border-default); border-radius: $radius-full;
+  background: var(--bg-card); font-size: 13px; cursor: pointer; color: var(--text-secondary);
+  font-family: inherit; display: flex; align-items: center; gap: 6px; transition: all var(--transition-fast);
+  &:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
   &:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
-.nav-counter { font-size: 14px; font-weight: 600; color: $text-secondary; }
+.nav-counter { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
 
 .detail-body {
   flex: 1; overflow-y: auto; padding: 20px 24px;
 }
 
 .d-section { margin-bottom: 20px;
-  h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: $text-primary; display: flex; align-items: center; gap: 6px; }
+  h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
 }
 
 .d-content {
-  padding: 14px 18px; background: $bg-tertiary; border: 1px solid $border-light;
-  border-radius: $radius-md; line-height: 1.8;
+  padding: 14px 18px; background: var(--bg-card); border: 1px solid var(--border-light);
+  border-radius: var(--radius-md); line-height: 1.8;
 }
 
-.d-text { font-size: 14px; }
+.d-text { font-size: 14px; color: var(--text-primary); }
 .d-image {
-  max-width: 100%; max-height: 300px; border-radius: $radius-sm;
-  cursor: zoom-in; border: 1px solid $border-color;
+  max-width: 100%; max-height: 300px; border-radius: var(--radius-sm);
+  cursor: zoom-in; border: 1px solid var(--border-default);
 }
 
-.recognized { margin-top: 10px; font-size: 13px; color: $text-tertiary; font-style: italic; }
+.recognized { margin-top: 10px; font-size: 13px; color: var(--text-tertiary); font-style: italic; }
 
-.reason-box { background: $danger-light; border-color: #fecaca; }
-.answer-box { background: $success-light; border-color: #a7f3d0; }
-.notes-box { background: $warning-light; border-color: #fde68a; }
+.reason-box { background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.15); }
+.answer-box { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); }
+.notes-box { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.15); }
 
 .math-area :deep(.katex) { font-size: 1.05em !important; }
 .math-area :deep(.katex-display) { margin: 12px 0 !important; }
 
 .tag-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.tag { padding: 4px 14px; background: $primary-bg; border-radius: $radius-full; font-size: 12px; color: $primary; font-weight: 500; }
+.tag {
+  padding: 4px 14px; background: var(--primary-ghost);
+  border-radius: $radius-full; font-size: 12px; color: var(--primary); font-weight: 500;
+}
 
 .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .meta-cell {
-  padding: 12px 16px; background: $bg-tertiary; border-radius: $radius-md; font-size: 13px;
-  &.mastered { background: $success-light; }
+  padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border-light);
+  border-radius: var(--radius-md); font-size: 13px; color: var(--text-secondary);
+  &.mastered { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); }
 }
-.stars { color: $accent; letter-spacing: 1px; }
+.stars { color: var(--accent); letter-spacing: 1px; }
 
 .detail-footer {
-  padding: 14px 24px; border-top: 1px solid $border-color;
+  padding: 14px 24px; border-top: 1px solid var(--border-light);
   display: flex; justify-content: flex-end; gap: 12px;
-  background: $bg-primary; border-radius: 0 0 $radius-xl $radius-xl;
+  background: var(--bg-card); border-radius: 0 0 var(--radius-xl) var(--radius-xl);
 }
 
 .ft-btn {
   padding: 9px 22px; border-radius: $radius-full; font-size: 13px;
-  border: 1px solid $border-color; background: white; cursor: pointer;
-  font-family: inherit; font-weight: 500; transition: all $transition-fast;
-  &.primary { background: $primary; border-color: $primary; color: white;
-    &:hover { background: $primary-dark; }
+  border: 1px solid var(--border-default); background: var(--bg-card); cursor: pointer;
+  font-family: inherit; font-weight: 500; transition: all var(--transition-fast);
+  color: var(--text-secondary);
+  &.primary {
+    background: var(--primary); border-color: var(--primary); color: white;
+    &:hover { background: var(--primary-hover); }
   }
-  &.danger { color: $danger;
-    &:hover { background: $danger-light; border-color: $danger; }
+  &.danger { color: var(--danger);
+    &:hover { background: rgba(239, 68, 68, 0.08); border-color: var(--danger); }
   }
 }
 
@@ -226,7 +237,7 @@ onMounted(() => {
   position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 99999;
   display: flex; align-items: center; justify-content: center;
 }
-.v-img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: $radius-md; }
+.v-img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: var(--radius-md); }
 .v-close {
   position: absolute; top: 20px; right: 20px;
   width: 44px; height: 44px; border: none; border-radius: 50%;

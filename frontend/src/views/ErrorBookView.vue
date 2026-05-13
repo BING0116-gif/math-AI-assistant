@@ -151,28 +151,24 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 .eb-title { 
   font-size: 18px; 
   font-weight: 700; 
-  color: $text-primary; 
-  background: linear-gradient(135deg, $text-primary 0%, $primary 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .back-link {
   font-size: 13px; 
-  color: $primary; 
+  color: var(--primary); 
   text-decoration: none; 
   font-weight: 600;
   padding: 8px 18px; 
   border-radius: $radius-full; 
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  background: rgba(99, 102, 241, 0.06);
-  border: 1.5px solid rgba(99, 102, 241, 0.15);
+  background: var(--primary-ghost);
+  border: 1.5px solid var(--border-default);
 
   &:hover { 
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(129, 140, 248, 0.12) 100%);
+    background: var(--primary-ghost);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+    box-shadow: var(--shadow-md);
   }
 }
 
@@ -209,10 +205,10 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 .empty-state {
   text-align: center; 
   padding: 80px 20px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.8) 100%);
+  background: var(--bg-card);
   backdrop-filter: blur(10px);
   border-radius: $radius-xl;
-  border: 2px dashed rgba(226, 232, 240, 0.5);
+  border: 2px dashed var(--border-light);
   
   .empty-icon { 
     font-size: 56px; 
@@ -222,14 +218,14 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
   
   .empty-text { 
     font-size: 18px; 
-    color: $text-secondary; 
+    color: var(--text-secondary); 
     font-weight: 700; 
     margin-bottom: 10px;
   }
   
   .empty-hint { 
     font-size: 14px; 
-    color: $text-tertiary;
+    color: var(--text-tertiary);
     line-height: 1.6;
     max-width: 400px;
     margin: 0 auto;
