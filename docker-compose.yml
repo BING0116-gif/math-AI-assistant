@@ -1,19 +1,99 @@
 version: '3.8'
 
 services:
-  app:
+  web:
     build: .
     ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
-    env_file:
-      - .env
+      - "${PORT:-8000}:8000"
     environment:
-      - PYTHONUNBUFFERED=1
-    command: sh -c "pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple && python main.py"
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/math_ai.db}
+      - ASYNC_DATABASE_URL=${ASYNC_DATABASE_URL:-sqlite+aiosqlite:///./data/math_ai.db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DB_USER=${DB_USER:-mathai}
+      - DB_PASSWORD=${DB_PASSWORD:-changeme}
+      - DB_NAME=${DB_NAME:-math_ai}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_PORT=${DB_PORT:-5432}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./agent_core:/app/agent_core
+      - ./tools:/app/tools
+      - ./data_processing:/app/data_processing
+      - ./frontend:/app/frontend
+      - ./static:/app/static
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
     networks:
       - mathai-network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-mathai}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${DB_NAME:-math_ai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mathai} -d ${DB_NAME:-math_ai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    networks:
+      - mathai-network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    networks:
+      - mathai-network
+
+volumes:
+  postgres_data:
+  redis_data:
 
 networks:
   mathai-network:

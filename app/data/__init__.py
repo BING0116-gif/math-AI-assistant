@@ -1,0 +1,51 @@
+from .models import (
+    Base,
+    User,
+    LearningRecord,
+    Question,
+    ChatSession,
+    ChatMessage,
+    ExamPaper,
+    ExamSubmission,
+)
+from .database import (
+    engine,
+    async_session_factory,
+    get_db_session,
+    init_db,
+    close_db,
+)
+from .repositories import (
+    BaseRepository,
+    UserRepository,
+    LearningRecordRepository,
+    QuestionRepository,
+    ChatSessionRepository,
+    ChatMessageRepository,
+    ExamPaperRepository,
+    ExamSubmissionRepository,
+)
+
+__all__ = [
+    "Base",
+    "User",
+    "LearningRecord",
+    "Question",
+    "ChatSession",
+    "ChatMessage",
+    "ExamPaper",
+    "ExamSubmission",
+    "engine",
+    "async_session_factory",
+    "get_db_session",
+    "init_db",
+    "close_db",
+    "BaseRepository",
+    "UserRepository",
+    "LearningRecordRepository",
+    "QuestionRepository",
+    "ChatSessionRepository",
+    "ChatMessageRepository",
+    "ExamPaperRepository",
+    "ExamSubmissionRepository",
+]

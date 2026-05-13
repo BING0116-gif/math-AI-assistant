@@ -12,6 +12,7 @@ import json
 import time
 import traceback
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,15 +31,48 @@ from app.middleware.security import (
     is_safe_image_data,
     SecurityValidationError,
 )
+from app.api.auth import router as auth_router
+from app.api.memory_api import router as memory_router
+from app.api.profile_api import router as profile_router
+from app.api.data_api import router as data_router
+from app.data.database import init_db, close_db, check_database_health
+from app.services.cache import get_cache_manager
+from app.security.encryption import get_encryption
+from app.security.audit import get_audit_logger
 
 logger = logging.getLogger(__name__)
-from app.api.auth import router as auth_router
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("正在初始化数据库...")
+    await init_db()
+    logger.info("数据库初始化完成")
+
+    cache_mgr = get_cache_manager()
+    redis_url = settings.REDIS_URL
+    if redis_url:
+        await cache_mgr.initialize()
+
+    logger.info("应用启动完成")
+    yield
+
+    logger.info("正在关闭连接...")
+    await cache_mgr.close()
+    await close_db()
+    logger.info("连接已关闭")
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -46,7 +80,7 @@ app.add_middleware(
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Session-Id"],
     max_age=settings.CORS_MAX_AGE,
 )
 
@@ -125,6 +159,10 @@ NO_AUTH_PATHS = {
     "/api/tools/",
     "/api/agent/thought/",
     "/api/agent/stats",
+    "/api/health",
+    "/api/health/detailed",
+    "/api/health/db",
+    "/api/health/cache",
     "/",
     "/error_book",
     "/docs",
@@ -167,6 +205,9 @@ async def auth_middleware(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(memory_router)
+app.include_router(profile_router)
+app.include_router(data_router)
 
 
 class ChatRequest(BaseModel):
@@ -225,7 +266,6 @@ init_default_admin(settings.JWT_SECRET_KEY)
 
 
 async def _stream_agent_response(message, session_id, context_label="聊天"):
-    """统一的 Agent 流式响应生成器。直接转发 agent.stream() 的每个 chunk。"""
     try:
         async for chunk in agent.stream(message, session_id=session_id):
             if chunk:
@@ -245,13 +285,6 @@ async def _stream_agent_response(message, session_id, context_label="聊天"):
 
 
 async def stream_recognize_response(image_data, session_id):
-    """
-    流式响应图片识别结果（性能优化版）。
-
-    优化点：
-    1. 降低提示信息延迟
-    2. 快速进入核心处理流程
-    """
     try:
         if image_data.startswith("data:image/"):
             image_data = image_data.split(",")[1]
@@ -284,11 +317,6 @@ async def stream_recognize_response(image_data, session_id):
 
 
 async def stream_multimodal_response(message, image_data, session_id):
-    """
-    流式响应多模态输入（图片+文字）。
-
-    将图片和文字合并后一起发送给Agent处理，确保AI能获得完整上下文。
-    """
     try:
         if image_data:
             if image_data.startswith("data:image/"):
@@ -353,13 +381,6 @@ async def chat(request: ChatRequest, http_request: Request):
 
 @app.post("/api/chat/react")
 async def chat_react(request: ChatRequest, http_request: Request):
-    """
-    ReAct Agent 聊天接口（已废弃，向后兼容）。
-
-    .. deprecated::
-        此端点与 /api/chat 功能完全重复，仅保留用于向后兼容。
-        新代码请使用 /api/chat。
-    """
     try:
         validated_message = validate_input(
             request.message, "message", max_length=settings.INPUT_MAX_LENGTH
@@ -381,7 +402,6 @@ async def chat_react(request: ChatRequest, http_request: Request):
 
 @app.get("/api/agent/thought/{session_id}")
 async def get_thought_history(session_id: str):
-    """获取指定会话的 ReAct 思维过程历史。"""
     recorder = agent.get_thought_recorder()
     processes = recorder.get_session_processes(session_id, limit=10)
     return {
@@ -393,7 +413,6 @@ async def get_thought_history(session_id: str):
 
 @app.get("/api/agent/stats")
 async def get_agent_stats():
-    """获取 Agent 统计信息。"""
     recorder = agent.get_thought_recorder()
     return recorder.get_stats()
 
@@ -420,12 +439,6 @@ async def recognize(request: RecognizeRequest, http_request: Request):
 
 @app.post("/api/chat/multimodal")
 async def chat_multimodal(request: MultimodalChatRequest, http_request: Request):
-    """
-    多模态聊天接口（支持图片+文字同时输入）。
-
-    将图片和文字作为一个完整的请求发送给Agent处理，
-    确保AI能够获得完整的上下文信息。
-    """
     try:
         validated_message = validate_input(
             request.message, "message", max_length=settings.INPUT_MAX_LENGTH
@@ -574,14 +587,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/api/tools")
 async def list_tools():
-    """返回所有已注册工具的完整信息列表。"""
     tools = registry.list_tools()
     return {"tools": tools, "total": len(tools)}
 
 
 @app.get("/api/tools/{tool_name}")
 async def get_tool_info(tool_name: str):
-    """返回指定工具的完整信息。"""
     try:
         tool = registry.get_tool(tool_name)
         return tool.get_info()
@@ -591,15 +602,91 @@ async def get_tool_info(tool_name: str):
 
 @app.get("/api/tools/stats")
 async def get_tool_stats():
-    """返回工具执行统计信息。"""
     return registry.get_execution_stats()
 
 
 @app.get("/api/tools/search")
 async def search_tools(capability: str):
-    """按能力标签搜索已注册的工具。"""
     tools = registry.search_tools(capability)
     return {"capability": capability, "tools": tools}
+
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "service": "math-ai-agent-data",
+        "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "version": settings.APP_VERSION,
+    }
+
+
+@app.get("/api/health/detailed")
+async def detailed_health():
+    import psutil
+
+    checks = {
+        "database": await check_database_health(),
+        "cache": _check_cache_health(),
+        "disk_space": _check_disk_space(),
+        "memory_usage": _check_memory_usage(),
+    }
+
+    overall = "healthy" if all(
+        c.get("status") == "healthy" for c in checks.values()
+    ) else "degraded"
+
+    return {
+        "status": overall,
+        "checks": checks,
+        "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    }
+
+
+def _check_cache_health() -> dict:
+    try:
+        cache = get_cache_manager()
+        cache_stats = cache.stats
+        return {"status": "healthy", "stats": cache_stats}
+    except Exception as e:
+        return {"status": "degraded", "error": str(e)}
+
+
+def _check_disk_space() -> dict:
+    try:
+        import psutil
+
+        disk = psutil.disk_usage(".")
+        percent = disk.percent
+        if percent > 95:
+            status = "critical"
+        elif percent > 90:
+            status = "warning"
+        else:
+            status = "healthy"
+        return {
+            "status": status,
+            "used_percent": percent,
+            "free_gb": round(disk.free / (1024**3), 2),
+            "total_gb": round(disk.total / (1024**3), 2),
+        }
+    except ImportError:
+        return {"status": "skipped", "message": "psutil 未安装"}
+
+
+def _check_memory_usage() -> dict:
+    try:
+        import psutil
+
+        mem = psutil.virtual_memory()
+        return {
+            "status": "healthy" if mem.percent < 90 else "warning",
+            "used_percent": mem.percent,
+            "available_mb": round(mem.available / (1024**2), 2),
+            "total_gb": round(mem.total / (1024**3), 2),
+        }
+    except ImportError:
+        return {"status": "skipped", "message": "psutil 未安装"}
 
 
 if not os.path.exists("static"):
@@ -640,10 +727,17 @@ if __name__ == "__main__":
     print("\n服务器启动中...")
     print("访问地址: http://localhost:8000")
     print("API文档: http://localhost:8000/docs")
+    print("\n[数据库] SQLite (开发) / PostgreSQL (生产)")
+    print(f"[数据库] URL: {settings.DATABASE_URL}")
+    print("[缓存] Redis:", "已配置" if settings.REDIS_URL else "仅内存缓存")
     print("\n[安全] CORS已限制为:", settings.CORS_ORIGINS)
     print("[安全] JWT认证已启用")
+    print("[安全] 字段级加密已启用")
+    print("[安全] 审计日志已启用")
     print("[安全] 输入过滤已启用")
     print("[安全] 速率限制: {}次/分钟".format(settings.RATE_LIMIT_PER_MINUTE))
+    print("\n[扩展] 插件系统: 就绪")
+    print("[扩展] 数据迁移工具: python -m app.data.migrations")
 
     import uvicorn
 
