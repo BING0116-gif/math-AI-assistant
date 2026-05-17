@@ -23,9 +23,11 @@ export function debounce(fn, delay = 300) {
 
 export function getRelativeTime(dateStr) {
   if (!dateStr) return ''
-  const now = new Date()
   const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return dateStr
+  const now = new Date()
   const diff = now - date
+  if (diff < 0) return date.toLocaleString()
   const minutes = Math.floor(diff / 60000)
   const hours = Math.floor(diff / 3600000)
   const days = Math.floor(diff / 86400000)

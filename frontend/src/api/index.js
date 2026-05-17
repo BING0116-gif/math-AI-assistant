@@ -25,6 +25,14 @@ api.interceptors.response.use(
     if (error.response) {
       const { status } = error.response
       switch (status) {
+        case 401:
+          localStorage.removeItem('auth_token')
+          localStorage.removeItem('refresh_token')
+          console.error('认证已过期，请重新登录')
+          break
+        case 403:
+          console.error('没有权限执行此操作')
+          break
         case 408:
           console.error('请求超时')
           break

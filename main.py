@@ -141,7 +141,22 @@ async def rate_limit_middleware(request: Request, call_next):
         )
 
     requests.append(now)
+
+    if now - _rate_limit_cleanup_time > 300:
+        _cleanup_rate_limits(now)
+
     return await call_next(request)
+
+
+_rate_limit_cleanup_time = time.time()
+
+
+def _cleanup_rate_limits(now: float):
+    global _rate_limit_cleanup_time
+    expired_ips = [ip for ip, reqs in _rate_limit_store.items() if not reqs or all(now - t > RATE_LIMIT_WINDOW for t in reqs)]
+    for ip in expired_ips:
+        del _rate_limit_store[ip]
+    _rate_limit_cleanup_time = now
 
 
 NO_AUTH_PATHS = {

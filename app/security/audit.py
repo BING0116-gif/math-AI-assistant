@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 
@@ -120,10 +121,14 @@ class AuditLogger:
             "key",
             "api_key",
         }
-        sanitized = data.copy()
-        for key in sensitive_keys:
-            if key in sanitized:
-                sanitized[key] = "***REDACTED***"
+        sanitized = {}
+        for k, v in data.items():
+            if k in sensitive_keys:
+                sanitized[k] = "***REDACTED***"
+            elif isinstance(v, dict):
+                sanitized[k] = self._sanitize(v)
+            else:
+                sanitized[k] = v
         return sanitized
 
     def close(self):
@@ -133,10 +138,13 @@ class AuditLogger:
 
 
 _audit_logger: Optional[AuditLogger] = None
+_lock = threading.Lock()
 
 
 def get_audit_logger() -> AuditLogger:
     global _audit_logger
     if _audit_logger is None:
-        _audit_logger = AuditLogger()
+        with _lock:
+            if _audit_logger is None:
+                _audit_logger = AuditLogger()
     return _audit_logger

@@ -21,16 +21,16 @@ XSS_PATTERNS = [
 ]
 
 SQL_INJECTION_PATTERNS = [
-    re.compile(r"(\b(union)\b.*\b(select)\b)", re.IGNORECASE),
-    re.compile(r"(\b(select)\b.*\b(from)\b)", re.IGNORECASE),
-    re.compile(r"(\b(insert)\b.*\b(into)\b)", re.IGNORECASE),
-    re.compile(r"(\b(delete)\b.*\b(from)\b)", re.IGNORECASE),
-    re.compile(r"(\b(drop)\b.*\b(table|database)\b)", re.IGNORECASE),
-    re.compile(r"(\b(update)\b.*\b(set)\b)", re.IGNORECASE),
-    re.compile(r"(\b(alter)\b.*\b(table)\b)", re.IGNORECASE),
+    re.compile(r"(\b(union)\b\s+\b(select)\b)", re.IGNORECASE),
+    re.compile(r"(\b(select)\b\s+.*?\b(from)\b)", re.IGNORECASE),
+    re.compile(r"(\b(insert)\b\s+\b(into)\b)", re.IGNORECASE),
+    re.compile(r"(\b(delete)\b\s+\b(from)\b)", re.IGNORECASE),
+    re.compile(r"(\b(drop)\b\s+\b(table|database)\b)", re.IGNORECASE),
+    re.compile(r"(\b(update)\b\s+\w+\s+\b(set)\b)", re.IGNORECASE),
+    re.compile(r"(\b(alter)\b\s+\b(table)\b)", re.IGNORECASE),
     re.compile(r"(--\s*$)", re.IGNORECASE | re.MULTILINE),
     re.compile(r"(;\s*(drop|delete|update|alter|insert)\b)", re.IGNORECASE),
-    re.compile(r"('\s*(or|and)\s+.*=)", re.IGNORECASE),
+    re.compile(r"('\s*(or|and)\s+\d)", re.IGNORECASE),
     re.compile(r"(\bexec\b\s*\()", re.IGNORECASE),
     re.compile(r"(\bexecute\b\s*\()", re.IGNORECASE),
 ]
@@ -130,7 +130,7 @@ def validate_input(value: Any, field_name: str = "", max_length: int = 50000,
             )
 
         if not allow_html:
-            pass
+            value = escape_html(value)
 
         return value
 

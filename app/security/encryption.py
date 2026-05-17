@@ -1,6 +1,7 @@
 import os
 import base64
 import logging
+import threading
 from typing import Dict, Any, Optional
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -19,7 +20,7 @@ class DataEncryption:
                 encryption_key = Fernet.generate_key()
                 encoded = base64.urlsafe_b64encode(encryption_key).decode()
                 logger.warning(
-                    f"⚠️ 未设置 ENCRYPTION_KEY 环境变量，已生成临时密钥。"
+                    f"未设置 ENCRYPTION_KEY 环境变量，已生成临时密钥。"
                     f"生产环境请设置该变量: {encoded}"
                 )
 
@@ -29,14 +30,13 @@ class DataEncryption:
         if not plaintext:
             return ""
         encrypted = self.fernet.encrypt(plaintext.encode())
-        return base64.urlsafe_b64encode(encrypted).decode()
+        return encrypted.decode()
 
     def decrypt_field(self, ciphertext: str) -> str:
         if not ciphertext:
             return ""
         try:
-            encrypted = base64.urlsafe_b64decode(ciphertext.encode())
-            decrypted = self.fernet.decrypt(encrypted)
+            decrypted = self.fernet.decrypt(ciphertext.encode())
             return decrypted.decode()
         except Exception:
             logger.error("数据解密失败", exc_info=True)
@@ -69,7 +69,7 @@ class DataEncryption:
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=100000,
+            iterations=600000,
         )
         key = kdf.derive(password.encode())
         return base64.urlsafe_b64encode(salt + key).decode()
@@ -85,7 +85,7 @@ class DataEncryption:
                 algorithm=hashes.SHA256(),
                 length=32,
                 salt=salt,
-                iterations=100000,
+                iterations=600000,
             )
             new_key = kdf.derive(password.encode())
             return stored_key == new_key
@@ -94,10 +94,13 @@ class DataEncryption:
 
 
 _encryption_instance: Optional[DataEncryption] = None
+_lock = threading.Lock()
 
 
 def get_encryption() -> DataEncryption:
     global _encryption_instance
     if _encryption_instance is None:
-        _encryption_instance = DataEncryption()
+        with _lock:
+            if _encryption_instance is None:
+                _encryption_instance = DataEncryption()
     return _encryption_instance

@@ -35,9 +35,8 @@ const chatInputRef = ref(null)
 function handleSend({ text }) {
   if (!text) return
 
-  store.createNewChat()
-
-  const chatId = store.currentChatId
+  const chat = store.createNewChat()
+  const chatId = chat.id
   store.addMessage(chatId, {
     content: text,
     sender: 'user',

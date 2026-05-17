@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -29,8 +31,23 @@ from agent_core.task_planner import (
     PlannerConfig,
     PlanningContext,
 )
+from agent_core.context_manager import (
+    SmartContextManager,
+    ContextBudget,
+    ContextStrategy,
+    CompressionPriority,
+    create_context_manager,
+)
 from prompts.system_prompt import SystemPromptManager
 from prompts.react_prompt import ReActPromptTemplate
+from prompts.dynamic_params import (
+    TaskClassifier,
+    ClassificationResult,
+    TaskType,
+    LLMParams,
+    get_params_for_task,
+    get_classifier,
+)
 from tools import get_registry, ToolRegistry, BaseTool, ToolInput
 from tools.tool_description import ToolDescriptionGenerator
 
@@ -66,6 +83,9 @@ class MathAgent:
         stream: bool = True,
         base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
         enable_planner: bool = True,
+        enable_128k_context: bool = True,  # 🆕 新增：启用128K上下文管理
+        context_budget_tokens: int = 128000,  # 🆕 新增：上下文预算（默认128K）
+        context_strategy: ContextStrategy = ContextStrategy.HYBRID,  # 🆕 新增：管理策略
     ):
         assert api_key, "API 密钥必须提供"
 
@@ -94,6 +114,19 @@ class MathAgent:
         # 统一会话历史访问器（初始化默认 session）
         self._get_session_history(self._default_session_id)
 
+        # ── 🆕 新增：128K 上下文记忆管理系统 ──
+        self._enable_128k_context = enable_128k_context
+        self._context_managers: Dict[str, SmartContextManager] = {}
+        
+        if enable_128k_context:
+            logger.info(
+                f"✅ 128K上下文记忆系统已启用: "
+                f"budget={context_budget_tokens} tokens, "
+                f"strategy={context_strategy.value}"
+            )
+        else:
+            logger.info("⚠️ 128K上下文记忆系统已禁用，使用传统模式")
+
         # 任务规划器（可选）
         self._task_planner: Optional[TaskPlanner] = None
         if enable_planner:
@@ -103,6 +136,9 @@ class MathAgent:
             )
             logger.info("TaskPlanner 已启用")
 
+        # 意图分类器（轻量规则匹配，<1ms，零Token消耗）
+        self._task_classifier = get_classifier()
+
         # 构建默认 ReAct 策略
         self._strategy = self._create_react_strategy()
 
@@ -111,44 +147,44 @@ class MathAgent:
         if self._registry.has_tool("vision_tool"):
             self._vision_tool = self._registry.get_tool("vision_tool")
 
-        logger.info(f"MathAgent 初始化完成（model={model}, max_iterations={max_iterations}, planner={enable_planner}）")
+        logger.info(
+            f"MathAgent 初始化完成"
+            f"(model={model}, max_iterations={max_iterations}, "
+            f"planner={enable_planner}, "
+            f"context_128k={'✅' if enable_128k_context else '❌'})"
+        )
 
     def _create_react_strategy(
         self,
         use_streaming: bool = True,
     ) -> AgentStrategy:
-        """
-        构建 ReAct 执行策略。
-
-        Args:
-            use_streaming: 是否启用打字机效果（默认 True）
-
-        Returns:
-            AgentStrategy 实例
-        """
         tools = self._registry.get_all_tools() if hasattr(self._registry, "get_all_tools") else []
 
         thought_recorder = ThoughtRecorder()
 
-        # 构建 ReAct Prompt
+        # 构建四层架构 System Prompt + 精简ReAct指令
         prompt_manager = SystemPromptManager()
         tool_descs = ToolDescriptionGenerator().generate_for_registry(tools)
         prompt_manager.update_tools(tool_descs)
+
+        # 精简ReAct指令（仅工具调用格式，不含角色定义）
+        react_instruction = ReActPromptTemplate.build_instruction(
+            tool_names=[t.name for t in tools] if tools else []
+        )
+        prompt_manager.update_react_instruction(react_instruction)
+
         full_prompt = prompt_manager.get_prompt()
 
-        # 构建 LangChain chain
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=full_prompt),
+            MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ])
 
-        # 流式链（无 StrOutputParser）：用于 astream_events 捕获 token 级别事件
         llm_chain_stream = prompt | self._llm
-        # 完整链（有 StrOutputParser）：用于非流式 ainvoke()
         llm_chain_sync = llm_chain_stream | StrOutputParser()
 
-        # 统一使用 ReActStrategy
-        logger.info("使用 ReActStrategy（异步流式输出）")
+        logger.info("使用 ReActStrategy（异步流式输出 + v3.0四层Prompt架构）")
         return ReActStrategy(
             llm_chain=llm_chain_stream,
             llm_chain_sync=llm_chain_sync,
@@ -164,6 +200,257 @@ class MathAgent:
             self._session_histories[session_id] = InMemoryChatMessageHistory()
         return self._session_histories[session_id]
 
+    def clear_session(self, session_id: str) -> None:
+        """清除指定会话的历史记录。"""
+        hist = self._session_histories.pop(session_id, None)
+        if hist:
+            hist.clear()
+
+    # ── 🆕 新增：128K上下文管理器访问器 ──
+
+    def _get_or_create_context_manager(
+        self, 
+        session_id: str,
+        user_id: Optional[str] = None,
+    ) -> SmartContextManager:
+        """
+        获取或创建指定会话的SmartContextManager。
+        
+        每个session_id对应一个独立的上下文管理器实例，
+        确保不同用户的对话历史相互隔离。
+        
+        Args:
+            session_id: 会话ID
+            user_id: 用户ID（可选，用于未来扩展）
+            
+        Returns:
+            该会话的SmartContextManager实例
+        """
+        if session_id not in self._context_managers:
+            budget = ContextBudget(total_tokens=128000)
+            
+            self._context_managers[session_id] = create_context_manager(
+                session_id=session_id,
+                total_budget_tokens=128000,
+                strategy=ContextStrategy.HYBRID,
+                max_history_turns=20,
+                summarize_threshold=0.8,
+                importance_scoring_enabled=True,
+                auto_optimize=True,
+            )
+            
+            logger.debug(
+                f"✅ 为session '{session_id}' 创建新的ContextManager"
+            )
+        
+        return self._context_managers[session_id]
+
+    async def _build_context(
+        self, 
+        session_id: str, 
+        user_input: str = "",
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        构建传递给策略的增强上下文。
+        
+        新增功能：
+        1. 如果启用128K模式，使用SmartContextManager管理对话历史
+        2. 构建符合OpenAI格式的完整LLM上下文（≤128K tokens）
+        3. 提供详细的统计和监控信息
+        
+        Args:
+            session_id: 会话ID
+            user_input: 当前用户输入（用于记录到上下文）
+            user_id: 用户ID（可选）
+            
+        Returns:
+            包含完整上下文信息的字典
+        """
+        history = self._session_histories.get(session_id)
+        
+        chat_history_dicts = []
+        if history:
+            raw_items = list(history)
+            for item in raw_items:
+                if isinstance(item, tuple) and len(item) == 2:
+                    inner_messages = item[1] if isinstance(item[1], list) else [item[1]]
+                else:
+                    inner_messages = [item]
+                
+                for msg in inner_messages:
+                    msg_type = getattr(msg, 'type', None)
+                    content = getattr(msg, 'content', '')
+                    if msg_type in ('human', 'user'):
+                        chat_history_dicts.append({"role": "user", "content": content})
+                    elif msg_type in ('ai', 'assistant'):
+                        chat_history_dicts.append({"role": "assistant", "content": content})
+        
+        context = {
+            "chat_history": chat_history_dicts,
+            "registry": self._registry,
+        }
+        
+        # ── 🆕 集成128K上下文管理 ──
+        if self._enable_128k_context and user_input:
+            try:
+                ctx_mgr = self._get_or_create_context_manager(session_id, user_id)
+                
+                # 将用户输入添加到上下文记忆系统
+                add_success = ctx_mgr.add_message(
+                    role="user",
+                    content=user_input,
+                    metadata={
+                        "user_id": user_id or "anonymous",
+                        "timestamp": time.time(),
+                        "source": "user_input",
+                    },
+                )
+                
+                if not add_success:
+                    logger.warning(
+                        f"⚠️ Session {session_id}: 无法将用户消息添加到128K上下文"
+                        "(可能已达到容量上限)"
+                    )
+                
+                # 构建完整的LLM上下文（严格≤128K）
+                system_prompt = self._get_system_prompt()
+                
+                llm_messages = ctx_mgr.build_llm_context(
+                    system_prompt=system_prompt,
+                    include_metadata=True,
+                )
+                
+                # 提取元数据（最后一个消息是__metadata__格式）
+                context_metadata = {}
+                if llm_messages and llm_messages[-1].get("role") == "__metadata__":
+                    import json
+                    meta_msg = llm_messages.pop()
+                    try:
+                        context_metadata = json.loads(meta_msg["content"])
+                    except Exception:
+                        pass
+                
+                # 注入增强的上下文信息
+                context["llm_messages"] = llm_messages  # 替代chat_history
+                context["context_128k_enabled"] = True
+                context["context_stats"] = {
+                    "total_tokens": ctx_mgr.get_total_tokens_used(),
+                    "utilization_rate": ctx_mgr.get_utilization_rate(),
+                    "message_count": ctx_mgr.get_message_count(),
+                    "turn_count": ctx_mgr.get_turn_count(),
+                    **context_metadata,
+                }
+                
+                logger.debug(
+                    f"✅ 128K上下文构建完成: "
+                    f"session={session_id}, "
+                    f"tokens={ctx_mgr.get_total_tokens_used()}/128000, "
+                    f"messages={len(llm_messages)}"
+                )
+                
+            except Exception as e:
+                logger.error(f"❌ 128K上下文构建失败，回退到传统模式: {e}")
+                context["context_128k_enabled"] = False
+                context["context_error"] = str(e)
+        else:
+            context["context_128k_enabled"] = False
+        
+        return context
+    
+    def _get_system_prompt(self) -> str:
+        """获取当前System Prompt。"""
+        prompt_manager = SystemPromptManager()
+        tool_descs = ToolDescriptionGenerator().generate_for_registry(
+            self._registry.get_all_tools() 
+            if hasattr(self._registry, 'get_all_tools') 
+            else []
+        )
+        prompt_manager.update_tools(tool_descs)
+        react_instruction = ReActPromptTemplate.build_instruction(
+            tool_names=[t.name for t in (self._registry.get_all_tools() if hasattr(self._registry, 'get_all_tools') else [])]
+        )
+        prompt_manager.update_react_instruction(react_instruction)
+        return prompt_manager.get_prompt()
+
+    def _classify_intent(self, user_input: str) -> ClassificationResult:
+        """
+        对用户输入进行意图分类（T1-T5）。
+
+        使用轻量规则匹配，不消耗LLM Token，执行时间 < 1ms。
+
+        Args:
+            user_input: 用户输入文本。
+
+        Returns:
+            ClassificationResult 包含任务类型和置信度。
+        """
+        result = self._task_classifier.classify(user_input)
+        logger.info(
+            f"意图分类: type={result.task_type.value} "
+            f"({result.task_type.to_chinese()}), "
+            f"confidence={result.confidence:.2f}"
+        )
+        return result
+
+    def _get_task_params(self, task_type: TaskType) -> LLMParams:
+        """
+        根据任务类型获取最佳 LLM 参数配置。
+
+        Args:
+            task_type: 任务类型。
+
+        Returns:
+            LLMParams 参数配置。
+        """
+        return get_params_for_task(task_type)
+
+    def save_assistant_response_to_context(
+        self,
+        session_id: str,
+        response_text: str,
+        metadata: Optional[Dict] = None,
+    ):
+        """
+        将Assistant的回复保存到128K上下文记忆中。
+        
+        应在策略执行完成后调用此方法，确保对话历史的完整性。
+        
+        Args:
+            session_id: 会话ID
+            response_text: AI的回复文本
+            metadata: 可选的元数据（如使用的策略、迭代次数等）
+        """
+        if not self._enable_128k_context:
+            return
+        
+        ctx_mgr = self._context_managers.get(session_id)
+        if not ctx_mgr:
+            return
+        
+        success = ctx_mgr.add_message(
+            role="assistant",
+            content=response_text,
+            priority=CompressionPriority.NORMAL,  # 普通优先级，可被压缩
+            metadata={
+                **(metadata or {}),
+                "source": "assistant_response",
+                "model": self._model,
+                "timestamp": time.time(),
+            },
+        )
+        
+        if success:
+            logger.debug(
+                f"✅ Assistant回复已保存到128K上下文: "
+                f"session={session_id}, length={len(response_text)}"
+            )
+        else:
+            logger.warning(
+                f"⚠️ 无法保存Assistant回复到128K上下文: "
+                f"session={session_id}"
+            )
+
     # ── 公共 API ────────────────────────────────────────────────────────
 
     async def process(
@@ -171,42 +458,40 @@ class MathAgent:
         user_input: str,
         session_id: Optional[str] = None,
     ) -> str:
-        """
-        异步处理用户输入（完整结果返回）。
-
-        Args:
-            user_input: 用户输入。
-            session_id: 会话 ID。
-
-        Returns:
-            最终答案字符串。
-        """
         sid = session_id or self._default_session_id
-        context = self._build_context(sid)
+
+        history = self._get_session_history(sid)
+        history.add_user_message(user_input)
+
+        context = await self._build_context(sid, user_input=user_input)
 
         if self._is_image_input(user_input):
             return await self._process_image(user_input, sid, context)
 
         strategy = self._select_strategy(user_input, sid)
-        return await strategy.execute(user_input, sid, context)
+        result = await strategy.execute(user_input, sid, context)
+        
+        history.add_ai_message(result)
+        
+        self.save_assistant_response_to_context(
+            session_id=sid,
+            response_text=result,
+            metadata={"strategy": "react", "mode": "process"},
+        )
+        
+        return result
 
     async def stream(
         self,
         user_input: str,
         session_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """
-        异步流式处理用户输入，yield 文本片段（打字机效果）。
-
-        Args:
-            user_input: 用户输入。
-            session_id: 会话 ID。
-
-        Yields:
-            输出文本片段（token 级别）。
-        """
         sid = session_id or self._default_session_id
-        context = self._build_context(sid)
+
+        history = self._get_session_history(sid)
+        history.add_user_message(user_input)
+
+        context = await self._build_context(sid, user_input=user_input)
 
         if self._is_image_input(user_input):
             async for chunk in self._stream_process_image(user_input, sid, context):
@@ -214,8 +499,20 @@ class MathAgent:
             return
 
         strategy = self._select_strategy(user_input, sid)
+        
+        chunks = []
         async for chunk in strategy.stream(user_input, sid, context):
             yield chunk
+            chunks.append(chunk)
+        
+        full_response = "".join(chunks)
+        history.add_ai_message(full_response)
+        
+        self.save_assistant_response_to_context(
+            session_id=sid,
+            response_text=full_response,
+            metadata={"strategy": "react", "mode": "stream"},
+        )
 
     async def _stream_process_image(
         self,
@@ -283,7 +580,7 @@ class MathAgent:
             输出文本片段（token级别）。
         """
         sid = session_id or self._default_session_id
-        context = self._build_context(sid)
+        context = await self._build_context(sid)
 
         if not self._registry.has_tool("vision_tool"):
             yield "**【VisionTool 未注册，无法处理图片】**\n\n"
@@ -325,11 +622,19 @@ class MathAgent:
             yield f"\n\n**【解题出错】**: {e}"
 
     def clear_history(self, session_id: Optional[str] = None) -> None:
-        """清空指定会话的对话记忆。"""
+        """清空指定会话的对话记忆（包括128K上下文）。"""
         sid = session_id or self._default_session_id
+        
+        # 清理传统历史
         hist = self._session_histories.get(sid)
         if hist is not None:
             hist.clear()
+        
+        # 🆕 清理128K上下文管理器
+        if sid in self._context_managers:
+            self._context_managers[sid].clear(preserve_critical=False)
+            del self._context_managers[sid]
+            logger.info(f"🧹 已清空session '{sid}'的128K上下文记忆")
 
     def get_thought_recorder(self) -> ThoughtRecorder:
         """获取思维记录器。"""
@@ -346,6 +651,48 @@ class MathAgent:
     def planner(self) -> Optional[TaskPlanner]:
         """获取任务规划器实例。"""
         return self._task_planner
+    
+    def get_context_stats(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取128K上下文记忆的统计信息。
+        
+        Args:
+            session_id: 会话ID（默认使用default session）
+            
+        Returns:
+            包含详细统计数据的字典，如果128K未启用则返回空字典
+        """
+        if not self._enable_128k_context:
+            return {"enabled": False, "reason": "128K上下文未启用"}
+        
+        sid = session_id or self._default_session_id
+        ctx_mgr = self._context_managers.get(sid)
+        
+        if not ctx_mgr:
+            return {
+                "enabled": True,
+                "session_id": sid,
+                "status": "not_initialized",
+                "message": "该session尚未有任何交互",
+            }
+        
+        stats = ctx_mgr.get_stats()
+        
+        # 添加额外的有用信息
+        stats["session_count"] = len(self._context_managers)
+        stats["total_tokens_budget"] = 128000
+        stats["remaining_tokens"] = 128000 - stats["total_tokens"]
+        stats["utilization_percentage"] = f"{stats['utilization_rate']*100:.1f}%"
+        
+        # 完整性校验结果
+        all_ok, failed_ids = ctx_mgr.verify_all_integrity()
+        stats["integrity_check"] = {
+            "all_passed": all_ok,
+            "failed_count": len(failed_ids),
+            "failed_ids": failed_ids[:5],  # 最多显示5个
+        }
+        
+        return stats
 
     def refresh_tools(self) -> None:
         """
@@ -372,6 +719,8 @@ class MathAgent:
         简单问题 → ReActStrategy（直接边想边做）
         复杂问题 → PlannedStrategy（先规划再执行）
 
+        同时调用意图分类器（T1-T5），记录到日志用于监控。
+
         Args:
             user_input: 用户输入。
             session_id: 会话 ID。
@@ -379,16 +728,25 @@ class MathAgent:
         Returns:
             选定的执行策略。
         """
+        # 意图分类（轻量规则匹配，<1ms）
+        intent = self._classify_intent(user_input)
+
         # 优先尝试规划器
         if (
             self._task_planner is not None
             and self._task_planner.enabled
             and self._task_planner.should_plan(user_input)
         ):
-            logger.info("问题复杂度高，使用 PlannedStrategy")
+            logger.info(
+                f"问题复杂度高 → 使用 PlannedStrategy "
+                f"(意图={intent.task_type.to_chinese()})"
+            )
             return self._get_or_create_planned_strategy()
 
-        logger.info("使用 ReActStrategy（默认）")
+        logger.info(
+            f"使用 ReActStrategy (意图={intent.task_type.to_chinese()}, "
+            f"confidence={intent.confidence:.2f})"
+        )
         return self._strategy
 
     _planned_strategy: Optional[PlannedStrategy] = None
@@ -407,10 +765,15 @@ class MathAgent:
         prompt_manager = SystemPromptManager()
         tool_descs = ToolDescriptionGenerator().generate_for_registry(tools)
         prompt_manager.update_tools(tool_descs)
+        react_instruction = ReActPromptTemplate.build_instruction(
+            tool_names=[t.name for t in tools] if tools else []
+        )
+        prompt_manager.update_react_instruction(react_instruction)
         full_prompt = prompt_manager.get_prompt()
 
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=full_prompt),
+            MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ])
 
@@ -423,14 +786,6 @@ class MathAgent:
             task_planner=self._task_planner,
             thought_recorder=thought_recorder,
         )
-
-    def _build_context(self, session_id: str) -> Dict[str, Any]:
-        """构建传递给策略的上下文。"""
-        history = self._session_histories.get(session_id)
-        return {
-            "chat_history": list(history) if history else [],
-            "registry": self._registry,
-        }
 
     def _is_image_input(self, user_input: str) -> bool:
         """检查用户输入是否是图片路径。"""

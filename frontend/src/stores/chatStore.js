@@ -73,7 +73,8 @@ export const useChatStore = defineStore('chat', () => {
     chat.lastMessageTime = newMessage.timestamp || new Date().toLocaleString()
 
     if (message.sender === 'user' && chat.messages.filter(m => m.sender === 'user').length === 1) {
-      chat.title = (message.content || '').substring(0, 20) + ((message.content || '').length > 20 ? '...' : '')
+      const content = (message.type === 'text' && message.content) ? message.content : ''
+      chat.title = content.substring(0, 20) + (content.length > 20 ? '...' : '') || '新对话'
     }
 
     persistChats()

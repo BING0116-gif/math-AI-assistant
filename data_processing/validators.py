@@ -6,7 +6,7 @@
 
 import base64
 import re
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional
 
 
 class ErrorBookValidator:
@@ -118,7 +118,7 @@ class ErrorBookValidator:
         return errors
 
     @classmethod
-    def _validate_question_type(cls, data: Dict[str, Any]) -> str or None:
+    def _validate_question_type(cls, data: Dict[str, Any]) -> Optional[str]:
         """验证题目类型与内容的匹配性"""
         question_type = data.get('question_type', 'text')
         question = data.get('question', '')
@@ -148,7 +148,7 @@ class ErrorBookValidator:
         return None
 
     @classmethod
-    def _validate_mastery_level(cls, data: Dict[str, Any]) -> str or None:
+    def _validate_mastery_level(cls, data: Dict[str, Any]) -> Optional[str]:
         """验证掌握度值是否在有效范围内"""
         mastery = data.get('mastery_level', 3)
 
@@ -183,7 +183,6 @@ class ErrorBookValidator:
         cleaned = cleaned.replace('\r\n', '\n').replace('\r', '\n')
 
         # 将多个连续空格替换为单个空格
-        import re
         cleaned = re.sub(r'\s+', ' ', cleaned)
 
         # 限制长度
@@ -209,8 +208,8 @@ class ErrorBookValidator:
         if not isinstance(categories, list):
             return False, 'categories必须是列表'
 
-        if len(categories) > 10:
-            return False, '分类标签数量不能超过10个'
+        if len(categories) > 15:
+            return False, '分类标签数量不能超过15个'
 
         for cat in categories:
             if not isinstance(cat, str):

@@ -151,7 +151,7 @@ class ToolInvoker:
                     f"[{tool_name}] {last_error}"
                 )
 
-                if attempt < attempts - 1 and result.success is None:
+                if attempt < attempts - 1:
                     continue
                 break
 

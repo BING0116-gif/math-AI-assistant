@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -111,9 +112,9 @@ async def check_database_health() -> dict:
 
     try:
         async with engine.connect() as conn:
-            start = __import__("time").time()
+            start = time.time()
             await conn.execute(text("SELECT 1"))
-            latency = (__import__("time").time() - start) * 1000
+            latency = (time.time() - start) * 1000
 
         return {"status": "healthy", "latency_ms": round(latency, 2)}
     except Exception as e:

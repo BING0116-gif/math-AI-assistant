@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     CORS_MAX_AGE: int = Field(default=600, alias="CORS_MAX_AGE")
 
     JWT_SECRET_KEY: str = Field(
-        default="change-me-in-production-use-a-strong-random-key",
+        default="math-ai-jwt-secret-must-be-overridden-in-production",
         alias="JWT_SECRET_KEY",
     )
     JWT_ALGORITHM: str = "HS256"

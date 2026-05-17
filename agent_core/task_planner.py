@@ -100,7 +100,7 @@ class Task:
 
     @property
     def is_terminal(self) -> bool:
-        return True
+        return self.status in ("completed", "failed", "cancelled")
 
     @property
     def elapsed_ms(self) -> float:

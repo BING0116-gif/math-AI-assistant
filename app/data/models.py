@@ -1,17 +1,16 @@
 from sqlalchemy import (
     Column,
     String,
-    DateTime,
-    Integer,
-    Boolean,
     Text,
-    JSON,
+    Boolean,
+    DateTime,
     Float,
+    Integer,
     ForeignKey,
+    JSON,
     Index,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, relationship
 from datetime import datetime, timezone
 import uuid

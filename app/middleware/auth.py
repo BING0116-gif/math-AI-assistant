@@ -1,4 +1,5 @@
 import hashlib
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -9,8 +10,8 @@ from pydantic import BaseModel
 
 class TokenPayload(BaseModel):
     user_id: str
-    exp: float
-    iat: float
+    exp: int
+    iat: int
     type: str = "access"
     jti: str = ""
 
@@ -29,6 +30,7 @@ class User(BaseModel):
 
 
 _users_db: dict[str, User] = {}
+_users_by_username: dict[str, User] = {}
 _refresh_tokens: dict[str, str] = {}
 _blacklisted_tokens: set[str] = set()
 
@@ -36,7 +38,7 @@ _blacklisted_tokens: set[str] = set()
 def _hash_password(password: str, salt: str = "") -> str:
     if not salt:
         salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000)
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 600000)
     return f"{salt}${hashed.hex()}"
 
 
@@ -50,19 +52,20 @@ def _verify_password(password: str, hashed_password: str) -> bool:
 
 
 def register_user(username: str, password: str) -> Optional[User]:
-    if username in {u.username for u in _users_db.values()}:
+    if username in _users_by_username:
         return None
-    user_id = secrets.token_hex(8)
+    user_id = secrets.token_hex(16)
     hashed = _hash_password(password)
     user = User(user_id=user_id, username=username, hashed_password=hashed)
     _users_db[user_id] = user
+    _users_by_username[username] = user
     return user
 
 
 def authenticate_user(username: str, password: str) -> Optional[User]:
-    for user in _users_db.values():
-        if user.username == username and _verify_password(password, user.hashed_password):
-            return user
+    user = _users_by_username.get(username)
+    if user and _verify_password(password, user.hashed_password):
+        return user
     return None
 
 
@@ -170,6 +173,16 @@ def get_user_by_id(user_id: str) -> Optional[User]:
 
 
 def init_default_admin(secret_key: str):
-    admin = register_user("admin", "admin123")
+    admin_user = os.environ.get("ADMIN_USERNAME", "").strip()
+    admin_pass = os.environ.get("ADMIN_PASSWORD", "").strip()
+
+    if not admin_user or not admin_pass:
+        print("[安全] 未设置 ADMIN_USERNAME / ADMIN_PASSWORD 环境变量，跳过管理员初始化")
+        print("[安全] 请通过环境变量设置管理员凭据后重启服务")
+        return
+
+    admin = register_user(admin_user, admin_pass)
     if admin:
-        print(f"[安全] 默认管理员已创建 - 用户名: admin, 密码: admin123 (请立即修改)")
+        print(f"[安全] 管理员账号已创建（用户名请通过 ADMIN_USERNAME 环境变量查看）")
+    else:
+        print(f"[安全] 管理员账号已存在，跳过创建")

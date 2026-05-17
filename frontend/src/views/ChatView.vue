@@ -87,9 +87,9 @@ import MessageItem from '@/components/chat/MessageItem.vue'
 import InputArea from '@/components/chat/InputArea.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
-import { sendChatMessage, sendRecognizeRequest, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
-import { renderMathInElement, renderMathSync } from '@/utils/mathRender'
-import { formatStreamText, renderMarkdown } from '@/utils/markdown'
+import { sendChatMessage, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
+import { renderMathInElement } from '@/utils/mathRender'
+import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
 
 const route = useRoute()
@@ -146,6 +146,44 @@ async function handleCombinedSend({ text, image }) {
   }
 }
 
+let typingBuffer = ''
+let rawContentBuffer = ''
+let isTyping = false
+
+function processTyping(msgId) {
+  const el = document.getElementById(`msg-${msgId}`)
+  if (!el || typingBuffer.length === 0) {
+    if (!streaming.value || typingBuffer.length === 0) {
+      isTyping = false
+      return
+    }
+    setTimeout(() => processTyping(msgId), 50)
+    return
+  }
+
+  const chunk = typingBuffer.substring(0, 1)
+  typingBuffer = typingBuffer.substring(1)
+  streamingCharCount.value++
+
+  if (streamingCharCount.value % 30 === 0 || chunk === '\n' || typingBuffer.length === 0) {
+    const contentDiv = el.querySelector('.msg-content')
+    if (contentDiv) {
+      const display = formatStreamText(rawContentBuffer)
+      contentDiv.innerHTML = display
+      renderMathInElement(contentDiv)
+    }
+  }
+
+  scrollToBottom()
+  if (typingBuffer.length > 0) {
+    setTimeout(() => processTyping(msgId), 8)
+  } else if (streaming.value) {
+    setTimeout(() => processTyping(msgId), 50)
+  } else {
+    isTyping = false
+  }
+}
+
 async function handleMultimodalSend(text, imageData) {
   if (streaming.value) return
 
@@ -170,9 +208,9 @@ async function handleMultimodalSend(text, imageData) {
   streamingCharCount.value = 0
 
   abortController.value = new AbortController()
-  let typingBuffer = ''
-  let isTyping = false
-  let rawContentBuffer = ''
+  typingBuffer = ''
+  rawContentBuffer = ''
+  isTyping = false
 
   try {
     const response = await sendMultimodalRequest(userMessageContent, imageData, chatId, abortController.value.signal)
@@ -185,7 +223,7 @@ async function handleMultimodalSend(text, imageData) {
         rawContentBuffer += data.content
         if (!isTyping) {
           isTyping = true
-          processMultimodalTyping()
+          processTyping(msgId)
         }
       }
     }
@@ -218,44 +256,9 @@ async function handleMultimodalSend(text, imageData) {
       })
     }
 
-    function processMultimodalTyping() {
-      const el = document.getElementById(`msg-${msgId}`)
-      if (!el || typingBuffer.length === 0) {
-        if (!streaming.value || typingBuffer.length === 0) {
-          isTyping = false
-          return
-        }
-        setTimeout(processMultimodalTyping, 50)
-        return
-      }
-
-      const chunk = typingBuffer.substring(0, 1)
-      typingBuffer = typingBuffer.substring(1)
-      streamingCharCount.value++
-
-      if (streamingCharCount.value % 30 === 0 || chunk === '\n' || typingBuffer.length === 0) {
-        const contentDiv = el.querySelector('.msg-content')
-        if (contentDiv) {
-          let display = formatStreamText(rawContentBuffer)
-          contentDiv.innerHTML = display
-
-          renderMathInElement(contentDiv)
-        }
-      }
-
-      scrollToBottom()
-      if (typingBuffer.length > 0) {
-        setTimeout(processMultimodalTyping, 8)
-      } else if (streaming.value) {
-        setTimeout(processMultimodalTyping, 50)
-      } else {
-        isTyping = false
-      }
-    }
-
     await parseSSEStream(response, handleData, handleDone, handleError)
   } catch (err) {
-    if (err.name !== 'AbortError') {
+    if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
@@ -283,9 +286,9 @@ async function handleTextSend(text) {
   streamingCharCount.value = 0
 
   abortController.value = new AbortController()
-  let typingBuffer = ''
-  let isTyping = false
-  let rawContentBuffer = ''
+  typingBuffer = ''
+  rawContentBuffer = ''
+  isTyping = false
 
   try {
     const response = await sendChatMessage(text, chatId, abortController.value.signal)
@@ -298,7 +301,7 @@ async function handleTextSend(text) {
         rawContentBuffer += data.content
         if (!isTyping) {
           isTyping = true
-          processTyping()
+          processTyping(msgId)
         }
       }
     }
@@ -330,44 +333,9 @@ async function handleTextSend(text) {
       })
     }
 
-    function processTyping() {
-      const el = document.getElementById(`msg-${msgId}`)
-      if (!el || typingBuffer.length === 0) {
-        if (!streaming.value || typingBuffer.length === 0) {
-          isTyping = false
-          return
-        }
-        setTimeout(processTyping, 50)
-        return
-      }
-
-      const chunk = typingBuffer.substring(0, 1)
-      typingBuffer = typingBuffer.substring(1)
-      streamingCharCount.value++
-
-      if (streamingCharCount.value % 30 === 0 || chunk === '\n' || typingBuffer.length === 0) {
-        const contentDiv = el.querySelector('.msg-content')
-        if (contentDiv) {
-          let display = formatStreamText(rawContentBuffer)
-          contentDiv.innerHTML = display
-          
-          renderMathInElement(contentDiv)
-        }
-      }
-
-      scrollToBottom()
-      if (typingBuffer.length > 0) {
-        setTimeout(processTyping, 8)
-      } else if (streaming.value) {
-        setTimeout(processTyping, 50)
-      } else {
-        isTyping = false
-      }
-    }
-
     await parseSSEStream(response, handleData, handleDone, handleError)
   } catch (err) {
-    if (err.name !== 'AbortError') {
+    if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
@@ -394,7 +362,10 @@ function openErrorBookDialog(msgId) {
   const chat = store.currentChat
   const msgIdx = chat.messages.findIndex(m => m.id === msgId)
   const aiMsg = chat.messages[msgIdx]
-  const userMsg = chat.messages[msgIdx - 1]
+  const userMsg = chat.messages
+    .slice(0, msgIdx)
+    .reverse()
+    .find(m => m.sender === 'user')
 
   if (!aiMsg || !userMsg) {
     ElMessage.error('未找到对应的问题')
@@ -404,13 +375,23 @@ function openErrorBookDialog(msgId) {
   currentErrorMsgId = msgId
   errorForm.question = userMsg.content || ''
   errorForm.question_type = userMsg.type === 'image' ? 'image' : 'text'
-  errorForm.correct_answer = aiMsg.content || ''
+  errorForm.correct_answer = extractBestAnswer(aiMsg.content)
   errorForm.error_reason = ''
   errorForm.categories = []
   errorForm.notes = ''
 
   showErrorModal.value = true
   nextTick(() => reasonInput.value?.focus())
+}
+
+function extractBestAnswer(content) {
+  if (!content) return ''
+  const lines = content.split('\n')
+  const answerLine = lines.find(l => l.startsWith('**答案') || l.startsWith('答案') || l.startsWith('最终答案'))
+  if (answerLine) return answerLine
+  const lastLine = lines.filter(l => l.trim()).pop()
+  if (lastLine && lastLine.length < 500) return lastLine.trim()
+  return content.slice(0, 500)
 }
 
 function toggleTag(tag) {
@@ -435,8 +416,9 @@ async function confirmAddError() {
     store.setErrorBookStatus(store.currentChatId, currentErrorMsgId, 'added')
     closeErrorModal()
     ElMessage.success('已成功加入错题本！')
-  } catch {
-    ElMessage.error('添加失败，请重试')
+  } catch (err) {
+    console.error('添加错题失败:', err)
+    ElMessage.error(err?.response?.data?.detail || '添加失败，请重试')
   }
 }
 
@@ -446,7 +428,10 @@ function handleSkip(msgId) {
 
 function handleImgError(e) {
   e.target.style.display = 'none'
-  e.target.nextElementSibling && (e.target.nextElementSibling.style.display = 'block')
+  const fallback = e.target.nextElementSibling
+  if (fallback && fallback.classList.contains('img-fallback')) {
+    fallback.style.display = 'block'
+  }
 }
 </script>
 
