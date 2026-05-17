@@ -116,6 +116,8 @@ class MathAgent:
 
         # ── 🆕 新增：128K 上下文记忆管理系统 ──
         self._enable_128k_context = enable_128k_context
+        self._context_budget_tokens = context_budget_tokens
+        self._context_strategy = context_strategy
         self._context_managers: Dict[str, SmartContextManager] = {}
         
         if enable_128k_context:
@@ -227,12 +229,12 @@ class MathAgent:
             该会话的SmartContextManager实例
         """
         if session_id not in self._context_managers:
-            budget = ContextBudget(total_tokens=128000)
+            budget = ContextBudget(total_tokens=self._context_budget_tokens)
             
             self._context_managers[session_id] = create_context_manager(
                 session_id=session_id,
-                total_budget_tokens=128000,
-                strategy=ContextStrategy.HYBRID,
+                total_budget_tokens=self._context_budget_tokens,
+                strategy=self._context_strategy,
                 max_history_turns=20,
                 summarize_threshold=0.8,
                 importance_scoring_enabled=True,

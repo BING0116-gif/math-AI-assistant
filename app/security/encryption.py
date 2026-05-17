@@ -30,13 +30,14 @@ class DataEncryption:
         if not plaintext:
             return ""
         encrypted = self.fernet.encrypt(plaintext.encode())
-        return encrypted.decode()
+        return base64.urlsafe_b64encode(encrypted).decode()
 
     def decrypt_field(self, ciphertext: str) -> str:
         if not ciphertext:
             return ""
         try:
-            decrypted = self.fernet.decrypt(ciphertext.encode())
+            encrypted = base64.urlsafe_b64decode(ciphertext.encode())
+            decrypted = self.fernet.decrypt(encrypted)
             return decrypted.decode()
         except Exception:
             logger.error("数据解密失败", exc_info=True)
