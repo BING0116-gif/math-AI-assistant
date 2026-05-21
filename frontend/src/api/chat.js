@@ -20,10 +20,23 @@ export function sendChatMessage(message, sessionId, signal) {
   })
 }
 
-export function sendRecognizeRequest(imageData, sessionId) {
-  return api.post('/recognize', {
-    image: imageData,
-    session_id: sessionId
+export function sendRecognizeRequest(imageData, sessionId, signal) {
+  const token = localStorage.getItem('auth_token')
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
+  return fetch('/api/recognize', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      image: imageData,
+      session_id: sessionId
+    }),
+    signal
   })
 }
 
