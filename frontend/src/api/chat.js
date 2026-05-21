@@ -1,13 +1,22 @@
 import api from './index'
 
 export function sendChatMessage(message, sessionId, signal) {
-  return api.post('/chat', {
-    message,
-    session_id: sessionId
-  }, {
-    signal,
-    responseType: 'stream',
-    timeout: 0
+  const token = localStorage.getItem('auth_token')
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  return fetch('/api/chat', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      message,
+      session_id: sessionId
+    }),
+    signal
   })
 }
 
@@ -19,14 +28,23 @@ export function sendRecognizeRequest(imageData, sessionId) {
 }
 
 export function sendMultimodalRequest(message, imageData, sessionId, signal) {
-  return api.post('/chat/multimodal', {
-    message: message || '',
-    image: imageData || null,
-    session_id: sessionId
-  }, {
-    signal,
-    responseType: 'stream',
-    timeout: 0
+  const token = localStorage.getItem('auth_token')
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  
+  return fetch('/api/chat/multimodal', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      message: message || '',
+      image: imageData || null,
+      session_id: sessionId
+    }),
+    signal
   })
 }
 

@@ -215,7 +215,7 @@ async function handleMultimodalSend(text, imageData) {
   try {
     const response = await sendMultimodalRequest(userMessageContent, imageData, chatId, abortController.value.signal)
 
-    if (!response.ok) throw new Error('多模态请求失败')
+    if (response.status < 200 || response.status >= 300) throw new Error(`多模态请求失败 (${response.status})`)
 
     const handleData = (data) => {
       if (data.type === 'content' && data.content) {
@@ -293,7 +293,7 @@ async function handleTextSend(text) {
   try {
     const response = await sendChatMessage(text, chatId, abortController.value.signal)
 
-    if (!response.ok) throw new Error('API请求失败')
+    if (response.status < 200 || response.status >= 300) throw new Error(`API请求失败 (${response.status})`)
 
     const handleData = (data) => {
       if (data.type === 'content' && data.content) {

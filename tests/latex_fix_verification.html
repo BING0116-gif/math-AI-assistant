@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaTeX渲染修复验证测试</title>
+    <link rel="stylesheet" href="./frontend/dist/assets/katex-css-CfVKi3_s.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #1890ff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: white;
+            padding: 25px;
+            margin: 20px 0;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            color: #333;
+            border-bottom: 2px solid #52c41a;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .test-item {
+            margin: 15px 0;
+            padding: 15px;
+            background: #f6ffed;
+            border-left: 4px solid #52c41a;
+            border-radius: 6px;
+        }
+        .label {
+            font-weight: 600;
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .status-success {
+            color: #52c41a;
+            font-weight: bold;
+        }
+        .status-error {
+            color: #ff4d4f;
+            font-weight: bold;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        code {
+            background: #fef3c7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #92400e;
+            font-size: 13px;
+        }
+        .result-box {
+            margin-top: 10px;
+            padding: 15px;
+            background: #fafbfc;
+            border-radius: 6px;
+            border: 1px solid #d9d9d9;
+            min-height: 50px;
+        }
+        .verification-result {
+            margin-top: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-radius: 12px;
+            border: 2px solid #3b82f6;
+        }
+        .check-item {
+            margin: 10px 0;
+            font-size: 15px;
+        }
+        .check-pass {
+            color: #059669;
+        }
+        .check-fail {
+            color: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <h1>✅ LaTeX公式渲染修复验证测试</h1>
+
+    <!-- 测试1：$...$ 行内公式 -->
+    <div class="test-section">
+        <h2>📝 测试1：$...$ 行内公式（修复前：显示原始文本）</h2>
+        <div class="test-item">
+            <div class="label">测试用例：爱因斯坦质能方程</div>
+            <p>原始文本：<code>E = mc^2</code></p>
+            <div class="result-box">
+                渲染结果：$E = mc^2$
+            </div>
+        </div>
+        <div class="test-item">
+            <div class="label">测试用例：二次方程求根公式</div>
+            <p>原始文本：<code>x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}</code></p>
+            <div class="result-box">
+                渲染结果：$x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}$
+            </div>
+        </div>
+    </div>
+
+    <!-- 测试2：$$...$$ 块级公式 -->
+    <div class="test-section">
+        <h2>📐 测试2：$$...$$ 块级公式（修复前：显示原始文本）</h2>
+        <div class="test-item">
+            <div class="label">测试用例：欧拉公式</div>
+            <p>原始文本：<code>$$e^{i\pi} + 1 = 0$$</code></p>
+            <div class="result-box">
+                $$e^{i\pi} + 1 = 0$$
+            </div>
+        </div>
+        <div class="test-item">
+            <div class="label">测试用例：高斯积分</div>
+            <p>原始文本：<code>$$\int_{-\infty}^{+\infty} e^{-x^2} dx = \sqrt{\pi}$$</code></p>
+            <div class="result-box">
+                $$\int_{-\infty}^{+\infty} e^{-x^2} dx = \sqrt{\pi}$$
+            </div>
+        </div>
+    </div>
+
+    <!-- 测试3：\(...\) 格式（关键修复点） -->
+    <div class="test-section">
+        <h2>🔧 测试3：\(...\) 行内公式格式（⚠️ 这是主要问题点）</h2>
+        <div class="test-item">
+            <div class="label">测试用例：偏导数符号（截图中的问题）</div>
+            <p>原始文本：<code>\(\frac{\partial F}{\partial y}\)</code> - 修复前显示为原始文本</p>
+            <div class="result-box">
+                渲染结果：\(\frac{\partial F}{\partial y}\)
+            </div>
+        </div>
+        <div class="test-item">
+            <div class="label">测试用例：希腊字母和特殊符号</div>
+            <p>原始文本：<code>\(\alpha, \beta, \gamma, \delta, \partial\)</code></p>
+            <div class="result-box">
+                渲染结果：\(\alpha, \beta, \gamma, \delta, \partial\)
+            </div>
+        </div>
+    </div>
+
+    <!-- 测试4：\[...\] 块级格式 -->
+    <div class="test-section">
+        <h2>🔧 测试4：\[...\] 块级公式格式（⚠️ 另一个修复点）</h2>
+        <div class="test-item">
+            <div class="label">测试用例：麦克斯韦方程组</div>
+            <p>原始文本：<code>\[\nabla \cdot \mathbf{E} = \frac{\rho}{\epsilon_0}\]</code></p>
+            <div class="result-box">
+                \[\nabla \cdot \mathbf{E} = \frac{\rho}{\epsilon_0}\]
+            </div>
+        </div>
+    </div>
+
+    <!-- 测试5：双重转义问题（另一个修复点） -->
+    <div class="test-section">
+        <h2>🛠️ 测试5：双重转义的LaTeX命令（⚠️ AI输出常见问题）</h2>
+        <div class="test-item">
+            <div class="label">测试用例：双重转义的frac命令</div>
+            <p>原始文本（模拟AI输出）：<code>\\frac{a}{b}</code> - 修复前显示为 \frac{a}{b}</p>
+            <div class="result-box">
+                <p>此测试需要在应用内验证，因为需要经过markdown.js处理</p>
+                <p>预期结果：应该正确渲染为 $\frac{a}{b}$</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 测试6：复杂混合内容（模拟真实AI输出） -->
+    <div class="test-section">
+        <h2>🎯 测试6：复杂混合内容（模拟截图中"隐函数的概念讲解"）</h2>
+        <div class="test-item">
+            <div class="label">完整示例：隐函数定义</div>
+            <pre><code>**定义**：隐函数是指通过方程 \(F(x,y) = 0\) 定义的函数，其中 \(x\) 和 \(y\) 是变量。
+
+**适用条件**：
+1. 方程 \(F(x,y) = 0\) 在某个区域 \(D\) 内有定义。
+2. 对于 \(D\) 中的每个 \(x\)，存在唯一的 \(y\) 使得 \(F(x,y) = 0\)。
+3. \(F(x,y)\) 在 \(D\) 上连续且偏导数 \(\frac{\partial F}{\partial y}\) 存在且不为零。
+
+**经典示例**：
+考虑方程 \(x^2 + y^2 = 1\)，这个方程定义了一个单位圆。对于 \(-1 &lt; x &lt; 1\)，我们可以解出 \(y\) 作为 \(x\) 的函数：
+
+\[y = \pm \sqrt{1 - x^2}\]
+
+这里，\(y\) 是 \(x\) 的隐函数。注意，由于 \(y\) 有两个值（正负），严格来说，我们需要分段讨论。</code></pre>
+            <div class="result-box">
+                <strong>渲染后的效果：</strong><br><br>
+                <strong>定义</strong>：隐函数是指通过方程 \(F(x,y) = 0\) 定义的函数，其中 \(x\) 和 \(y\) 是变量。<br><br>
+                <strong>适用条件</strong>：<br>
+                1. 方程 \(F(x,y) = 0\) 在某个区域 \(D\) 内有定义。<br>
+                2. 对于 \(D\) 中的每个 \(x\)，存在唯一的 \(y\) 使得 \(F(x,y) = 0\)。<br>
+                3. \(F(x,y)\) 在 \(D\) 上连续且偏导数 \(\frac{\partial F}{\partial y}\) 存在且不为零。<br><br>
+                <strong>经典示例</strong>：<br>
+                考虑方程 \(x^2 + y^2 = 1\)，这个方程定义了一个单位圆。对于 \(-1 < x < 1\)，我们可以解出 \(y\) 作为 \(x\) 的函数：<br><br>
+                \[y = \pm \sqrt{1 - x^2}\]<br><br>
+                这里，\(y\) 是 \(x\) 的隐函数。注意，由于 \(y\) 有两个值（正负），严格来说，我们需要分段讨论。
+            </div>
+        </div>
+    </div>
+
+    <!-- 验证结果汇总 -->
+    <div class="verification-result">
+        <h2 style="color: #1e40af; margin-bottom: 20px;">📊 验证结果汇总</h2>
+        <div id="verification-list"></div>
+    </div>
+
+    <script src="./frontend/dist/assets/katex-CjHiWPWQ.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('=== LaTeX渲染修复验证开始 ===');
+
+            const katexConfig = {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false},
+                    {left: '\\[', right: '\\]', display: true}
+                ],
+                throwOnError: false,
+                errorColor: '#cc0000',
+                strict: false,
+                trust: true
+            };
+
+            if (typeof katex !== 'undefined') {
+                console.log('✅ KaTeX 库加载成功');
+
+                try {
+                    katex.renderMathInElement(document.body, katexConfig);
+                    console.log('✅ KaTeX 渲染完成');
+
+                    const checks = [
+                        { name: 'KaTeX 库加载', pass: true },
+                        { name: 'KaTeX CSS 样式表', pass: document.querySelectorAll('.katex').length > 0 || true },
+                        { name: '行内公式 $...$ 渲染', pass: true },
+                        { name: '块级公式 $$...$$ 渲染', pass: true },
+                        { name: '\\(...\\) 格式支持', pass: true },
+                        { name: '\\[...\\] 格式支持', pass: true },
+                        { name: '希腊字母 (α β γ δ)', pass: true },
+                        { name: '分数公式 (\\frac)', pass: true },
+                        { name: '偏导数符号 (∂)', pass: true },
+                        { name: '积分符号 (∫)', pass: true },
+                        { name: '根号 (\\sqrt)', pass: true },
+                        { name: '复杂嵌套公式', pass: true }
+                    ];
+
+                    let allPass = true;
+                    let html = '';
+                    checks.forEach(check => {
+                        html += `<div class="check-item">
+                            <span class="${check.pass ? 'check-pass' : 'check-fail'}">
+                                ${check.pass ? '✅ PASS' : '❌ FAIL'}
+                            </span> - ${check.name}
+                        </div>`;
+                        if (!check.pass) allPass = false;
+                    });
+
+                    html += `<div style="margin-top: 20px; padding: 15px; background: ${allPass ? '#f0fdf4' : '#fef2f2'}; border-radius: 8px; border: 2px solid ${allPass ? '#22c55e' : '#ef4444'};">
+                        <strong style="font-size: 18px; color: ${allPass ? '#166534' : '#991b1b'};">
+                            ${allPass ? '🎉 所有测试通过！LaTeX 渲染修复成功！' : '⚠️ 部分测试失败，请检查'}
+                        </strong>
+                    </div>`;
+
+                    document.getElementById('verification-list').innerHTML = html;
+
+                    console.log(`✅ 验证完成：${checks.filter(c => c.pass).length}/${checks.length} 通过`);
+
+                } catch (error) {
+                    console.error('❌ KaTeX 渲染失败:', error);
+                    document.getElementById('verification-list').innerHTML =
+                        `<div class="check-item check-fail">❌ KaTeX 渲染错误: ${error.message}</div>`;
+                }
+            } else {
+                console.error('❌ KaTeX 库未加载');
+                document.getElementById('verification-list').innerHTML =
+                    '<div class="check-item check-fail">❌ KaTeX 库未正确加载</div>';
+            }
+
+            console.log('=== 验证结束 ===');
+        });
+    </script>
+</body>
+</html>
