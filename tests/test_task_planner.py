@@ -45,7 +45,7 @@ from agent_core.task_planner import (
     _extract_problem_type,
 )
 from agent_core.strategies.planned import PlannedStrategy
-from tools.registry import ToolRegistry
+from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
 
 

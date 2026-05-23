@@ -26,7 +26,7 @@ from langchain_core.runnables import Runnable
 from agent_core.strategies.base import AgentStrategy
 from agent_core.thought import ThoughtRecorder, ThoughtProcess
 from tools.base_tool import BaseTool, ToolInput
-from tools.registry import ToolRegistry
+from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from tools.tool_invoker import ToolInvoker
 
 logger = logging.getLogger(__name__)

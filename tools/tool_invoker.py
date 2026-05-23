@@ -2,7 +2,7 @@
 ToolInvoker — 工具调用执行器。
 
 提供工具的安全调用、参数解析、结果格式化等能力，
-作为 Agent 与 ToolRegistry 之间的桥梁。
+作为 Agent 与 HybridToolRegistry 之间的桥梁。
 """
 
 from __future__ import annotations
@@ -11,10 +11,12 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Union
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput
-from tools.registry import ToolRegistry
+from tools.hybrid_registry import HybridToolRegistry
+
+ToolRegistryType = HybridToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ class ToolInvoker:
 
     def __init__(
         self,
-        registry: ToolRegistry,
+        registry: ToolRegistryType,
         max_retries: int = 1,
         timeout_seconds: float = 30.0,
     ):
@@ -55,7 +57,7 @@ class ToolInvoker:
         self._timeout_seconds = timeout_seconds
 
     @property
-    def registry(self) -> ToolRegistry:
+    def registry(self) -> ToolRegistryType:
         """获取工具注册表。"""
         return self._registry
 

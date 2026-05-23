@@ -32,7 +32,7 @@ from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set, Tuple
 
 from tools.base_tool import BaseTool
-from tools.registry import ToolRegistry
+from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from tools.tool_invoker import ToolInvoker
 from prompts.planning_prompt import ANALYSIS_PROMPT, GENERATION_PROMPT, REPLAN_PROMPT
 

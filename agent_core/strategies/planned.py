@@ -24,7 +24,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Set
 from agent_core.strategies.base import AgentStrategy
 from agent_core.thought import ThoughtRecorder, ThoughtProcess
 from tools.base_tool import ToolInput
-from tools.registry import ToolRegistry
+from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from tools.tool_invoker import ToolInvoker
 from agent_core.task_planner import (
     Task,

@@ -9,7 +9,11 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
-from tools.registry import ToolRegistry, ToolNotFoundError, ToolExecutionError
+from tools.hybrid_registry import (
+    HybridToolRegistry as ToolRegistry,
+    ToolNotFoundError,
+    ToolExecutionError,
+)
 from tools.vision_tool import VisionTool, VisionToolAdapter
 
 

@@ -118,12 +118,17 @@ class MathAgent:
         self._enable_dynamic_params = enable_dynamic_params
         self._dynamic_llm_factory: Optional[DynamicLLMFactory] = None
         if enable_dynamic_params:
-            self._dynamic_llm_factory = DynamicLLMFactory(
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                streaming=stream,
-            )
+            try:
+                self._dynamic_llm_factory = get_dynamic_llm_factory()
+                logger.info("使用全局 DynamicLLMFactory 单例")
+            except RuntimeError:
+                self._dynamic_llm_factory = DynamicLLMFactory(
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    streaming=stream,
+                )
+                logger.info("全局单例未初始化，创建独立 DynamicLLMFactory 实例")
             logger.info("动态参数配置已启用")
         else:
             logger.info("动态参数配置已禁用，使用固定LLM配置")
@@ -758,9 +763,13 @@ class MathAgent:
         if self._enable_dynamic_params and self._dynamic_llm_factory:
             optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
 
-            if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'last'):
+            if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'first'):
                 self._strategy._llm_chain = (
                     self._strategy._llm_chain.first | optimized_llm
+                )
+            if hasattr(self._strategy, '_llm_chain_sync') and hasattr(self._strategy._llm_chain_sync, 'first'):
+                self._strategy._llm_chain_sync = (
+                    self._strategy._llm_chain_sync.first | optimized_llm
                 )
 
             logger.info(
