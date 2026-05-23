@@ -4,6 +4,7 @@ from agent_core import MathAgent
 from error_book import ErrorBookManager, ErrorItem
 from data_processing.validators import ErrorBookValidator
 from data_processing.formatters import ErrorBookFormatter
+from prompts.dynamic_params import init_dynamic_llm_factory
 import asyncio
 import logging
 import os
@@ -18,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
-
+import re as _re
 from app.config.settings import settings
 from app.middleware.auth import (
     verify_access_token,
@@ -273,7 +274,19 @@ class ErrorUpdateRequest(BaseModel):
 api_key = settings.DASHSCOPE_API_KEY
 
 registry = get_registry()
-agent = MathAgent(api_key=api_key, registry=registry)
+
+init_dynamic_llm_factory(
+    api_key=api_key,
+    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model="qwen-max",
+    streaming=True,
+)
+
+agent = MathAgent(
+    api_key=api_key,
+    registry=registry,
+    enable_dynamic_params=True,
+)
 
 error_book_manager = ErrorBookManager()
 
@@ -504,7 +517,7 @@ def add_error(request: ErrorItemRequest):
 
         correct_answer = validated_data.get("correct_answer", "")
 
-        import re as _re
+
         _incomplete_patterns = [
             r'^\*\*【最终答案】\*\*$',
             r'^【最终答案】$',

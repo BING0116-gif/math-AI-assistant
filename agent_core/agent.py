@@ -47,6 +47,9 @@ from prompts.dynamic_params import (
     LLMParams,
     get_params_for_task,
     get_classifier,
+    DynamicLLMFactory,
+    get_dynamic_llm_factory,
+    init_dynamic_llm_factory,
 )
 from tools import get_registry, ToolRegistry, BaseTool, ToolInput
 from tools.tool_description import ToolDescriptionGenerator
@@ -83,9 +86,10 @@ class MathAgent:
         stream: bool = True,
         base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
         enable_planner: bool = True,
-        enable_128k_context: bool = True,  # 🆕 新增：启用128K上下文管理
-        context_budget_tokens: int = 128000,  # 🆕 新增：上下文预算（默认128K）
-        context_strategy: ContextStrategy = ContextStrategy.HYBRID,  # 🆕 新增：管理策略
+        enable_128k_context: bool = True,
+        context_budget_tokens: int = 128000,
+        context_strategy: ContextStrategy = ContextStrategy.HYBRID,
+        enable_dynamic_params: bool = True,
     ):
         assert api_key, "API 密钥必须提供"
 
@@ -110,6 +114,19 @@ class MathAgent:
             base_url=base_url,
             streaming=stream,
         )
+
+        self._enable_dynamic_params = enable_dynamic_params
+        self._dynamic_llm_factory: Optional[DynamicLLMFactory] = None
+        if enable_dynamic_params:
+            self._dynamic_llm_factory = DynamicLLMFactory(
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                streaming=stream,
+            )
+            logger.info("动态参数配置已启用")
+        else:
+            logger.info("动态参数配置已禁用，使用固定LLM配置")
 
         # 统一会话历史访问器（初始化默认 session）
         self._get_session_history(self._default_session_id)
@@ -650,6 +667,11 @@ class MathAgent:
         return self._registry
 
     @property
+    def dynamic_llm_factory(self) -> Optional[DynamicLLMFactory]:
+        """获取动态LLM工厂实例。"""
+        return self._dynamic_llm_factory
+
+    @property
     def planner(self) -> Optional[TaskPlanner]:
         """获取任务规划器实例。"""
         return self._task_planner
@@ -722,6 +744,7 @@ class MathAgent:
         复杂问题 → PlannedStrategy（先规划再执行）
 
         同时调用意图分类器（T1-T5），记录到日志用于监控。
+        如果启用动态参数，会根据任务类型动态调整LLM配置。
 
         Args:
             user_input: 用户输入。
@@ -730,10 +753,21 @@ class MathAgent:
         Returns:
             选定的执行策略。
         """
-        # 意图分类（轻量规则匹配，<1ms）
         intent = self._classify_intent(user_input)
 
-        # 优先尝试规划器
+        if self._enable_dynamic_params and self._dynamic_llm_factory:
+            optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
+
+            if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'last'):
+                self._strategy._llm_chain = (
+                    self._strategy._llm_chain.first | optimized_llm
+                )
+
+            logger.info(
+                f"已应用动态参数: type={intent.task_type.value}, "
+                f"confidence={intent.confidence:.2f}"
+            )
+
         if (
             self._task_planner is not None
             and self._task_planner.enabled
@@ -825,6 +859,7 @@ def create_math_agent(
     max_iterations: int = 5,
     stream: bool = True,
     enable_planner: bool = True,
+    enable_dynamic_params: bool = True,
 ) -> MathAgent:
     """
     工厂函数：创建 MathAgent 实例。
@@ -839,6 +874,7 @@ def create_math_agent(
         max_iterations: 最大迭代次数。
         stream: 是否启用流式输出。
         enable_planner: 是否启用任务规划器（默认True）。
+        enable_dynamic_params: 是否启用动态参数配置（默认True）。
 
     Returns:
         MathAgent 实例。
@@ -851,4 +887,5 @@ def create_math_agent(
         max_iterations=max_iterations,
         stream=stream,
         enable_planner=enable_planner,
+        enable_dynamic_params=enable_dynamic_params,
     )

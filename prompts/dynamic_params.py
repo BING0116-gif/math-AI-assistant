@@ -12,9 +12,14 @@ LLM推理参数，实现精准回答与Token成本的最优平衡。
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
+
+from langchain_openai import ChatOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class TaskType(str, Enum):
@@ -299,3 +304,216 @@ def get_classifier() -> TaskClassifier:
     if _default_classifier is None:
         _default_classifier = TaskClassifier()
     return _default_classifier
+
+
+class DynamicLLMFactory:
+    """
+    动态LLM实例工厂。
+
+    根据任务类型(T1-T5)动态创建或复用ChatOpenAI实例，
+    每种任务类型使用最优化的LLM参数配置。
+
+    核心价值：
+    1. Token成本优化: T1/T2场景节省30-50%的max_tokens
+    2. 性能平衡: T3教学场景适当提高temperature增加灵活性
+    3. 实例复用: 相同参数的LLM实例只创建一次
+
+    Example:
+        factory = DynamicLLMFactory(
+            api_key="sk-xxx",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+
+        classifier = TaskClassifier()
+        result = classifier.classify("这道题考什么知识点？")
+        llm = factory.get_llm(result.task_type)
+
+        agent = create_react_agent(llm, tools, prompt)
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        model: str = "qwen-max",
+        default_temperature: float = 0.0,
+        streaming: bool = True,
+    ):
+        self._api_key = api_key
+        self._base_url = base_url
+        self._model = model
+        self._default_temperature = default_temperature
+        self._streaming = streaming
+
+        self._llm_cache: Dict[str, ChatOpenAI] = {}
+
+        self._base_config = {
+            'api_key': api_key,
+            'base_url': base_url,
+            'model': model,
+            'streaming': streaming,
+        }
+
+        logger.info(
+            f"DynamicLLMFactory初始化完成 "
+            f"(model={model}, base_url={base_url})"
+        )
+
+    def get_llm(
+        self,
+        task_type: TaskType,
+        override_params: Optional[Dict[str, Any]] = None,
+    ) -> ChatOpenAI:
+        """
+        获取针对特定任务类型优化的LLM实例。
+
+        Args:
+            task_type: 任务类型枚举
+            override_params: 可选的参数覆盖（用于特殊场景）
+
+        Returns:
+            配置好参数的ChatOpenAI实例
+        """
+        cache_key = task_type.value
+
+        if cache_key in self._llm_cache and not override_params:
+            cached_llm = self._llm_cache[cache_key]
+            logger.debug(f"复用缓存的LLM实例: {cache_key}")
+            return cached_llm
+
+        params = get_params_for_task(task_type)
+        params_dict = params.to_dict()
+
+        if override_params:
+            params_dict.update(override_params)
+            cache_key = f"{cache_key}_custom"
+
+        llm_config = {
+            **self._base_config,
+            **params_dict,
+        }
+
+        llm = ChatOpenAI(**llm_config)
+
+        if not override_params:
+            self._llm_cache[cache_key] = llm
+            logger.info(
+                f"创建并缓存新的LLM实例: {cache_key} "
+                f"(temperature={params_dict['temperature']}, "
+                f"max_tokens={params_dict['max_tokens']})"
+            )
+        else:
+            logger.info(
+                f"创建临时LLM实例: {cache_key} (不缓存)"
+            )
+
+        return llm
+
+    def get_default_llm(self) -> ChatOpenAI:
+        """获取默认配置的LLM（用于未知任务类型）。"""
+        return self.get_llm(TaskType.DEFAULT)
+
+    def classify_and_get_llm(self, user_input: str) -> tuple:
+        """
+        一站式服务：分类用户意图 + 返回优化的LLM。
+
+        Args:
+            user_input: 用户输入文本
+
+        Returns:
+            (ClassificationResult, ChatOpenAI) 元组
+        """
+        classifier = get_classifier()
+        result = classifier.classify(user_input)
+        llm = self.get_llm(result.task_type)
+
+        logger.debug(
+            f"意图分类: {result.task_type.value} "
+            f"(confidence={result.confidence:.2f}) → "
+            f"LLM配置已应用"
+        )
+
+        return result, llm
+
+    def clear_cache(self):
+        """清除LLM实例缓存（参数变更后调用）。"""
+        count = len(self._llm_cache)
+        self._llm_cache.clear()
+        logger.info(f"LLM实例缓存已清除 (释放{count}个实例)")
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息。"""
+        return {
+            'cached_instances': len(self._llm_cache),
+            'cached_types': list(self._llm_cache.keys()),
+            'factory_config': {
+                'model': self._model,
+                'base_url': self._base_url,
+                'streaming': self._streaming,
+            },
+        }
+
+    def update_base_config(self, **kwargs):
+        """
+        更新基础配置（会清除缓存）。
+
+        Args:
+            **kwargs: 要更新的配置项
+        """
+        self._base_config.update(kwargs)
+        self.clear_cache()
+        logger.info(f"基础配置已更新: {list(kwargs.keys())}")
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @property
+    def streaming(self) -> bool:
+        return self._streaming
+
+
+_factory_instance: Optional[DynamicLLMFactory] = None
+
+
+def init_dynamic_llm_factory(
+    api_key: str,
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: str = "qwen-max",
+    streaming: bool = True,
+) -> DynamicLLMFactory:
+    """
+    初始化全局DynamicLLMFactory单例。
+
+    应在应用启动时调用一次。
+
+    Example:
+        from prompts.dynamic_params import init_dynamic_llm_factory
+
+        init_dynamic_llm_factory(
+            api_key=settings.DASHSCOPE_API_KEY,
+            base_url=settings.LLM_BASE_URL,
+        )
+    """
+    global _factory_instance
+    _factory_instance = DynamicLLMFactory(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        streaming=streaming,
+    )
+    return _factory_instance
+
+
+def get_dynamic_llm_factory() -> DynamicLLMFactory:
+    """获取全局DynamicLLMFactory单例。"""
+    global _factory_instance
+    if _factory_instance is None:
+        raise RuntimeError(
+            "DynamicLLMFactory未初始化，请先调用 init_dynamic_llm_factory()"
+        )
+    return _factory_instance
