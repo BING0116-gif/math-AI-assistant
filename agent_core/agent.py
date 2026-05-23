@@ -24,7 +24,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from agent_core.strategies import AgentStrategy, ReActStrategy, PlannedStrategy
+from agent_core.strategies import AgentStrategy, ReActStrategy, PlannedStrategy, LangChainReActStrategy
 from agent_core.thought import ThoughtRecorder
 from agent_core.task_planner import (
     TaskPlanner,
@@ -90,6 +90,7 @@ class MathAgent:
         context_budget_tokens: int = 128000,
         context_strategy: ContextStrategy = ContextStrategy.HYBRID,
         enable_dynamic_params: bool = True,
+        use_langchain_agent: bool = True,
     ):
         assert api_key, "API 密钥必须提供"
 
@@ -163,8 +164,13 @@ class MathAgent:
         # 意图分类器（轻量规则匹配，<1ms，零Token消耗）
         self._task_classifier = get_classifier()
 
+        self._use_langchain = use_langchain_agent
+
         # 构建默认 ReAct 策略
-        self._strategy = self._create_react_strategy()
+        if self._use_langchain:
+            self._strategy = self._create_langchain_react_strategy()
+        else:
+            self._strategy = self._create_react_strategy()
 
         # 注册 VisionTool 引用（用于图片处理）
         self._vision_tool = None
@@ -175,6 +181,7 @@ class MathAgent:
             f"MathAgent 初始化完成"
             f"(model={model}, max_iterations={max_iterations}, "
             f"planner={enable_planner}, "
+            f"agent={'langchain' if self._use_langchain else 'custom'}, "
             f"context_128k={'✅' if enable_128k_context else '❌'})"
         )
 
@@ -216,6 +223,30 @@ class MathAgent:
             tools=tools,
             max_iterations=self._max_iterations,
             thought_recorder=thought_recorder,
+        )
+
+    def _create_langchain_react_strategy(self) -> LangChainReActStrategy:
+        prompt_manager = SystemPromptManager()
+        tool_descs = ToolDescriptionGenerator().generate_for_registry(
+            self._registry.get_all_tools()
+        )
+        prompt_manager.update_tools(tool_descs)
+
+        react_instruction = ReActPromptTemplate.build_instruction(
+            tool_names=[
+                t.name for t in self._registry.get_all_tools()
+            ]
+        )
+        prompt_manager.update_react_instruction(react_instruction)
+
+        full_prompt = prompt_manager.get_prompt()
+
+        logger.info("使用 LangChainReActStrategy（原生function calling + 流式输出）")
+        return LangChainReActStrategy(
+            llm=self._llm,
+            registry=self._registry,
+            system_prompt=full_prompt,
+            max_iterations=self._max_iterations,
         )
 
     def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
@@ -660,10 +691,14 @@ class MathAgent:
             del self._context_managers[sid]
             logger.info(f"🧹 已清空session '{sid}'的128K上下文记忆")
 
-    def get_thought_recorder(self) -> ThoughtRecorder:
+    def get_thought_recorder(self):
         """获取思维记录器。"""
-        if isinstance(self._strategy, ReActStrategy):
-            return self._strategy.thought_recorder
+        if self._use_langchain:
+            if hasattr(self._strategy, 'thought_recorder'):
+                return self._strategy.thought_recorder
+        else:
+            if isinstance(self._strategy, ReActStrategy):
+                return self._strategy.thought_recorder
         raise RuntimeError("当前策略不支持思维记录")
 
     @property
@@ -729,7 +764,10 @@ class MathAgent:
 
         当工具注册表发生变化后调用此方法。
         """
-        self._strategy = self._create_react_strategy()
+        if self._use_langchain:
+            self._strategy = self._create_langchain_react_strategy()
+        else:
+            self._strategy = self._create_react_strategy()
         self._planned_strategy = None
         if self._task_planner is not None:
             self._task_planner.clear_cache()
@@ -763,14 +801,18 @@ class MathAgent:
         if self._enable_dynamic_params and self._dynamic_llm_factory:
             optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
 
-            if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'first'):
-                self._strategy._llm_chain = (
-                    self._strategy._llm_chain.first | optimized_llm
-                )
-            if hasattr(self._strategy, '_llm_chain_sync') and hasattr(self._strategy._llm_chain_sync, 'first'):
-                self._strategy._llm_chain_sync = (
-                    self._strategy._llm_chain_sync.first | optimized_llm
-                )
+            if self._use_langchain:
+                self._strategy._llm = optimized_llm
+                self._strategy.refresh_tools()
+            else:
+                if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'first'):
+                    self._strategy._llm_chain = (
+                        self._strategy._llm_chain.first | optimized_llm
+                    )
+                if hasattr(self._strategy, '_llm_chain_sync') and hasattr(self._strategy._llm_chain_sync, 'first'):
+                    self._strategy._llm_chain_sync = (
+                        self._strategy._llm_chain_sync.first | optimized_llm
+                    )
 
             logger.info(
                 f"已应用动态参数: type={intent.task_type.value}, "

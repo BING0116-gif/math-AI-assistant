@@ -286,6 +286,7 @@ agent = MathAgent(
     api_key=api_key,
     registry=registry,
     enable_dynamic_params=True,
+    use_langchain_agent=True,
 )
 
 error_book_manager = ErrorBookManager()

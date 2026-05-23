@@ -11,6 +11,10 @@ ReActStrategy — ReAct 执行策略。
 - 真流式输出：使用 astream_events() 从 LLM 级别逐 token 产出
 - 工具调用时实时显示执行结果
 - 完整的 ReAct 思维链记录
+
+@deprecated 此模块已被 LangChainReActStrategy 取代。
+           默认使用 LangChain 原生 ReAct Agent (function calling)。
+           通过 MathAgent(use_langchain_agent=False) 可回退到此实现。
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import warnings
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -28,6 +33,13 @@ from agent_core.thought import ThoughtRecorder, ThoughtProcess
 from tools.base_tool import BaseTool, ToolInput
 from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from tools.tool_invoker import ToolInvoker
+
+warnings.warn(
+    "ReActStrategy 已弃用，请使用 LangChainReActStrategy。"
+    "通过 MathAgent(use_langchain_agent=False) 可回退到此实现。",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

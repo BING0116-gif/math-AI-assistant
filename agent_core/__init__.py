@@ -19,6 +19,9 @@ from agent_core.task_planner import (
     CircularDependencyError,
 )
 from agent_core.strategies.planned import PlannedStrategy
+from agent_core.strategies.langchain_react import LangChainReActStrategy
+from agent_core.callbacks import ThoughtRecordingCallbackHandler
+from agent_core.langchain_adapter import LangChainToolConverter, get_tool_converter, convert_tools_to_langchain
 
 __all__ = [
     "MathAgent",
@@ -37,4 +40,9 @@ __all__ = [
     "PlanningError",
     "CircularDependencyError",
     "PlannedStrategy",
+    "LangChainReActStrategy",
+    "ThoughtRecordingCallbackHandler",
+    "LangChainToolConverter",
+    "get_tool_converter",
+    "convert_tools_to_langchain",
 ]
