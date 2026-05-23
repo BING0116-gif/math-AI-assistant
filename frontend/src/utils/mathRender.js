@@ -20,11 +20,58 @@ const katexConfig = {
   }
 }
 
+function cleanFormula(formula) {
+  return formula
+    .replace(/&nbsp;/g, ' ')
+    .replace(/<br\s*\/?>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function tryRenderFormula(formula, displayMode, originalContent) {
+  const cleanedFormula = cleanFormula(formula)
+
+  try {
+    const result = katex.renderToString(cleanedFormula, {
+      ...katexConfig,
+      displayMode
+    })
+    return { success: true, html: result }
+  } catch (error) {
+    console.warn('KaTeX render failed:', {
+      formula: cleanedFormula.substring(0, 100),
+      error: error.message
+    })
+
+    const simplifiedFormula = cleanedFormula
+      .replace(/\\left/g, '')
+      .replace(/\\right/g, '')
+      .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
+
+    if (simplifiedFormula !== cleanedFormula) {
+      try {
+        const fallbackResult = katex.renderToString(simplifiedFormula, {
+          ...katexConfig,
+          displayMode
+        })
+        return { success: true, html: fallbackResult, fallback: true }
+      } catch (fallbackError) {
+        console.warn('KaTeX fallback render also failed:', fallbackError.message)
+      }
+    }
+
+    return {
+      success: false,
+      html: `<span class="math-error" title="${escapeHtml(error.message)}">${escapeHtml(originalContent)}</span>`
+    }
+  }
+}
+
 export function renderMathInElement(element) {
   if (!element) return
-  
+
   const mathElements = element.querySelectorAll('.math-display, .math-inline')
-  
+
   if (mathElements.length === 0 && !hasMathContent(element.textContent || '')) {
     return
   }
@@ -32,35 +79,24 @@ export function renderMathInElement(element) {
   if (mathElements.length > 0) {
     mathElements.forEach(el => {
       const mathContent = el.textContent || ''
-      const isDisplay = el.classList.contains('math-display')
-      
+
       if (mathContent.startsWith('$$') && mathContent.endsWith('$$')) {
         const formula = mathContent.slice(2, -2).trim()
-        try {
-          el.innerHTML = katex.renderToString(formula, {
-            ...katexConfig,
-            displayMode: true
-          })
-          el.classList.add('katex-rendered')
-        } catch (error) {
-          console.warn('KaTeX render error:', error)
-          el.innerHTML = `<span class="math-error">${escapeHtml(mathContent)}</span>`
-        }
+        const result = tryRenderFormula(formula, true, mathContent)
+        el.innerHTML = result.html
+        if (result.success) el.classList.add('katex-rendered')
       } else if (mathContent.startsWith('$') && mathContent.endsWith('$')) {
         const formula = mathContent.slice(1, -1).trim()
-        try {
-          el.innerHTML = katex.renderToString(formula, {
-            ...katexConfig,
-            displayMode: false
-          })
-          el.classList.add('katex-rendered')
-        } catch (error) {
-          console.warn('KaTeX render error:', error)
-          el.innerHTML = `<span class="math-error">${escapeHtml(mathContent)}</span>`
-        }
+        const result = tryRenderFormula(formula, false, mathContent)
+        el.innerHTML = result.html
+        if (result.success) el.classList.add('katex-rendered')
+      } else if (mathContent.trim()) {
+        const result = tryRenderFormula(mathContent.trim(), false, mathContent)
+        el.innerHTML = result.html
+        if (result.success) el.classList.add('katex-rendered')
       }
     })
-    
+
     return
   }
 
@@ -101,39 +137,27 @@ export function hasMathContent(text) {
 
 export function renderMathSync(text) {
   if (!text) return text
-  
+
   let result = text
-  
+
   result = result.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
-    try {
-      return katex.renderToString(math.trim(), { ...katexConfig, displayMode: true })
-    } catch {
-      return `$$${math}$$`
-    }
+    const renderResult = tryRenderFormula(math.trim(), true, `$$${math}$$`)
+    return renderResult.success ? renderResult.html : `$$${math}$$`
   })
 
   result = result.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
-    try {
-      return katex.renderToString(math.trim(), { ...katexConfig, displayMode: false })
-    } catch {
-      return `$${math}$`
-    }
+    const renderResult = tryRenderFormula(math.trim(), false, `$${math}$`)
+    return renderResult.success ? renderResult.html : `$${math}$`
   })
 
   result = result.replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => {
-    try {
-      return katex.renderToString(math.trim(), { ...katexConfig, displayMode: true })
-    } catch {
-      return `\\[${math}\\]`
-    }
+    const renderResult = tryRenderFormula(math.trim(), true, `\\[${math}\\]`)
+    return renderResult.success ? renderResult.html : `\\[${math}\\]`
   })
 
   result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => {
-    try {
-      return katex.renderToString(math.trim(), { ...katexConfig, displayMode: false })
-    } catch {
-      return `\\(${math}\\)`
-    }
+    const renderResult = tryRenderFormula(math.trim(), false, `\\(${math}\\)`)
+    return renderResult.success ? renderResult.html : `\\(${math}\\)`
   })
 
   return result

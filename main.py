@@ -502,6 +502,37 @@ def add_error(request: ErrorItemRequest):
                 detail=f"数据验证失败: {'; '.join(validation_errors)}",
             )
 
+        correct_answer = validated_data.get("correct_answer", "")
+
+        import re as _re
+        _incomplete_patterns = [
+            r'^\*\*【最终答案】\*\*$',
+            r'^【最终答案】$',
+            r'^\*\*答案\*\*[：:]\s*$',
+            r'^\*\*正确答案\*\*[：:]\s*$',
+            r'^答案[：:]\s*$',
+            r'^最终答案[：:]\s*$',
+        ]
+
+        _is_incomplete_answer = any(
+            _re.match(pattern, correct_answer.strip(), _re.IGNORECASE)
+            for pattern in _incomplete_patterns
+        )
+
+        if _is_incomplete_answer:
+            logger.warning(
+                f"检测到不完整的答案解析 (ID: {validated_data.get('id', 'unknown')}) - "
+                f"答案内容只有标题标记，无实际解析内容。"
+                f"这可能是前端extractBestAnswer函数的bug导致的。"
+            )
+            _warning_note = (
+                "⚠️ [系统警告] 此题的答案解析可能不完整\n"
+                "原因: 检测到答案只包含标题标记（如'【最终答案】'），缺少实际解题过程\n"
+                "建议: 请重新添加此错题，或手动补充完整解析"
+            )
+            existing_notes = validated_data.get("notes", "") or ""
+            validated_data["notes"] = f"{existing_notes}\n\n{_warning_note}" if existing_notes else _warning_note
+
         formatted_data = ErrorBookFormatter.format(validated_data)
 
         error_item = ErrorItem(
