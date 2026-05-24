@@ -221,6 +221,7 @@ class LLMComplexityClassifier:
             cached = self._cache.get(cache_key)
             if cached is not None:
                 self._stats["cache_hits"] += 1
+                self._cache[cache_key] = cached
                 cached.latency_ms = (time.perf_counter() - start_time) * 1000
                 logger.debug(
                     f"缓存命中: '{problem[:40]}...' → "
@@ -555,10 +556,18 @@ class LLMComplexityClassifier:
         """将分类结果存入缓存（LRU淘汰策略）。"""
         cache_key = self._compute_cache_key(problem)
 
+        if cache_key in self._cache:
+            self._cache[cache_key] = result
+            logger.debug(
+                f"更新缓存: key={cache_key[:8]}..., "
+                f"size={len(self._cache)}/{self._config.cache_max_size}"
+            )
+            return
+
         if len(self._cache) >= self._config.cache_max_size:
             oldest_key = next(iter(self._cache))
             del self._cache[oldest_key]
-            logger.debug(f"缓存淘汰: {oldest_key[:8]}...")
+            logger.debug(f"LRU淘汰: {oldest_key[:8]}...")
 
         self._cache[cache_key] = result
         logger.debug(
