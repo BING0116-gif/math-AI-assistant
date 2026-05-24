@@ -53,6 +53,15 @@ from prompts.dynamic_params import (
 )
 from tools import get_registry, ToolRegistry, BaseTool, ToolInput
 from tools.tool_description import ToolDescriptionGenerator
+from agent_core.classifier.llm_classifier import (
+    LLMComplexityClassifier,
+    ClassificationResult as ClassifierClassificationResult,
+    ClassifierConfig,
+)
+from agent_core.classifier.complexity_levels import (
+    level_to_strategy,
+    ComplexityCategory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +100,9 @@ class MathAgent:
         context_strategy: ContextStrategy = ContextStrategy.HYBRID,
         enable_dynamic_params: bool = True,
         use_langchain_agent: bool = True,
+        enable_classifier: bool = True,
+        classifier_model: str = "qwen-turbo",
+        classifier_config: Optional[dict] = None,
     ):
         assert api_key, "API 密钥必须提供"
 
@@ -161,6 +173,45 @@ class MathAgent:
             )
             logger.info("TaskPlanner 已启用")
 
+        # ── 🆕 新增: LLM复杂度分类器 ──
+        self._enable_classifier = enable_classifier
+        self._classifier: Optional[LLMComplexityClassifier] = None
+
+        if enable_classifier:
+            try:
+                classifier_llm = ChatOpenAI(
+                    model=classifier_model,
+                    temperature=0.0,
+                    api_key=api_key,
+                    base_url=base_url,
+                    streaming=False,
+                )
+
+                _cfg = classifier_config or {}
+                _classifier_config = ClassifierConfig(
+                    cache_max_size=_cfg.get("cache_max_size", 2000),
+                    enable_cache=_cfg.get("enable_cache", True),
+                    enable_fallback=_cfg.get("enable_fallback", True),
+                    classification_timeout=_cfg.get("classification_timeout", 5.0),
+                )
+
+                self._classifier = LLMComplexityClassifier(
+                    llm=classifier_llm,
+                    config=_classifier_config,
+                )
+
+                logger.info(
+                    f"✅ LLM复杂度分类器已启用 "
+                    f"(model={classifier_model}, "
+                    f"cache={_classifier_config.cache_max_size}条)"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ LLM复杂度分类器初始化失败: {e}，将使用原有策略路由")
+                self._classifier = None
+                self._enable_classifier = False
+        else:
+            logger.info("⚠️ LLM复杂度分类器已禁用，使用原有策略路由")
+
         # 意图分类器（轻量规则匹配，<1ms，零Token消耗）
         self._task_classifier = get_classifier()
 
@@ -193,18 +244,8 @@ class MathAgent:
 
         thought_recorder = ThoughtRecorder()
 
-        # 构建四层架构 System Prompt + 精简ReAct指令
-        prompt_manager = SystemPromptManager()
-        tool_descs = ToolDescriptionGenerator().generate_for_registry(tools)
-        prompt_manager.update_tools(tool_descs)
-
-        # 精简ReAct指令（仅工具调用格式，不含角色定义）
-        react_instruction = ReActPromptTemplate.build_instruction(
-            tool_names=[t.name for t in tools] if tools else []
-        )
-        prompt_manager.update_react_instruction(react_instruction)
-
-        full_prompt = prompt_manager.get_prompt()
+        # 使用提取的公共方法构建 System Prompt
+        full_prompt = self._build_system_prompt(tools)
 
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=full_prompt),
@@ -226,20 +267,8 @@ class MathAgent:
         )
 
     def _create_langchain_react_strategy(self) -> LangChainReActStrategy:
-        prompt_manager = SystemPromptManager()
-        tool_descs = ToolDescriptionGenerator().generate_for_registry(
-            self._registry.get_all_tools()
-        )
-        prompt_manager.update_tools(tool_descs)
-
-        react_instruction = ReActPromptTemplate.build_instruction(
-            tool_names=[
-                t.name for t in self._registry.get_all_tools()
-            ]
-        )
-        prompt_manager.update_react_instruction(react_instruction)
-
-        full_prompt = prompt_manager.get_prompt()
+        # 使用提取的公共方法构建 System Prompt（使用默认的注册表工具）
+        full_prompt = self._build_system_prompt()
 
         logger.info("使用 LangChainReActStrategy（原生function calling + 流式输出）")
         return LangChainReActStrategy(
@@ -413,20 +442,37 @@ class MathAgent:
         
         return context
     
-    def _get_system_prompt(self) -> str:
-        """获取当前System Prompt。"""
+    def _build_system_prompt(self, tools: Optional[List[BaseTool]] = None) -> str:
+        """
+        构建完整的 System Prompt（四层架构 + 工具描述 + ReAct指令）。
+
+        Args:
+            tools: 工具列表，如果为 None 则使用注册表中的所有工具
+
+        Returns:
+            完整的 System Prompt 字符串
+        """
+        if tools is None:
+            tools = (
+                self._registry.get_all_tools()
+                if hasattr(self._registry, 'get_all_tools')
+                else []
+            )
+
         prompt_manager = SystemPromptManager()
-        tool_descs = ToolDescriptionGenerator().generate_for_registry(
-            self._registry.get_all_tools() 
-            if hasattr(self._registry, 'get_all_tools') 
-            else []
-        )
+        tool_descs = ToolDescriptionGenerator().generate_for_registry(tools)
         prompt_manager.update_tools(tool_descs)
+
         react_instruction = ReActPromptTemplate.build_instruction(
-            tool_names=[t.name for t in (self._registry.get_all_tools() if hasattr(self._registry, 'get_all_tools') else [])]
+            tool_names=[t.name for t in tools] if tools else []
         )
         prompt_manager.update_react_instruction(react_instruction)
+
         return prompt_manager.get_prompt()
+
+    def _get_system_prompt(self) -> str:
+        """获取当前System Prompt。"""
+        return self._build_system_prompt()
 
     def _classify_intent(self, user_input: str) -> ClassificationResult:
         """
@@ -523,7 +569,7 @@ class MathAgent:
         if self._is_image_input(user_input):
             return await self._process_image(user_input, sid, context)
 
-        strategy = self._select_strategy(user_input, sid)
+        strategy = await self._select_strategy(user_input, sid)
         result = await strategy.execute(user_input, sid, context)
         
         history.add_ai_message(result)
@@ -553,14 +599,19 @@ class MathAgent:
                 yield chunk
             return
 
-        strategy = self._select_strategy(user_input, sid)
+        strategy = await self._select_strategy(user_input, sid)
+        
+        logger.info(f"[AGENT-STREAM] 策略选择完成，开始流式执行: input='{user_input[:30]}...'")
         
         chunks = []
         async for chunk in strategy.stream(user_input, sid, context):
-            yield chunk
-            chunks.append(chunk)
+            if chunk:
+                yield chunk
+                chunks.append(chunk)
         
         full_response = "".join(chunks)
+        logger.info(f"[AGENT-STREAM] 流式执行完成: total_chunks={len(chunks)}, total_len={len(full_response)}")
+        
         history.add_ai_message(full_response)
         
         self.save_assistant_response_to_context(
@@ -775,19 +826,21 @@ class MathAgent:
 
     # ── 策略选择 ────────────────────────────────────────────────────────
 
-    def _select_strategy(
+    async def _select_strategy(
         self,
         user_input: str,
         session_id: str,
     ) -> AgentStrategy:
         """
-        根据问题复杂度选择合适的执行策略。
+        智能策略选择 — 优先使用LLM分类器，降级使用规则匹配。
 
-        简单问题 → ReActStrategy（直接边想边做）
-        复杂问题 → PlannedStrategy（先规划再执行）
-
-        同时调用意图分类器（T1-T5），记录到日志用于监控。
-        如果启用动态参数，会根据任务类型动态调整LLM配置。
+        决策流程:
+            1. 意图分类 (T1-T5, 轻量规则, <1ms)
+            2. LLM复杂度分类 (qwen-turbo, ~200ms)  ← 新增
+            3. 根据复杂度分数选择策略:
+               - 分数 1-3 → ReActStrategy
+               - 分数 4-5 → PlannedStrategy
+            4. 如果分类器不可用，降级到原有 TaskPlanner 逻辑
 
         Args:
             user_input: 用户输入。
@@ -819,13 +872,56 @@ class MathAgent:
                 f"confidence={intent.confidence:.2f}"
             )
 
+        # ── 🆕 优先使用LLM分类器 ──
+        if self._classifier is not None:
+            try:
+                classification = await self._classifier.classify(user_input)
+
+                score = classification.score
+                strategy_name = classification.strategy
+                label = ComplexityCategory.get_label(score)
+
+                logger.info(
+                    f"[分类器路由] score={score}({label}) "
+                    f"→ strategy={strategy_name} | "
+                    f"method={classification.method} | "
+                    f"confidence={classification.confidence:.2f} | "
+                    f"latency={classification.latency_ms:.0f}ms | "
+                    f"intent={intent.task_type.to_chinese()}"
+                )
+
+                if strategy_name == "planned":
+                    if self._task_planner is not None and self._task_planner.enabled:
+                        logger.info(f"✅ 使用 PlannedStrategy (score={score}, {label})")
+                        return self._get_or_create_planned_strategy()
+
+                    logger.warning("分类器建议 Planned，但规划器未启用，回退到 ReAct")
+                    return self._strategy
+
+                else:
+                    logger.info(f"✅ 使用 ReActStrategy (score={score}, {label})")
+                    return self._strategy
+
+            except Exception as e:
+                logger.error(
+                    f"❌ LLM分类器异常: {type(e).__name__}: {e}，"
+                    f"降级到原有逻辑"
+                )
+
+        # ── 降级: 原有 TaskPlanner.should_plan() 逻辑 ──
+        logger.info(
+            f"使用原有策略路由 "
+            f"(意图={intent.task_type.to_chinese()}, "
+            f"confidence={intent.confidence:.2f})"
+        )
+
         if (
             self._task_planner is not None
             and self._task_planner.enabled
             and self._task_planner.should_plan(user_input)
         ):
             logger.info(
-                f"问题复杂度高 → 使用 PlannedStrategy "
+                f"TaskPlanner判断复杂度高 → 使用 PlannedStrategy "
                 f"(意图={intent.task_type.to_chinese()})"
             )
             return self._get_or_create_planned_strategy()

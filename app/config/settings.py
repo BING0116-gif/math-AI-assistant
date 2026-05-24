@@ -64,6 +64,23 @@ class Settings(BaseSettings):
         default=False, alias="AUTO_MIGRATE"
     )
 
+    CLASSIFIER_ENABLED: bool = Field(
+        default=True,
+        alias="CLASSIFIER_ENABLED",
+    )
+    CLASSIFIER_MODEL: str = Field(
+        default="qwen-turbo",
+        alias="CLASSIFIER_MODEL",
+    )
+    CLASSIFIER_CACHE_SIZE: int = Field(
+        default=2000,
+        alias="CLASSIFIER_CACHE_SIZE",
+    )
+    CLASSIFIER_TIMEOUT: float = Field(
+        default=5.0,
+        alias="CLASSIFIER_TIMEOUT",
+    )
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

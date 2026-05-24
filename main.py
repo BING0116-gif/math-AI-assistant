@@ -287,6 +287,14 @@ agent = MathAgent(
     registry=registry,
     enable_dynamic_params=True,
     use_langchain_agent=True,
+    enable_classifier=settings.CLASSIFIER_ENABLED,
+    classifier_model=settings.CLASSIFIER_MODEL,
+    classifier_config={
+        "cache_max_size": settings.CLASSIFIER_CACHE_SIZE,
+        "classification_timeout": settings.CLASSIFIER_TIMEOUT,
+        "enable_cache": True,
+        "enable_fallback": True,
+    },
 )
 
 error_book_manager = ErrorBookManager()
@@ -295,20 +303,24 @@ init_default_admin(settings.JWT_SECRET_KEY)
 
 
 async def _stream_agent_response(message, session_id, context_label="聊天"):
+    logger.info(f"[SSE] 开始流式响应: session={session_id}, label={context_label}")
     try:
+        chunk_idx = 0
         async for chunk in agent.stream(message, session_id=session_id):
             if chunk:
                 if not isinstance(chunk, str):
                     chunk = str(chunk)
+                chunk_idx += 1
                 try:
                     yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
                 except (TypeError, ValueError) as json_error:
                     yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
 
+        logger.info(f"[SSE] 流式响应完成: session={session_id}, total_chunks={chunk_idx}")
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 
     except Exception as e:
-        logger.error(f"流式{context_label}失败: {e}\n{traceback.format_exc()}")
+        logger.error(f"[SSE] 流式{context_label}失败: {e}\n{traceback.format_exc()}")
         yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 

@@ -23,6 +23,17 @@ from agent_core.strategies.langchain_react import LangChainReActStrategy
 from agent_core.callbacks import ThoughtRecordingCallbackHandler
 from agent_core.langchain_adapter import LangChainToolConverter, get_tool_converter, convert_tools_to_langchain
 
+from agent_core.classifier import (
+    LLMComplexityClassifier,
+    ClassificationResult,
+    ClassifierConfig,
+    ComplexityLevel,
+    ComplexityCategory,
+    level_to_strategy,
+    is_simple,
+    is_complex,
+)
+
 __all__ = [
     "MathAgent",
     "create_math_agent",
@@ -45,4 +56,12 @@ __all__ = [
     "LangChainToolConverter",
     "get_tool_converter",
     "convert_tools_to_langchain",
+    "LLMComplexityClassifier",
+    "ClassificationResult",
+    "ClassifierConfig",
+    "ComplexityLevel",
+    "ComplexityCategory",
+    "level_to_strategy",
+    "is_simple",
+    "is_complex",
 ]

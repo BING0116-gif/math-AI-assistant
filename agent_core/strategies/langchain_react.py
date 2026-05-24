@@ -164,62 +164,50 @@ class LangChainReActStrategy(AgentStrategy):
         messages.extend(chat_history)
         messages.append(HumanMessage(content=user_input))
 
-        logger.debug(
-            f"开始流式执行: session={session_id}, "
-            f"input={user_input[:50]}..."
+        logger.info(
+            f"[STREAM] 开始流式执行: session={session_id}, "
+            f"input='{user_input[:50]}...', history_len={len(chat_history)}"
         )
 
         try:
-            result = await asyncio.wait_for(
-                self._stream_with_callback(agent, messages, recorder),
-                timeout=self._timeout_seconds,
+            token_count = 0
+            yield_count = 0
+
+            async for event in agent.astream_events(
+                {"messages": messages},
+                config={'callbacks': [recorder]},
+                version="v2",
+            ):
+                if event.get("event") != "on_chat_model_stream":
+                    continue
+
+                chunk = event.get("data", {}).get("chunk")
+                if not chunk:
+                    continue
+
+                content = getattr(chunk, 'content', None)
+                if not content:
+                    continue
+
+                token_count += 1
+                yield_count += 1
+                logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
+                yield content
+
+            logger.info(
+                f"[STREAM] 流式执行完成: session={session_id}, "
+                f"tokens={token_count}, yields={yield_count}"
             )
 
-            async for chunk in result:
-                yield chunk
-
         except asyncio.TimeoutError:
-            logger.error(f"Agent执行超时 ({self._timeout_seconds}s)")
+            logger.error(f"[STREAM] Agent执行超时 ({self._timeout_seconds}s)")
             yield "\n\n**【⏰ 执行超时】** 请简化问题后重试"
             recorder.finish_process("[超时终止]")
 
         except Exception as e:
-            logger.error(f"Agent执行失败: {e}", exc_info=True)
+            logger.error(f"[STREAM] Agent执行失败: {type(e).__name__}: {e}", exc_info=True)
             yield f"\n\n**【❌ 执行错误】** {type(e).__name__}: {str(e)}"
             recorder.finish_process(f"[错误] {e}")
-
-    async def _stream_with_callback(
-        self,
-        agent: Any,
-        messages: List,
-        recorder: ThoughtRecordingCallbackHandler,
-    ) -> AsyncGenerator[str, None]:
-        last_ai_content = ""
-
-        async for event in agent.astream(
-            {"messages": messages},
-            config={'callbacks': [recorder]},
-            stream_mode="values",
-        ):
-            if isinstance(event, dict) and 'messages' in event:
-                msg_list = event['messages']
-                if msg_list:
-                    last_msg = msg_list[-1]
-                    if isinstance(last_msg, AIMessage) and hasattr(last_msg, 'content'):
-                        content = last_msg.content or ""
-                        if content and content != last_ai_content:
-                            if last_ai_content and content.startswith(last_ai_content):
-                                delta = content[len(last_ai_content):]
-                                if delta:
-                                    yield delta
-                            else:
-                                yield content
-                            last_ai_content = content
-                    elif isinstance(last_msg, dict):
-                        content = last_msg.get('content', '')
-                        if content and content != last_ai_content:
-                            yield content
-                            last_ai_content = content
 
     def _format_chat_history(
         self,
