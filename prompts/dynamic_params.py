@@ -148,16 +148,16 @@ TASK_PARAMS_MAP: Dict[TaskType, LLMParams] = {
         frequency_penalty=0.0,
     ),
     TaskType.FULL_SOLUTION: LLMParams(
-        temperature=0.0,
-        top_p=1.0,
-        max_tokens=4096,
+        temperature=0.3,
+        top_p=0.95,
+        max_tokens=8192,
         presence_penalty=0.0,
         frequency_penalty=0.0,
     ),
     TaskType.PLANNED_SOLUTION: LLMParams(
-        temperature=0.0,
-        top_p=1.0,
-        max_tokens=8192,
+        temperature=0.1,
+        top_p=0.95,
+        max_tokens=12288,
         presence_penalty=0.0,
         frequency_penalty=0.0,
     ),
@@ -170,6 +170,26 @@ TASK_PARAMS_MAP: Dict[TaskType, LLMParams] = {
     ),
 }
 
+
+# ── 复杂度评分 → max_tokens 自适应映射 ──
+
+COMPLEXITY_TOKEN_MAP: Dict[int, int] = {
+    1: 1024,     # 极简：1K tokens
+    2: 2048,     # 简单：2K tokens
+    3: 4096,     # 中等：4K tokens
+    4: 8192,     # 较难：8K tokens
+    5: 12288,    # 困难：12K tokens
+}
+
+
+def get_adaptive_max_tokens(complexity_score: int, task_type: TaskType) -> int:
+    """根据复杂度评分获取自适应的 max_tokens。"""
+    base = COMPLEXITY_TOKEN_MAP.get(complexity_score, 4096)
+    type_max = task_type.max_output_length * 2  # 汉字→token 约2倍
+    return max(base, type_max)
+
+
+# ── 任务分类器 ──
 
 class TaskClassifier:
     """
@@ -211,6 +231,13 @@ class TaskClassifier:
             ["帮我解", "详细过程", "全部步骤", "写出解答", "详细解"],
             ["解", "求∫", "求lim", "计算", "证明", "求", "推导", "步骤", "过程"],
             [],
+        ),
+        # 数学符号触发 → 强制T5
+        (
+            TaskType.FULL_SOLUTION,
+            ["∫", "∑", "∏", "lim", "dx", "dy", "f'(x)", "f''(x)", "∮", "∂"],
+            [],
+            ["是什么", "定义", "概念", "什么意思"],
         ),
     ]
 

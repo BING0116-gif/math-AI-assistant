@@ -5,18 +5,37 @@ const katexConfig = {
     { left: '$$', right: '$$', display: true },
     { left: '$', right: '$', display: false },
     { left: '\\(', right: '\\)', display: false },
-    { left: '\\[', right: '\\[', display: true }
+    { left: '\\[', right: '\\]', display: true }
   ],
   throwOnError: false,
   errorColor: '#cc0000',
   strict: false,
-  trust: true,
+  trust: false,
   macros: {
     "\\R": "\\mathbb{R}",
     "\\N": "\\mathbb{N}",
     "\\Z": "\\mathbb{Z}",
     "\\Q": "\\mathbb{Q}",
-    "\\C": "\\mathbb{C}"
+    "\\C": "\\mathbb{C}",
+    "\\dd": "\\mathrm{d}",
+    "\\pd": "\\partial",
+    "\\derivative": ["\\frac{\\mathrm{d}#1}{\\mathrm{d}#2}", 2],
+    "\\pderivative": ["\\frac{\\partial #1}{\\partial #2}", 2],
+    "\\vect": ["\\mathbf{#1}", 1],
+    "\\mat": ["\\mathbf{#1}", 1],
+    "\\unit": ["\\hat{\\mathbf{#1}}", 1],
+    "\\abs": ["\\left| #1 \\right|", 1],
+    "\\norm": ["\\left\\| #1 \\right\\|", 1],
+    "\\inner": ["\\left\\langle #1, #2 \\right\\rangle", 2],
+    "\\grad": "\\nabla",
+    "\\divg": "\\nabla \\cdot",
+    "\\curl": "\\nabla \\times",
+    "\\laplacian": "\\nabla^2",
+    "\\set": ["\\left\\{ #1 \\right\\}", 1],
+    "\\bigO": ["\\mathcal{O}\\left(#1\\right)", 1],
+    "\\to": "\\rightarrow",
+    "\\To": "\\Rightarrow",
+    "\\xto": ["\\xrightarrow{#1}", 1],
   }
 }
 
@@ -28,42 +47,81 @@ function cleanFormula(formula) {
     .trim()
 }
 
-function tryRenderFormula(formula, displayMode, originalContent) {
-  const cleanedFormula = cleanFormula(formula)
-
+function tryKatexRender(formula, displayMode) {
   try {
-    const result = katex.renderToString(cleanedFormula, {
+    const result = katex.renderToString(formula, {
       ...katexConfig,
       displayMode
     })
     return { success: true, html: result }
   } catch (error) {
-    console.warn('KaTeX render failed:', {
-      formula: cleanedFormula.substring(0, 100),
-      error: error.message
-    })
+    return { success: false, error: error.message }
+  }
+}
 
-    const simplifiedFormula = cleanedFormula
-      .replace(/\\left/g, '')
-      .replace(/\\right/g, '')
-      .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
+function extractPureMath(text) {
+  const parts = text.split(/[\u4e00-\u9fa5《》【】（）""''·…—]/)
+  const mathParts = parts.filter(p => /[\\$^_{}]/.test(p))
+  return mathParts.join(' ').trim() || null
+}
 
-    if (simplifiedFormula !== cleanedFormula) {
-      try {
-        const fallbackResult = katex.renderToString(simplifiedFormula, {
-          ...katexConfig,
-          displayMode
-        })
-        return { success: true, html: fallbackResult, fallback: true }
-      } catch (fallbackError) {
-        console.warn('KaTeX fallback render also failed:', fallbackError.message)
+function createFriendlyErrorMessage(originalContent) {
+  const escaped = escapeHtml(originalContent.substring(0, 80))
+  const suffix = originalContent.length > 80 ? '...' : ''
+  return `<span class="math-error-friendly"><span class="error-icon">📐</span><span class="error-text">公式较复杂，正在优化显示...</span><span class="error-original">${escaped}${suffix}</span></span>`
+}
+
+function tryRenderFormula(formula, displayMode, originalContent) {
+  const cleanedFormula = cleanFormula(formula)
+
+  const strategies = [
+    () => tryKatexRender(cleanedFormula, displayMode),
+
+    () => {
+      const simplified = cleanedFormula
+        .replace(/\\left/g, '')
+        .replace(/\\right/g, '')
+      return tryKatexRender(simplified, displayMode)
+    },
+
+    () => {
+      const simplified = cleanedFormula
+        .replace(/\\left/g, '')
+        .replace(/\\right/g, '')
+        .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
+      return tryKatexRender(simplified, displayMode)
+    },
+
+    () => {
+      const simplified = cleanedFormula
+        .replace(/\\left/g, '')
+        .replace(/\\right/g, '')
+        .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
+        .replace(/[\u4e00-\u9fa5]/g, '')
+      const trimmed = simplified.trim()
+      return trimmed ? tryKatexRender(trimmed, displayMode) : { success: false, error: 'empty after cleanup' }
+    },
+
+    () => {
+      const mathOnly = extractPureMath(cleanedFormula)
+      return mathOnly ? tryKatexRender(mathOnly, displayMode) : { success: false, error: 'no math content' }
+    }
+  ]
+
+  for (let i = 0; i < strategies.length; i++) {
+    const result = strategies[i]()
+    if (result.success) {
+      if (i > 0) {
+        console.log(`[mathRender] 公式通过降级策略 Level ${i} 渲染成功`)
       }
+      return { ...result, fallbackLevel: i }
     }
+  }
 
-    return {
-      success: false,
-      html: `<span class="math-error" title="${escapeHtml(error.message)}">${escapeHtml(originalContent)}</span>`
-    }
+  console.warn('[mathRender] 所有降级策略均失败:', cleanedFormula.substring(0, 100))
+  return {
+    success: false,
+    html: createFriendlyErrorMessage(originalContent || cleanedFormula)
   }
 }
 
@@ -103,7 +161,7 @@ export function renderMathInElement(element) {
   try {
     katex.renderMathInElement(element, katexConfig)
   } catch (error) {
-    console.error('KaTeX global render error:', error)
+    console.error('[mathRender] 全局渲染异常:', error)
   }
 }
 

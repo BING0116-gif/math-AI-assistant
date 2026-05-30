@@ -5,6 +5,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { renderMathInElement } from '@/utils/mathRender'
+import latexPreprocessor from '@/utils/latexPreprocessor'
 
 const props = defineProps({
   content: { type: String, default: '' },
@@ -13,13 +14,16 @@ const props = defineProps({
 
 const mathRef = ref(null)
 
-const renderedHtml = computed(() => props.content)
+const renderedHtml = computed(() => {
+  if (!props.content) return ''
+  return latexPreprocessor.process(props.content)
+})
 
 watch(() => props.content, () => {
   nextTick(() => {
     if (mathRef.value) renderMathInElement(mathRef.value)
   })
-})
+}, { flush: 'post' })
 
 onMounted(() => {
   nextTick(() => {

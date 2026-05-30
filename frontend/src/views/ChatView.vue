@@ -132,6 +132,13 @@ onMounted(() => {
   nextTick(() => scrollToBottom())
 })
 
+onUnmounted(() => {
+  if (renderRafId) {
+    cancelAnimationFrame(renderRafId)
+    renderRafId = null
+  }
+})
+
 function scrollToBottom() {
   if (messagesRef.value) {
     messagesRef.value.scrollTop = messagesRef.value.scrollHeight
@@ -149,6 +156,13 @@ async function handleCombinedSend({ text, image }) {
 let typingBuffer = ''
 let rawContentBuffer = ''
 let isTyping = false
+let lastRenderedLength = 0
+let renderRafId = null
+
+function containsNewMathContent(text, fromIndex) {
+  const recentText = text.substring(fromIndex)
+  return /\$|\\frac|\\sqrt|\\int|\\sum|\\prod|\\lim|\\alpha|\\beta|\\gamma|\\begin|\\infty/.test(recentText)
+}
 
 function processTyping(msgId) {
   const el = document.getElementById(`msg-${msgId}`)
@@ -165,13 +179,25 @@ function processTyping(msgId) {
   typingBuffer = typingBuffer.substring(1)
   streamingCharCount.value++
 
-  if (streamingCharCount.value % 30 === 0 || chunk === '\n' || typingBuffer.length === 0) {
-    const contentDiv = el.querySelector('.msg-content')
-    if (contentDiv) {
-      const display = formatStreamText(rawContentBuffer)
-      contentDiv.innerHTML = display
-      renderMathInElement(contentDiv)
-    }
+  const shouldUpdate =
+    streamingCharCount.value % 50 === 0 ||
+    chunk === '\n' ||
+    typingBuffer.length === 0 ||
+    containsNewMathContent(rawContentBuffer, lastRenderedLength)
+
+  if (shouldUpdate) {
+    if (renderRafId) cancelAnimationFrame(renderRafId)
+
+    renderRafId = requestAnimationFrame(() => {
+      const contentDiv = el.querySelector('.msg-content')
+      if (contentDiv) {
+        const display = formatStreamText(rawContentBuffer)
+        contentDiv.innerHTML = display
+        renderMathInElement(contentDiv)
+        lastRenderedLength = rawContentBuffer.length
+      }
+      renderRafId = null
+    })
   }
 
   scrollToBottom()
@@ -211,6 +237,11 @@ async function handleMultimodalSend(text, imageData) {
   typingBuffer = ''
   rawContentBuffer = ''
   isTyping = false
+  lastRenderedLength = 0
+  if (renderRafId) {
+    cancelAnimationFrame(renderRafId)
+    renderRafId = null
+  }
 
   try {
     const response = await sendMultimodalRequest(userMessageContent, imageData, chatId, abortController.value.signal)
@@ -289,6 +320,11 @@ async function handleTextSend(text) {
   typingBuffer = ''
   rawContentBuffer = ''
   isTyping = false
+  lastRenderedLength = 0
+  if (renderRafId) {
+    cancelAnimationFrame(renderRafId)
+    renderRafId = null
+  }
 
   try {
     const response = await sendChatMessage(text, chatId, abortController.value.signal)

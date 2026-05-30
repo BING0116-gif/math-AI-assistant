@@ -71,7 +71,7 @@ watch(() => [props.isStreaming, props.message.content], () => {
       if (el) renderMathInElement(el)
     })
   }
-})
+}, { flush: 'post' })
 </script>
 
 <style lang="scss" scoped>

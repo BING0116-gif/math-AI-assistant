@@ -161,10 +161,10 @@ class PlannerConfig:
     """规划器配置参数。"""
 
     min_problem_length: int = 15
-    complexity_threshold: float = 0.6
+    complexity_threshold: float = 0.7
 
     max_tasks_per_plan: int = 10
-    max_depth: int = 5
+    max_depth: int = 8
     planning_timeout_seconds: float = 30.0
 
     execution_timeout_per_task: float = 60.0

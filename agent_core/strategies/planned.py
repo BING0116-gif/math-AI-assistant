@@ -83,9 +83,23 @@ class PlannedStrategy(AgentStrategy):
         context: Dict[str, Any],
         execution_plan: Optional[ExecutionPlan] = None,
     ) -> AsyncGenerator[str, None]:
+        # 保存上下文，供子任务使用（包含 chat_history）
+        self._context = context
+
         if execution_plan is None:
-            yield "**【错误】未提供执行计划**\n"
-            return
+            logger.info(f"PlannedStrategy: 未提供执行计划，自动调用 TaskPlanner 生成...")
+            try:
+                execution_plan = await self._task_planner.plan(user_input)
+                logger.info(
+                    f"PlannedStrategy: 执行计划生成成功 "
+                    f"(plan_id={execution_plan.plan_id}, "
+                    f"tasks={execution_plan.total_tasks})"
+                )
+            except Exception as e:
+                logger.error(f"PlannedStrategy: 执行计划生成失败: {e}，降级到错误提示")
+                yield f"**【错误】执行计划生成失败: {e}**\n\n"
+                yield "**建议: 请尝试简化问题描述或使用普通模式解题**\n"
+                return
 
         process = self._recorder.start_process(session_id, user_input)
         self._recorder.add_thought(process, f"开始按计划执行: {execution_plan.total_tasks}个任务")
@@ -220,7 +234,12 @@ class PlannedStrategy(AgentStrategy):
                     return None
             else:
                 prompt = self._build_llm_prompt(task, plan)
-                response = await self._llm_chain.ainvoke({"input": prompt})
+                # 从上下文中获取对话历史，确保子任务能访问完整上下文
+                chat_history = self._context.get("chat_history", []) if hasattr(self, '_context') and self._context else []
+                response = await self._llm_chain.ainvoke({
+                    "input": prompt,
+                    "chat_history": chat_history,
+                })
                 llm_result = response.content if hasattr(response, 'content') else str(response)
                 task.result = llm_result
                 task.status = TaskStatus.COMPLETED
@@ -292,7 +311,12 @@ class PlannedStrategy(AgentStrategy):
             else:
                 prompt = self._build_llm_prompt(task, plan)
                 try:
-                    response = await self._llm_chain.ainvoke({"input": prompt})
+                    # 从上下文中获取对话历史，确保子任务能访问完整上下文
+                    chat_history = self._context.get("chat_history", []) if hasattr(self, '_context') and self._context else []
+                    response = await self._llm_chain.ainvoke({
+                        "input": prompt,
+                        "chat_history": chat_history,
+                    })
                     llm_result = response.content if hasattr(response, 'content') else str(response)
                 except Exception as llm_error:
                     logger.error("LLM推理任务'%s'失败: %s", task.id, llm_error)

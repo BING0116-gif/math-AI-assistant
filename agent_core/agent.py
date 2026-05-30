@@ -442,12 +442,13 @@ class MathAgent:
         
         return context
     
-    def _build_system_prompt(self, tools: Optional[List[BaseTool]] = None) -> str:
+    def _build_system_prompt(self, tools: Optional[List[BaseTool]] = None, style: str = "详细") -> str:
         """
-        构建完整的 System Prompt（四层架构 + 工具描述 + ReAct指令）。
+        构建完整的 System Prompt（四层架构 + 工具描述 + ReAct指令 + 教学风格）。
 
         Args:
             tools: 工具列表，如果为 None 则使用注册表中的所有工具
+            style: 教学风格（"详细"/"简洁"/"直观"/"严谨"）
 
         Returns:
             完整的 System Prompt 字符串
@@ -467,6 +468,7 @@ class MathAgent:
             tool_names=[t.name for t in tools] if tools else []
         )
         prompt_manager.update_react_instruction(react_instruction)
+        prompt_manager.update_style_instruction(style)
 
         return prompt_manager.get_prompt()
 
@@ -633,7 +635,7 @@ class MathAgent:
         1. 提示正在识别
         2. 调用 VisionTool 识别图片
         3. 输出识别结果
-        4. 调用 ReAct 策略解题
+        4. 通过分类器路由选择最优策略解题
         """
         if not self._registry.has_tool("vision_tool"):
             yield "**【VisionTool 未注册，无法处理图片】**\n\n"
@@ -659,7 +661,9 @@ class MathAgent:
         yield "\n\n---\n\n**【开始解题】**\n\n"
 
         try:
-            async for chunk in self._strategy.stream(recognized_text, session_id, context):
+            strategy = await self._select_strategy(recognized_text, session_id)
+            logger.info(f"[图片识别] 分类器路由完成，使用策略解题")
+            async for chunk in strategy.stream(recognized_text, session_id, context):
                 yield chunk
         except Exception as e:
             logger.error(f"解题过程出错: {e}")
@@ -676,6 +680,7 @@ class MathAgent:
 
         将图片识别结果与用户文字说明合并后一起发送给Agent处理，
         确保AI能够获得完整的上下文信息。
+        通过分类器路由选择最优策略进行解题。
 
         Args:
             image_path: 图片文件路径。
@@ -721,7 +726,9 @@ class MathAgent:
             combined_input = recognized_text
 
         try:
-            async for chunk in self._strategy.stream(combined_input, sid, context):
+            strategy = await self._select_strategy(combined_input, sid)
+            logger.info(f"[多模态] 分类器路由完成，使用策略解题")
+            async for chunk in strategy.stream(combined_input, sid, context):
                 yield chunk
         except Exception as e:
             logger.error(f"多模态解题过程出错: {e}")
@@ -890,6 +897,27 @@ class MathAgent:
                     f"intent={intent.task_type.to_chinese()}"
                 )
 
+                # ── 自适应 Token 分配：根据复杂度评分调整 max_tokens ──
+                if self._enable_dynamic_params and self._dynamic_llm_factory:
+                    try:
+                        from prompts.dynamic_params import get_adaptive_max_tokens
+                        adaptive_tokens = get_adaptive_max_tokens(score, intent.task_type)
+                        optimized_llm = self._dynamic_llm_factory.get_llm(
+                            intent.task_type,
+                            override_params={"max_tokens": adaptive_tokens},
+                        )
+                        if self._use_langchain:
+                            self._strategy._llm = optimized_llm
+                            self._strategy.refresh_tools()
+                        else:
+                            if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'first'):
+                                self._strategy._llm_chain = self._strategy._llm_chain.first | optimized_llm
+                            if hasattr(self._strategy, '_llm_chain_sync') and hasattr(self._strategy._llm_chain_sync, 'first'):
+                                self._strategy._llm_chain_sync = self._strategy._llm_chain_sync.first | optimized_llm
+                        logger.info(f"自适应Token: score={score} → max_tokens={adaptive_tokens}")
+                    except Exception as e:
+                        logger.warning(f"自适应Token分配失败，使用默认参数: {e}")
+
                 if strategy_name == "planned":
                     if self._task_planner is not None and self._task_planner.enabled:
                         logger.info(f"✅ 使用 PlannedStrategy (score={score}, {label})")
@@ -941,7 +969,11 @@ class MathAgent:
         return self._planned_strategy
 
     def _create_planned_strategy(self) -> PlannedStrategy:
-        """构建 PlannedStrategy 执行策略。"""
+        """构建 PlannedStrategy 执行策略。
+
+        创建包含完整对话历史的 LLM chain，
+        确保子任务能够访问上下文信息。
+        """
         tools = self._registry.get_all_tools() if hasattr(self._registry, "get_all_tools") else []
         thought_recorder = ThoughtRecorder()
 
@@ -954,6 +986,8 @@ class MathAgent:
         prompt_manager.update_react_instruction(react_instruction)
         full_prompt = prompt_manager.get_prompt()
 
+        # 完整版 prompt：包含 system + chat_history + user
+        # 确保子任务能访问对话历史上下文
         prompt = ChatPromptTemplate.from_messages([
             SystemMessage(content=full_prompt),
             MessagesPlaceholder("chat_history"),
@@ -962,7 +996,7 @@ class MathAgent:
 
         llm_chain = prompt | self._llm | StrOutputParser()
 
-        logger.info("PlannedStrategy 已创建")
+        logger.info("PlannedStrategy 已创建（包含完整chat_history支持）")
         return PlannedStrategy(
             llm_chain=llm_chain,
             registry=self._registry,
@@ -978,7 +1012,7 @@ class MathAgent:
         )
 
     async def _process_image(self, image_path: str, session_id: str, context: Dict[str, Any]) -> str:
-        """处理图片输入。"""
+        """处理图片输入，通过分类器路由选择最优策略解题。"""
         if not self._registry.has_tool("vision_tool"):
             return "VisionTool 未注册，无法处理图片"
 
@@ -992,7 +1026,9 @@ class MathAgent:
         if result.success:
             recognized_text = result.result or ""
             display_msg = f"【图片识别结果】\n{recognized_text}\n\n"
-            answer = await self._strategy.execute(recognized_text, session_id, context)
+            strategy = await self._select_strategy(recognized_text, session_id)
+            logger.info(f"[图片识别] 分类器路由完成，使用策略解题")
+            answer = await strategy.execute(recognized_text, session_id, context)
             return f"{display_msg}{answer}"
         else:
             return f"图片识别失败：{result.error}"

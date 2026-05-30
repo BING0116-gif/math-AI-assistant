@@ -1,11 +1,12 @@
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import latexPreprocessor from '@/utils/latexPreprocessor'
 
 const renderer = new marked.Renderer()
 
 renderer.code = function(code, infostring, escaped) {
   const lang = (infostring || '').match(/\S*/)[0]
-  
+
   if (this.options.highlight) {
     const highlighted = this.options.highlight(code, lang)
     if (highlighted !== code) {
@@ -13,132 +14,53 @@ renderer.code = function(code, infostring, escaped) {
       code = highlighted
     }
   }
-  
+
   code = code.replace(/\n$/, '') + '\n'
-  
+
   if (!lang) {
     return '<pre><code>' + (escaped ? code : escape(code)) + '</code></pre>\n'
   }
-  
+
   return '<pre class="highlight"><code class="language-' + escape(lang) + '">' + (escaped ? code : escape(code)) + '</code></pre>\n'
 }
 
 const mathBlockRegex = /\$\$([\s\S]*?)\$\$/g
 const mathInlineRegex = /\$([^\$\n]+?)\$/g
 
-const bareLatexPatterns = [
-  /\\frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g,
-  /\\sqrt(?:\[[^\]]*\])?\{[^{}]*\}/g,
-  /\\binom\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g,
-  /\\(?:left|right)(?:\(|\[|\{|\\lbrace|\\rbrace|\||\.|<|>)/g,
-  /\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega|infty|partial|nabla|forall|exists|emptyset|in|notin|subset|supset|cap|cup|land|lor|neg|Rightarrow|Leftarrow|Leftrightarrow|equiv|approx|neq|leq|geq|sim|simeq|cong|perp|parallel|cdot|times|div|pm|mp|ldots|cdots|vdots|ddots)(?![a-zA-Z])/g,
-  /\\(?:int|sum|prod|lim|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|coth|log|ln|exp|max|min|sup|inf|det|dim|ker|hom|arg|deg|gcd|lcm)(?:\^|\_|(?=\s|[,.:;!?]|$))/g,
-  /\\begin\{[a-z]*\}[\s\S]*?\\end\{[a-z]*\}/g,
-  /\\text\{[^}]*\}/g,
-  /\\mathrm\{[^}]*\}/g,
-  /\\mathbb\{[A-Z]\}/g,
-  /\^[\{\[][^}\]]*[\}\]]/g,
-  /_[\{\[][^}\]]*[\}\]]/g,
-  /\\[a-zA-Z]+\{[^}]*\}/g
-]
-
-function wrapBareLatex(text) {
-  let result = text
-
-  const latexRanges = []
-
-  for (const pattern of bareLatexPatterns) {
-    let match
-    const regex = new RegExp(pattern.source, pattern.flags)
-    while ((match = regex.exec(result)) !== null) {
-      const start = match.index
-      const end = start + match[0].length
-
-      let merged = false
-      for (let i = 0; i < latexRanges.length; i++) {
-        const [rs, re] = latexRanges[i]
-        if (start <= re + 15 && end >= rs - 5) {
-          latexRanges[i][0] = Math.min(rs, start)
-          latexRanges[i][1] = Math.max(re, end)
-          merged = true
-          break
-        }
-      }
-
-      if (!merged) {
-        latexRanges.push([start, end])
-      }
-    }
-  }
-
-  if (latexRanges.length === 0) {
-    return result
-  }
-
-  latexRanges.sort((a, b) => a[0] - b[0])
-
-  let wrapped = ''
-  let lastEnd = 0
-
-  for (const [start, end] of latexRanges) {
-    if (start > lastEnd) {
-      wrapped += result.substring(lastEnd, start)
-    }
-
-    const content = result.substring(start, end)
-    const isDisplay = content.includes('\\[') || content.includes('\\]') ||
-                      content.includes('\\\\') || content.includes('\\begin') ||
-                      content.length > 50 ||
-                      (content.match(/\\frac/g) || []).length > 1
-
-    if (isDisplay) {
-      wrapped += '$$' + content + '$$'
-    } else {
-      wrapped += '$' + content + '$'
-    }
-
-    lastEnd = end
-  }
-
-  if (lastEnd < result.length) {
-    wrapped += result.substring(lastEnd)
-  }
-
-  return wrapped
-}
-
 function extractMathBlocks(text) {
+  const preprocessed = latexPreprocessor.process(text)
+
   const mathBlocks = []
-  let processed = wrapBareLatex(text)
-  
+  let processed = preprocessed
+
   processed = processed.replace(mathBlockRegex, (match, math) => {
     const idx = mathBlocks.length
     mathBlocks.push({ type: 'block', content: math.trim() })
     return `%%MATHBLOCK${idx}%%`
   })
-  
+
   processed = processed.replace(mathInlineRegex, (match, math) => {
     const idx = mathBlocks.length
     mathBlocks.push({ type: 'inline', content: math.trim() })
     return `%%MATHINLINE${idx}%%`
   })
-  
+
   return { processed, mathBlocks }
 }
 
 function restoreMathBlocks(html, mathBlocks) {
   let result = html
-  
+
   for (let i = 0; i < mathBlocks.length; i++) {
     const block = mathBlocks[i]
     const placeholder = block.type === 'block' ? `%%MATHBLOCK${i}%%` : `%%MATHINLINE${i}%%`
-    const mathHtml = block.type === 'block' 
+    const mathHtml = block.type === 'block'
       ? `<div class="math-display">$${block.content}$</div>`
       : `<span class="math-inline">$${block.content}$</span>`
-    
+
     result = result.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), mathHtml)
   }
-  
+
   return result
 }
 
@@ -184,27 +106,33 @@ export function renderMarkdown(text) {
       ALLOWED_ATTR: [
         'href', 'target', 'rel',
         'src', 'alt', 'title', 'width', 'height',
-        'class', 'id',
-        'start', 'type'
+        'class', 'id', 'style',
+        'start', 'type',
+        'xmlns', 'viewBox', 'd', 'fill', 'stroke', 'stroke-width',
+        'cx', 'cy', 'r', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+        'dx', 'dy', 'text-anchor', 'font-family', 'font-size', 'font-style',
+        'font-weight', 'line-height', 'spacing', 'accent', 'baseline-shift',
+        'clip-path', 'depth', 'height', 'maxsize', 'minsize', 'size',
+        'aria-label', 'role', 'semantics'
       ],
       ADD_ATTR: ['target']
     })
 
     return cleanHtml
   } catch (error) {
-    console.error('Markdown render error:', error)
+    console.error('[markdown] 渲染异常:', error)
     return DOMPurify.sanitize(`<p>${escape(text)}</p>`)
   }
 }
 
 export function formatStreamText(text) {
   if (!text) return ''
-  
+
   try {
     const { processed, mathBlocks } = extractMathBlocks(text)
-    
+
     let formatted = processed
-    
+
     formatted = formatted.replace(/\n\n+/g, '</p><p>')
     formatted = formatted.replace(/^### (.*)$/gm, '<h3>$1</h3>')
     formatted = formatted.replace(/^## (.*)$/gm, '<h2>$1</h2>')
@@ -213,19 +141,31 @@ export function formatStreamText(text) {
     formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>')
     formatted = formatted.replace(/`([^`\n]+)`/g, '<code>$1</code>')
     formatted = formatted.replace(/\n/g, '<br>')
-    
+
     formatted = restoreMathBlocks(formatted, mathBlocks)
-    
+
     return DOMPurify.sanitize(formatted, {
       ALLOWED_TAGS: [
         'p', 'br', 'h1', 'h2', 'h3',
         'strong', 'em', 'code',
         'div', 'span'
       ],
-      ALLOWED_ATTR: ['class']
+      ALLOWED_ATTR: ['class', 'style', 'xmlns', 'viewBox', 'd', 'fill',
+        'stroke', 'stroke-width', 'cx', 'cy', 'r', 'x', 'y',
+        'x1', 'y1', 'x2', 'y2', 'dx', 'dy', 'text-anchor',
+        'font-family', 'font-size', 'font-style', 'font-weight',
+        'line-height', 'spacing', 'accent', 'baseline-shift',
+        'clip-path', 'depth', 'height', 'maxsize', 'minsize', 'size',
+        'aria-label', 'role', 'semantics', 'width', 'id'],
+      ADD_TAGS: ['math', 'mrow', 'mo', 'mi', 'mn', 'msup', 'msub', 'msubsup',
+        'mfrac', 'mover', 'munder', 'munderover', 'msqrt', 'mroot',
+        'menclose', 'mstyle', 'annotation', 'semantics', 'svg', 'path',
+        'use', 'g', 'line', 'rect', 'polygon', 'circle', 'ellipse',
+        'text', 'tspan', 'foreignObject', 'mglyph', 'mpadded', 'mphantom',
+        'mtable', 'mtr', 'mtd', 'mlabeledtr', 'maction']
     })
   } catch (error) {
-    console.error('Stream text format error:', error)
+    console.error('[markdown] 流式文本格式化异常:', error)
     return text
   }
 }
