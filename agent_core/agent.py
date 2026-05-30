@@ -239,12 +239,13 @@ class MathAgent:
     def _create_react_strategy(
         self,
         use_streaming: bool = True,
+        llm: Optional[ChatOpenAI] = None,
     ) -> AgentStrategy:
+        _llm = llm or self._llm
         tools = self._registry.get_all_tools() if hasattr(self._registry, "get_all_tools") else []
 
         thought_recorder = ThoughtRecorder()
 
-        # 使用提取的公共方法构建 System Prompt
         full_prompt = self._build_system_prompt(tools)
 
         prompt = ChatPromptTemplate.from_messages([
@@ -253,7 +254,7 @@ class MathAgent:
             ("human", "{input}"),
         ])
 
-        llm_chain_stream = prompt | self._llm
+        llm_chain_stream = prompt | _llm
         llm_chain_sync = llm_chain_stream | StrOutputParser()
 
         logger.info("使用 ReActStrategy（异步流式输出 + v3.0四层Prompt架构）")
@@ -266,17 +267,23 @@ class MathAgent:
             thought_recorder=thought_recorder,
         )
 
-    def _create_langchain_react_strategy(self) -> LangChainReActStrategy:
-        # 使用提取的公共方法构建 System Prompt（使用默认的注册表工具）
+    def _create_langchain_react_strategy(self, llm: Optional[ChatOpenAI] = None) -> LangChainReActStrategy:
+        _llm = llm or self._llm
         full_prompt = self._build_system_prompt()
 
         logger.info("使用 LangChainReActStrategy（原生function calling + 流式输出）")
         return LangChainReActStrategy(
-            llm=self._llm,
+            llm=_llm,
             registry=self._registry,
             system_prompt=full_prompt,
             max_iterations=self._max_iterations,
         )
+
+    def _create_strategy_with_llm(self, llm: ChatOpenAI) -> AgentStrategy:
+        if self._use_langchain:
+            return self._create_langchain_react_strategy(llm=llm)
+        else:
+            return self._create_react_strategy(llm=llm)
 
     def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         """获取指定会话的历史记录。"""
@@ -858,21 +865,11 @@ class MathAgent:
         """
         intent = self._classify_intent(user_input)
 
+        dynamic_strategy: Optional[AgentStrategy] = None
+
         if self._enable_dynamic_params and self._dynamic_llm_factory:
             optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
-
-            if self._use_langchain:
-                self._strategy._llm = optimized_llm
-                self._strategy.refresh_tools()
-            else:
-                if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'first'):
-                    self._strategy._llm_chain = (
-                        self._strategy._llm_chain.first | optimized_llm
-                    )
-                if hasattr(self._strategy, '_llm_chain_sync') and hasattr(self._strategy._llm_chain_sync, 'first'):
-                    self._strategy._llm_chain_sync = (
-                        self._strategy._llm_chain_sync.first | optimized_llm
-                    )
+            dynamic_strategy = self._create_strategy_with_llm(optimized_llm)
 
             logger.info(
                 f"已应用动态参数: type={intent.task_type.value}, "
@@ -906,14 +903,7 @@ class MathAgent:
                             intent.task_type,
                             override_params={"max_tokens": adaptive_tokens},
                         )
-                        if self._use_langchain:
-                            self._strategy._llm = optimized_llm
-                            self._strategy.refresh_tools()
-                        else:
-                            if hasattr(self._strategy, '_llm_chain') and hasattr(self._strategy._llm_chain, 'first'):
-                                self._strategy._llm_chain = self._strategy._llm_chain.first | optimized_llm
-                            if hasattr(self._strategy, '_llm_chain_sync') and hasattr(self._strategy._llm_chain_sync, 'first'):
-                                self._strategy._llm_chain_sync = self._strategy._llm_chain_sync.first | optimized_llm
+                        dynamic_strategy = self._create_strategy_with_llm(optimized_llm)
                         logger.info(f"自适应Token: score={score} → max_tokens={adaptive_tokens}")
                     except Exception as e:
                         logger.warning(f"自适应Token分配失败，使用默认参数: {e}")
@@ -924,11 +914,11 @@ class MathAgent:
                         return self._get_or_create_planned_strategy()
 
                     logger.warning("分类器建议 Planned，但规划器未启用，回退到 ReAct")
-                    return self._strategy
+                    return dynamic_strategy or self._strategy
 
                 else:
                     logger.info(f"✅ 使用 ReActStrategy (score={score}, {label})")
-                    return self._strategy
+                    return dynamic_strategy or self._strategy
 
             except Exception as e:
                 logger.error(
@@ -958,7 +948,7 @@ class MathAgent:
             f"使用 ReActStrategy (意图={intent.task_type.to_chinese()}, "
             f"confidence={intent.confidence:.2f})"
         )
-        return self._strategy
+        return dynamic_strategy or self._strategy
 
     _planned_strategy: Optional[PlannedStrategy] = None
 
