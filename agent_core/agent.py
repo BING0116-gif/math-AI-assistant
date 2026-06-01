@@ -611,7 +611,7 @@ class MathAgent:
                     },
                 )
                 await self._persistence_facade.record_event(
-                    user_id=user_id, event_data=tracked
+                    user_id=effective_user_id, event_data=tracked
                 )
             except Exception as e:
                 logger.warning(f"行为追踪记录失败（非致命）: {e}")
@@ -671,7 +671,7 @@ class MathAgent:
                     },
                 )
                 await self._persistence_facade.record_event(
-                    user_id=user_id, event_data=tracked
+                    user_id=effective_user_id, event_data=tracked
                 )
             except Exception as e:
                 logger.warning(f"流式行为追踪记录失败（非致命）: {e}")

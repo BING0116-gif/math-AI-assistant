@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Request, Depends, Query
+from fastapi import APIRouter, HTTPException, Request, Depends, Query, Body
 from pydantic import BaseModel, Field
 
 from app.data.database import get_db_session
@@ -202,7 +202,7 @@ async def clear_short_term_memory(http_request: Request):
 @router.post("/error-book/sync")
 async def sync_error_book_to_skills(
     request: Request,
-    error_entry: dict = None,
+    error_entry: Optional[dict] = Body(None),
 ):
     user_id = getattr(request.state, "user_id", "anonymous")
 
@@ -243,7 +243,7 @@ async def toggle_error_mastery(
 @router.post("/error-book/batch-sync")
 async def batch_sync_error_book(
     request: Request,
-    entries: List[dict],
+    entries: List[dict] = Body(...),
 ):
     user_id = getattr(request.state, "user_id", "anonymous")
 
