@@ -79,6 +79,24 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    try:
+        import os as _os
+        migration_path = _os.path.join(
+            _os.path.dirname(__file__), "migrations", "003_add_user_skills.sql"
+        )
+        if _os.path.exists(migration_path):
+            with open(migration_path, "r") as f:
+                migration_sql = f.read()
+            async with engine.begin() as conn:
+                await conn.run_sync(
+                    lambda sync_conn: sync_conn.execute(
+                        __import__("sqlalchemy").text(migration_sql)
+                    )
+                )
+        logger.info("A03 user_skills 表迁移检查完成")
+    except Exception as e:
+        logger.warning(f"A03 迁移执行异常（表可能已存在）: {e}")
+
     logger.info(f"数据库初始化完成: {db_url.split('@')[-1] if '@' in db_url else db_url}")
 
 

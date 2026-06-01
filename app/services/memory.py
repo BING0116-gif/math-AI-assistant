@@ -3,9 +3,21 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 import hashlib
 import asyncio
+import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EventClassification:
+    """LLM 分类结果"""
+    event_type: str = "question"
+    category: str = ""
+    difficulty: int = 3
+    importance: float = 0.5
+    is_milestone: bool = False
+    tags: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -368,6 +380,67 @@ class LongTermMemory:
                 found_categories.append(category)
 
         return found_categories
+
+    async def _classify_event(
+        self, event_data: Dict[str, Any], llm=None
+    ) -> EventClassification:
+        if llm is None:
+            return self._classify_fallback(event_data)
+
+        prompt = (
+            "Classify this math learning event into a JSON object. "
+            "Categories: 极限, 导数, 积分, 三角函数, 代数, 解析几何, 概率统计, 向量, 数列.\n\n"
+            f"Content: {event_data.get('question_content', '')[:200]}\n"
+            f"Tags hint: {event_data.get('sub_categories', '')}\n\n"
+            'Return ONLY: {"event_type":"question|answer|clarification|error_correction|review",'
+            '"category":"<one of above>","difficulty":<1-5>,"importance":<0.0-1.0>,'
+            '"is_milestone":<true|false>,"tags":["tag1","tag2"]}'
+        )
+
+        try:
+            from langchain_core.messages import HumanMessage
+            response = await llm.ainvoke([HumanMessage(content=prompt)])
+            text = response.content.strip()
+
+            import re as _regex
+            match = _regex.search(r"\{.*\}", text, _regex.DOTALL)
+            if match:
+                data = json.loads(match.group())
+                return EventClassification(
+                    event_type=data.get("event_type", "question"),
+                    category=data.get("category", ""),
+                    difficulty=int(data.get("difficulty", 3)),
+                    importance=float(data.get("importance", 0.5)),
+                    is_milestone=data.get("is_milestone", False),
+                    tags=data.get("tags", []),
+                )
+        except Exception as e:
+            logger.warning(f"LLM 事件分类失败，降级到关键词匹配: {e}")
+
+        return self._classify_fallback(event_data)
+
+    def _classify_fallback(
+        self, event_data: Dict[str, Any]
+    ) -> EventClassification:
+        text = (
+            event_data.get("question_content", "")
+            + " "
+            + event_data.get("sub_categories", "")
+        )
+        categories = self._extract_categories(text)
+
+        return EventClassification(
+            event_type=(
+                "answer"
+                if event_data.get("is_correct") is not None
+                else "question"
+            ),
+            category=categories[0] if categories else "",
+            difficulty=event_data.get("difficulty", 3),
+            importance=0.5,
+            is_milestone=False,
+            tags=categories,
+        )
 
 
 @dataclass

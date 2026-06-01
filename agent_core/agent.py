@@ -62,6 +62,8 @@ from agent_core.classifier.complexity_levels import (
     level_to_strategy,
     ComplexityCategory,
 )
+from agent_core.memory_persistence import MemoryPersistenceFacade, UserProfile
+from app.services.behavior_tracker import LearningBehaviorTracker
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +229,11 @@ class MathAgent:
         self._vision_tool = None
         if self._registry.has_tool("vision_tool"):
             self._vision_tool = self._registry.get_tool("vision_tool")
+
+        self._persistence_facade = MemoryPersistenceFacade()
+        self._behavior_tracker = LearningBehaviorTracker()
+        self._behavior_tracker.set_llm_classifier(self._llm)
+        logger.info("MemoryPersistenceFacade + BehaviorTracker + LLM 已初始化")
 
         logger.info(
             f"MathAgent 初始化完成"
@@ -567,13 +574,14 @@ class MathAgent:
         self,
         user_input: str,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         sid = session_id or self._default_session_id
 
         history = self._get_session_history(sid)
         history.add_user_message(user_input)
 
-        context = await self._build_context(sid, user_input=user_input)
+        context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
         if self._is_image_input(user_input):
             return await self._process_image(user_input, sid, context)
@@ -589,19 +597,39 @@ class MathAgent:
             metadata={"strategy": "react", "mode": "process"},
         )
         
+        if self._persistence_facade:
+            effective_user_id = user_id or session_id or "anonymous"
+            try:
+                tracked = self._behavior_tracker.track(
+                    user_id=effective_user_id,
+                    raw_input=user_input,
+                    source="chat",
+                    metadata={
+                        "response_length": len(result),
+                        "strategy": type(strategy).__name__,
+                        "mode": "process",
+                    },
+                )
+                await self._persistence_facade.record_event(
+                    user_id=user_id, event_data=tracked
+                )
+            except Exception as e:
+                logger.warning(f"行为追踪记录失败（非致命）: {e}")
+        
         return result
 
     async def stream(
         self,
         user_input: str,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         sid = session_id or self._default_session_id
 
         history = self._get_session_history(sid)
         history.add_user_message(user_input)
 
-        context = await self._build_context(sid, user_input=user_input)
+        context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
         if self._is_image_input(user_input):
             async for chunk in self._stream_process_image(user_input, sid, context):
@@ -628,6 +656,25 @@ class MathAgent:
             response_text=full_response,
             metadata={"strategy": "react", "mode": "stream"},
         )
+        
+        if self._persistence_facade:
+            effective_user_id = user_id or session_id or "anonymous"
+            try:
+                tracked = self._behavior_tracker.track(
+                    user_id=effective_user_id,
+                    raw_input=user_input,
+                    source="chat",
+                    metadata={
+                        "response_length": len(full_response),
+                        "strategy": type(strategy).__name__,
+                        "mode": "stream",
+                    },
+                )
+                await self._persistence_facade.record_event(
+                    user_id=user_id, event_data=tracked
+                )
+            except Exception as e:
+                logger.warning(f"流式行为追踪记录失败（非致命）: {e}")
 
     async def _stream_process_image(
         self,
@@ -681,6 +728,7 @@ class MathAgent:
         image_path: str,
         user_message: str,
         session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         流式处理多模态输入（图片+文字）。
@@ -740,6 +788,21 @@ class MathAgent:
         except Exception as e:
             logger.error(f"多模态解题过程出错: {e}")
             yield f"\n\n**【解题出错】**: {e}"
+
+        if self._persistence_facade:
+            effective_user_id = user_id or session_id or "anonymous"
+            try:
+                tracked = self._behavior_tracker.track(
+                    user_id=effective_user_id,
+                    raw_input=user_message or "(纯图片)",
+                    source="chat_multimodal",
+                    metadata={"has_image": bool(image_path)},
+                )
+                await self._persistence_facade.record_event(
+                    user_id=effective_user_id, event_data=tracked
+                )
+            except Exception as e:
+                logger.warning(f"多模态行为追踪记录失败（非致命）: {e}")
 
     def clear_history(self, session_id: Optional[str] = None) -> None:
         """清空指定会话的对话记忆（包括128K上下文）。"""
@@ -866,10 +929,11 @@ class MathAgent:
         intent = self._classify_intent(user_input)
 
         dynamic_strategy: Optional[AgentStrategy] = None
+        _optimized_llm: Optional[ChatOpenAI] = None
 
         if self._enable_dynamic_params and self._dynamic_llm_factory:
-            optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
-            dynamic_strategy = self._create_strategy_with_llm(optimized_llm)
+            _optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
+            dynamic_strategy = self._create_strategy_with_llm(_optimized_llm)
 
             logger.info(
                 f"已应用动态参数: type={intent.task_type.value}, "
@@ -899,11 +963,11 @@ class MathAgent:
                     try:
                         from prompts.dynamic_params import get_adaptive_max_tokens
                         adaptive_tokens = get_adaptive_max_tokens(score, intent.task_type)
-                        optimized_llm = self._dynamic_llm_factory.get_llm(
+                        _optimized_llm = self._dynamic_llm_factory.get_llm(
                             intent.task_type,
                             override_params={"max_tokens": adaptive_tokens},
                         )
-                        dynamic_strategy = self._create_strategy_with_llm(optimized_llm)
+                        dynamic_strategy = self._create_strategy_with_llm(_optimized_llm)
                         logger.info(f"自适应Token: score={score} → max_tokens={adaptive_tokens}")
                     except Exception as e:
                         logger.warning(f"自适应Token分配失败，使用默认参数: {e}")
@@ -911,7 +975,7 @@ class MathAgent:
                 if strategy_name == "planned":
                     if self._task_planner is not None and self._task_planner.enabled:
                         logger.info(f"✅ 使用 PlannedStrategy (score={score}, {label})")
-                        return self._get_or_create_planned_strategy()
+                        return self._get_or_create_planned_strategy(llm=_optimized_llm)
 
                     logger.warning("分类器建议 Planned，但规划器未启用，回退到 ReAct")
                     return dynamic_strategy or self._strategy
@@ -942,7 +1006,7 @@ class MathAgent:
                 f"TaskPlanner判断复杂度高 → 使用 PlannedStrategy "
                 f"(意图={intent.task_type.to_chinese()})"
             )
-            return self._get_or_create_planned_strategy()
+            return self._get_or_create_planned_strategy(llm=_optimized_llm)
 
         logger.info(
             f"使用 ReActStrategy (意图={intent.task_type.to_chinese()}, "
@@ -952,18 +1016,20 @@ class MathAgent:
 
     _planned_strategy: Optional[PlannedStrategy] = None
 
-    def _get_or_create_planned_strategy(self) -> PlannedStrategy:
-        """获取或创建 PlannedStrategy 实例。"""
+    def _get_or_create_planned_strategy(self, llm: Optional[ChatOpenAI] = None) -> PlannedStrategy:
+        if llm is not None:
+            return self._create_planned_strategy(llm=llm)
         if self._planned_strategy is None:
             self._planned_strategy = self._create_planned_strategy()
         return self._planned_strategy
 
-    def _create_planned_strategy(self) -> PlannedStrategy:
+    def _create_planned_strategy(self, llm: Optional[ChatOpenAI] = None) -> PlannedStrategy:
         """构建 PlannedStrategy 执行策略。
 
         创建包含完整对话历史的 LLM chain，
         确保子任务能够访问上下文信息。
         """
+        _llm = llm or self._llm
         tools = self._registry.get_all_tools() if hasattr(self._registry, "get_all_tools") else []
         thought_recorder = ThoughtRecorder()
 
@@ -984,7 +1050,7 @@ class MathAgent:
             ("human", "{input}"),
         ])
 
-        llm_chain = prompt | self._llm | StrOutputParser()
+        llm_chain = prompt | _llm | StrOutputParser()
 
         logger.info("PlannedStrategy 已创建（包含完整chat_history支持）")
         return PlannedStrategy(

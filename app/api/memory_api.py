@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from pydantic import BaseModel, Field
@@ -197,3 +197,69 @@ async def clear_short_term_memory(http_request: Request):
         "message": "短期记忆已清空",
         "session_id": session_id,
     }
+
+
+@router.post("/error-book/sync")
+async def sync_error_book_to_skills(
+    request: Request,
+    error_entry: dict = None,
+):
+    user_id = getattr(request.state, "user_id", "anonymous")
+
+    from app.services.error_book_sync import ErrorBookSkillSyncService
+    sync_service = ErrorBookSkillSyncService()
+
+    if error_entry:
+        result = await sync_service.on_error_added(user_id, error_entry)
+        return {"success": True, "action": "single_sync", **result}
+
+    return {
+        "success": False,
+        "message": "需要提供 error_entry 数据",
+    }
+
+
+@router.post("/error-book/mastery")
+async def toggle_error_mastery(
+    request: Request,
+    body: dict,
+):
+    user_id = getattr(request.state, "user_id", "anonymous")
+    error_id = body.get("error_id")
+    is_mastered = body.get("is_mastered", False)
+
+    if not error_id:
+        raise HTTPException(status_code=400, detail="error_id is required")
+
+    from app.services.error_book_sync import ErrorBookSkillSyncService
+    sync_service = ErrorBookSkillSyncService()
+    result = await sync_service.on_error_mastery_toggled(
+        user_id, str(error_id), bool(is_mastered)
+    )
+
+    return {"success": True, **result}
+
+
+@router.post("/error-book/batch-sync")
+async def batch_sync_error_book(
+    request: Request,
+    entries: List[dict],
+):
+    user_id = getattr(request.state, "user_id", "anonymous")
+
+    from app.services.error_book_sync import ErrorBookSkillSyncService
+    sync_service = ErrorBookSkillSyncService()
+    result = await sync_service.batch_sync(user_id, entries)
+
+    return {"success": True, **result}
+
+
+@router.get("/skill-impact")
+async def get_skill_impact_summary(request: Request):
+    user_id = getattr(request.state, "user_id", "anonymous")
+
+    from app.services.error_book_sync import ErrorBookSkillSyncService
+    sync_service = ErrorBookSkillSyncService()
+    summary = await sync_service.get_skill_impact_summary(user_id)
+
+    return summary

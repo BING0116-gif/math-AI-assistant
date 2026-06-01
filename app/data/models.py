@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Index,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -53,6 +54,9 @@ class User(Base):
     exam_papers = relationship(
         "ExamPaper", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
     )
+    user_skills = relationship(
+        "UserSkill", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
+    )
 
 
 class LearningRecord(Base):
@@ -93,6 +97,52 @@ class LearningRecord(Base):
         Index("idx_learning_user_time", "user_id", "created_at"),
         Index("idx_learning_event_type", "event_type", "created_at"),
         Index("idx_learning_errors", "user_id", "category", postgresql_where="is_correct = FALSE"),
+    )
+
+
+class UserSkill(Base):
+    """用户技能熟练度表（A03 Skill机制）"""
+    __tablename__ = "user_skills"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
+    )
+    skill_code = Column(String(50), nullable=False)
+    display_name = Column(String(100))
+    category_path = Column(String(200))
+
+    mastery_level = Column(Float, nullable=False, default=0.0)
+    status = Column(String(20), nullable=False, default="novice")
+
+    total_attempts = Column(Integer, nullable=False, default=0)
+    correct_count = Column(Integer, nullable=False, default=0)
+    recent_streak = Column(Integer, nullable=False, default=0)
+    best_streak = Column(Integer, nullable=False, default=0)
+
+    first_seen_at = Column(DateTime(timezone=True))
+    last_practiced_at = Column(DateTime(timezone=True))
+    mastered_at = Column(DateTime(timezone=True))
+
+    evolution_history = Column(JSON, default=list)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    user = relationship("User", back_populates="user_skills")
+
+    __table_args__ = (
+        Index("idx_us_user_mastery", "user_id", "mastery_level"),
+        Index("idx_us_user_status", "user_id", "status"),
+        Index("idx_us_skill_code", "skill_code"),
+        UniqueConstraint("user_id", "skill_code", name="uq_user_skill"),
     )
 
 

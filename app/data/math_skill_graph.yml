@@ -1,0 +1,111 @@
+# 数学技能依赖图（高中数学核心部分）
+# 格式: skill_code → {display_name, prerequisites, unlocks, category}
+
+# ======== 代数基础 ========
+basic_operations:
+  display_name: "基本运算"
+  prerequisites: []
+  category: "代数"
+
+linear_equations:
+  display_name: "一元一次方程"
+  prerequisites: ["basic_operations"]
+  category: "代数"
+
+quadratic_equations:
+  display_name: "一元二次方程"
+  prerequisites: ["linear_equations"]
+  category: "代数"
+
+polynomials:
+  display_name: "多项式"
+  prerequisites: ["quadratic_equations"]
+  category: "代数"
+
+# ======== 函数 ========
+function_concept:
+  display_name: "函数概念"
+  prerequisites: ["basic_operations"]
+  category: "函数"
+
+elementary_functions:
+  display_name: "初等函数"
+  prerequisites: ["function_concept"]
+  category: "函数"
+
+composite_functions:
+  display_name: "复合函数"
+  prerequisites: ["elementary_functions"]
+  category: "函数"
+
+# ======== 三角函数 ========
+trig_basic_values:
+  display_name: "三角基本值"
+  prerequisites: ["elementary_functions"]
+  category: "三角函数"
+
+trig_identities:
+  display_name: "三角恒等式"
+  prerequisites: ["trig_basic_values"]
+  category: "三角函数"
+
+trig_sum_formula:
+  display_name: "和角公式"
+  prerequisites: ["trig_identities"]
+  category: "三角函数"
+
+trig_double_angle:
+  display_name: "倍角公式"
+  prerequisites: ["trig_sum_formula"]
+  category: "三角函数"
+
+trig_equation:
+  display_name: "解三角形"
+  prerequisites: ["trig_sum_formula", "trig_double_angle"]
+  category: "三角函数"
+
+# ======== 极限与导数 ========
+limit_concept:
+  display_name: "极限概念"
+  prerequisites: ["function_concept"]
+  category: "极限"
+
+limit_calculation:
+  display_name: "极限计算"
+  prerequisites: ["limit_concept", "polynomials"]
+  category: "极限"
+
+derivative_definition:
+  display_name: "导数定义"
+  prerequisites: ["limit_calculation"]
+  category: "导数"
+
+derivative_rules:
+  display_name: "求导法则"
+  prerequisites: ["derivative_definition"]
+  category: "导数"
+
+derivative_application:
+  display_name: "导数应用（切线/极值）"
+  prerequisites: ["derivative_rules"]
+  category: "导数"
+
+integ_indefinite:
+  display_name: "不定积分"
+  prerequisites: ["derivative_rules"]
+  category: "积分"
+
+integ_definite:
+  display_name: "定积分"
+  prerequisites: ["integ_indefinite", "derivative_application"]
+  category: "积分"
+
+integ_by_parts:
+  display_name: "分部积分法"
+  prerequisites: ["integ_indefinite"]
+  category: "积分"
+
+integ_trig:
+  display_name: "三角积分"
+  prerequisites: ["integ_indefinite", "trig_double_angle"]
+  category: "积分"

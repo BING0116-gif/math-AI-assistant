@@ -223,3 +223,113 @@ async def update_preferences(
         raise HTTPException(
             status_code=500, detail=f"更新偏好设置失败: {str(e)}"
         )
+
+
+@router.get("/{user_id}/skills")
+async def get_user_skill_profile(user_id: str, http_request: Request):
+    verify_resource_ownership(http_request, user_id)
+
+    try:
+        from agent_core.memory_persistence import MemoryPersistenceFacade
+        from app.services.skill_aggregator import SkillAggregator
+        from app.services.difficulty_estimator import DifficultyEstimator
+        from app.services.math_skill_dag import MathSkillDAG
+
+        facade = MemoryPersistenceFacade()
+        profile = await facade.get_profile(user_id)
+        skills = await SkillAggregator().get_all_skills(user_id)
+        error_patterns = await SkillAggregator().get_error_patterns(user_id)
+        cognitive_style = await SkillAggregator().get_cognitive_style(user_id)
+
+        dag = MathSkillDAG()
+        mastered_codes = {
+            s["skill_code"] for s in skills if s["status"] == "mastered"
+        }
+        learning_codes = {s["skill_code"] for s in skills}
+        next_unlockable = dag.get_next_unlockable(mastered_codes, learning_codes)
+
+        est = DifficultyEstimator()
+        difficulty_by_category = {}
+        for cat in set(s.get("category_path", "").split(" > ")[0] for s in skills if s.get("category_path")):
+            if cat:
+                d = await est.estimate(user_id, cat)
+                difficulty_by_category[cat] = d
+
+        return {
+            "user_id": user_id,
+            "generated_at": __import__("datetime")
+            .datetime.now(__import__("datetime").timezone.utc)
+            .isoformat(),
+            "skill_summary": {
+                "total_skills": len(skills),
+                "mastered": sum(1 for s in skills if s["status"] == "mastered"),
+                "proficient": sum(1 for s in skills if s["status"] == "proficient"),
+                "learning": sum(1 for s in skills if s["status"] == "learning"),
+                "novice": sum(1 for s in skills if s["status"] == "novice"),
+            },
+            "skills": [
+                {
+                    "code": s["skill_code"],
+                    "name": s.get("display_name", ""),
+                    "category": s.get("category_path", ""),
+                    "mastery": round(s["mastery_level"], 3),
+                    "status": s["status"],
+                    "attempts": s.get("total_attempts", 0),
+                    "correct": s.get("correct_count", 0),
+                    "streak": {"current": s.get("recent_streak", 0), "best": s.get("best_streak", 0)},
+                }
+                for s in sorted(skills, key=lambda x: x["mastery_level"], reverse=True)
+            ],
+            "error_patterns": error_patterns,
+            "cognitive_style": cognitive_style,
+            "next_recommended_skills": [
+                {"code": n["code"], "name": n["node"].get("display_name", ""), "prerequisites": n["node"].get("prerequisites", [])}
+                for n in next_unlockable[:5]
+            ],
+            "difficulty_estimate_by_category": difficulty_by_category,
+            "compact_profile": profile.to_compact_json(max_length=1200),
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"获取技能画像失败: {str(e)}"
+        )
+
+
+@router.post("/track")
+async def track_learning_behavior(
+    request: Request,
+    body: dict,
+):
+    user_id = getattr(request.state, "user_id", "anonymous")
+
+    try:
+        from app.services.behavior_tracker import LearningBehaviorTracker
+        from agent_core.memory_persistence import MemoryPersistenceFacade
+
+        tracker = LearningBehaviorTracker()
+        tracked = tracker.track(
+            user_id=user_id,
+            raw_input=body.get("content", "") or body.get("question_content", ""),
+            source=body.get("source", "api"),
+            metadata=body.get("metadata", {}),
+        )
+
+        facade = MemoryPersistenceFacade()
+        success = await facade.record_event(user_id, tracked)
+
+        return {
+            "success": True,
+            "tracked_event": {
+                "event_type": tracked.get("event_type"),
+                "category": tracked.get("category"),
+                "sub_categories": tracked.get("sub_categories"),
+                "source": tracked.get("source"),
+            },
+            "persisted": success,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"行为追踪记录失败: {str(e)}"
+        )

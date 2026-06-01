@@ -10,9 +10,7 @@ import logging
 import os
 import base64
 import json
-import time
 import traceback
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,8 +19,8 @@ from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 import re as _re
 from app.config.settings import settings
+from app.config.middleware_config import middleware_config
 from app.middleware.auth import (
-    verify_access_token,
     init_default_admin,
     create_token_pair,
 )
@@ -32,6 +30,10 @@ from app.middleware.security import (
     is_safe_image_data,
     SecurityValidationError,
 )
+from app.middleware.path_matcher import PathMatcher
+from app.middleware.security_headers import SecurityHeadersMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.auth_middleware import AuthenticationMiddleware
 from app.api.auth import router as auth_router
 from app.api.memory_api import router as memory_router
 from app.api.profile_api import router as profile_router
@@ -86,139 +88,30 @@ app.add_middleware(
 )
 
 
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    if settings.DEBUG:
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob:; "
-            "font-src 'self' data:; "
-            "connect-src 'self' ws://localhost:* wss://localhost:* https://dashscope.aliyuncs.com http://localhost:* https://localhost:*; "
-            "frame-ancestors 'self'"
-        )
-    else:
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data: blob:; "
-            "font-src 'self' data:; "
-            "connect-src 'self' wss://localhost:* https://dashscope.aliyuncs.com; "
-            "frame-ancestors 'none'"
-        )
-    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-    return response
+path_matcher = PathMatcher(
+    static_paths=middleware_config.STATIC_PATHS,
+    skip_paths=list(middleware_config.NO_AUTH_PATHS),
+)
 
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    debug=settings.DEBUG,
+)
 
-_rate_limit_store: dict[str, list[float]] = defaultdict(list)
-RATE_LIMIT_WINDOW = 60
-RATE_LIMIT_MAX = settings.RATE_LIMIT_PER_MINUTE
+app.add_middleware(
+    RateLimitMiddleware,
+    window_seconds=middleware_config.RATE_LIMIT_WINDOW_SECONDS,
+    max_requests=middleware_config.RATE_LIMIT_MAX_REQUESTS,
+    path_matcher=path_matcher,
+)
 
-
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    if request.url.path.startswith("/static") or request.url.path.startswith("/assets") or request.url.path.startswith("/@vite") or request.url.path.startswith("/frontend"):
-        return await call_next(request)
-
-    if request.method == "GET" and not request.url.path.startswith("/api/"):
-        return await call_next(request)
-
-    client_ip = request.client.host if request.client else "unknown"
-    now = time.time()
-    requests = _rate_limit_store[client_ip]
-    requests[:] = [t for t in requests if now - t < RATE_LIMIT_WINDOW]
-
-    if len(requests) >= RATE_LIMIT_MAX:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "请求过于频繁，请稍后再试"},
-        )
-
-    requests.append(now)
-
-    if now - _rate_limit_cleanup_time > 300:
-        _cleanup_rate_limits(now)
-
-    return await call_next(request)
-
-
-_rate_limit_cleanup_time = time.time()
-
-
-def _cleanup_rate_limits(now: float):
-    global _rate_limit_cleanup_time
-    expired_ips = [ip for ip, reqs in _rate_limit_store.items() if not reqs or all(now - t > RATE_LIMIT_WINDOW for t in reqs)]
-    for ip in expired_ips:
-        del _rate_limit_store[ip]
-    _rate_limit_cleanup_time = now
-
-
-NO_AUTH_PATHS = {
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/api/chat",
-    "/api/chat/react",
-    "/api/chat/multimodal",
-    "/api/recognize",
-    "/api/error-book",
-    "/api/tools",
-    "/api/tools/stats",
-    "/api/tools/search",
-    "/api/tools/",
-    "/api/agent/thought/",
-    "/api/agent/stats",
-    "/api/health",
-    "/api/health/detailed",
-    "/api/health/db",
-    "/api/health/cache",
-    "/",
-    "/error_book",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-}
-
-
-@app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-
-    if path in NO_AUTH_PATHS or path.startswith("/static") or path.startswith("/assets") or path.startswith("/@vite") or path.startswith("/api/auth"):
-        return await call_next(request)
-
-    if request.method == "OPTIONS":
-        return await call_next(request)
-
-    if path == "/" or request.url.path.endswith(".js") or request.url.path.endswith(".css") or request.url.path.endswith(".html") or request.url.path.endswith(".woff") or request.url.path.endswith(".woff2") or request.url.path.endswith(".ttf") or request.url.path.endswith(".ico") or request.url.path.endswith(".svg") or request.url.path.endswith(".png") or request.url.path.endswith(".jpg") or request.url.path.endswith(".jpeg"):
-        return await call_next(request)
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "未提供认证令牌，请先登录"},
-        )
-
-    token = auth_header[7:]
-    user_id = verify_access_token(token, settings.JWT_SECRET_KEY, settings.JWT_ALGORITHM)
-
-    if user_id is None:
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "认证令牌无效或已过期，请重新登录"},
-        )
-
-    request.state.user_id = user_id
-    return await call_next(request)
-
+app.add_middleware(
+    AuthenticationMiddleware,
+    jwt_secret_key=settings.JWT_SECRET_KEY,
+    jwt_algorithm=settings.JWT_ALGORITHM,
+    no_auth_paths=middleware_config.NO_AUTH_PATHS,
+    path_matcher=path_matcher,
+)
 
 app.include_router(auth_router)
 app.include_router(memory_router)
@@ -302,11 +195,11 @@ error_book_manager = ErrorBookManager()
 init_default_admin(settings.JWT_SECRET_KEY)
 
 
-async def _stream_agent_response(message, session_id, context_label="聊天"):
-    logger.info(f"[SSE] 开始流式响应: session={session_id}, label={context_label}")
+async def _stream_agent_response(message, session_id, context_label="聊天", user_id=None):
+    logger.info(f"[SSE] 开始流式响应: session={session_id}, label={context_label}, user={user_id}")
     try:
         chunk_idx = 0
-        async for chunk in agent.stream(message, session_id=session_id):
+        async for chunk in agent.stream(message, session_id=session_id, user_id=user_id):
             if chunk:
                 if not isinstance(chunk, str):
                     chunk = str(chunk)
@@ -357,7 +250,7 @@ async def stream_recognize_response(image_data, session_id):
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 
 
-async def stream_multimodal_response(message, image_data, session_id):
+async def stream_multimodal_response(message, image_data, session_id, user_id=None):
     try:
         if image_data:
             if image_data.startswith("data:image/"):
@@ -373,7 +266,7 @@ async def stream_multimodal_response(message, image_data, session_id):
                 start_msg = "**【正在识别图片内容...】**\n\n"
                 yield f"data: {json.dumps({'content': start_msg, 'type': 'status'})}\n\n"
 
-                async for chunk in agent.stream_multimodal(temp_file_path, message, session_id=session_id):
+                async for chunk in agent.stream_multimodal(temp_file_path, message, session_id=session_id, user_id=user_id):
                     if chunk:
                         if not isinstance(chunk, str):
                             chunk = str(chunk)
@@ -414,7 +307,10 @@ async def chat(request: ChatRequest, http_request: Request):
         raise HTTPException(status_code=400, detail="请输入消息")
 
     return StreamingResponse(
-        _stream_agent_response(validated_message, validated_session),
+        _stream_agent_response(
+            validated_message, validated_session,
+            user_id=getattr(http_request.state, "user_id", None),
+        ),
         media_type="text/event-stream",
     )
 
@@ -436,7 +332,10 @@ async def chat_react(request: ChatRequest, http_request: Request):
         raise HTTPException(status_code=400, detail="请输入消息")
 
     return StreamingResponse(
-        _stream_agent_response(validated_message, validated_session, "React"),
+        _stream_agent_response(
+            validated_message, validated_session, "React",
+            user_id=getattr(http_request.state, "user_id", None),
+        ),
         media_type="text/event-stream",
     )
 
@@ -497,7 +396,10 @@ async def chat_multimodal(request: MultimodalChatRequest, http_request: Request)
         raise HTTPException(status_code=400, detail="图片数据格式不合法")
 
     return StreamingResponse(
-        stream_multimodal_response(validated_message, request.image, validated_session),
+        stream_multimodal_response(
+            validated_message, request.image, validated_session,
+            user_id=getattr(http_request.state, "user_id", None),
+        ),
         media_type="text/event-stream",
     )
 
