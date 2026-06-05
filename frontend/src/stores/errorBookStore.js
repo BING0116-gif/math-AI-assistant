@@ -160,6 +160,88 @@ export const useErrorBookStore = defineStore('errorBook', () => {
     currentDetailId.value = null
   }
 
+  /**
+   * 从 AI 回复中提取最佳答案/解析内容
+   * 用于错题本功能中自动填充 correct_answer 字段
+   */
+  function extractBestAnswer(content) {
+    if (!content) return ''
+
+    const lines = content.split('\n')
+
+    const answerStartIndex = lines.findIndex(l =>
+      l.includes('【最终答案】') ||
+      l.includes('**【最终答案】**') ||
+      /^(\*\*)?(答案|最终答案|正确答案)/.test(l.trim())
+    )
+
+    if (answerStartIndex !== -1) {
+      const answerLines = lines.slice(answerStartIndex)
+      let result = answerLines.join('\n').trim()
+
+      if (result.length < 200 && answerStartIndex > 0) {
+        const detailStartIndex = lines.findIndex(l =>
+          l.includes('详细解析') ||
+          l.includes('解题过程') ||
+          l.includes('【开始解题】') ||
+          /^\d+\./.test(l.trim())
+        )
+
+        if (detailStartIndex !== -1 && detailStartIndex < answerStartIndex) {
+          result = lines.slice(detailStartIndex).join('\n').trim()
+        } else {
+          const sectionIndex = lines.findIndex(l => /^#{1,3}\s/.test(l))
+          if (sectionIndex !== -1 && sectionIndex < answerStartIndex) {
+            result = lines.slice(sectionIndex).join('\n').trim()
+          } else {
+            result = content.trim()
+          }
+        }
+      }
+
+      return result
+    }
+
+    const hasDetailedContent = lines.some(l =>
+      l.includes('解析') ||
+      l.includes('解题') ||
+      l.includes('步骤') ||
+      l.includes('方法') ||
+      /^\d+\./.test(l.trim())
+    )
+
+    if (hasDetailedContent) {
+      return content.trim()
+    }
+
+    if (content.length <= 10000) {
+      return content.trim()
+    }
+
+    const importantParts = []
+    let currentSection = []
+
+    for (const line of lines) {
+      if (/^#{1,3}\s|^\d+\.\s|^\*\*/.test(line) || line.includes('---')) {
+        if (currentSection.length > 0) {
+          importantParts.push(currentSection.join('\n'))
+          currentSection = []
+        }
+      }
+      currentSection.push(line)
+    }
+
+    if (currentSection.length > 0) {
+      importantParts.push(currentSection.join('\n'))
+    }
+
+    if (importantParts.length > 0) {
+      return importantParts.slice(0, 5).join('\n\n')
+    }
+
+    return content.slice(0, 10000).trim()
+  }
+
   return {
     errors,
     loading,
@@ -180,6 +262,7 @@ export const useErrorBookStore = defineStore('errorBook', () => {
     resetFilter,
     setCurrentDetail,
     clearCurrentDetail,
+    extractBestAnswer,
     persist
   }
 })

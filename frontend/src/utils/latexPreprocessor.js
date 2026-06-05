@@ -101,9 +101,28 @@ function extractBareLatexSpan(text, startPos) {
   let end = startPos
   let braceDepth = 0
   let hasContent = false
+  const MAX_SPAN_LENGTH = 80 // 防止过度提取：裸LaTeX span 最大长度
 
-  while (end < text.length) {
+  while (end < text.length && end - startPos < MAX_SPAN_LENGTH) {
     const ch = text[end]
+
+    // 安全检查：遇到连续3个以上相同字母时停止（如 AAAAA, yyyyy）
+    if (end >= startPos + 2 && ch === text[end - 1] && ch === text[end - 2] && /[a-zA-Z]/.test(ch)) {
+      // 检查是否为连续重复（3+个相同字符）
+      let repeatCount = 3
+      while (end + repeatCount - startPos < MAX_SPAN_LENGTH &&
+             end + repeatCount < text.length &&
+             text[end + repeatCount] === ch) {
+        repeatCount++
+      }
+      // 如果是纯重复字母序列（3+个），停止提取
+      if (repeatCount >= 3) break
+    }
+
+    // 遇到中文标点或中文+空格组合时停止
+    if (/[\u4e00-\u9fa5，。！？、；：""''【】《》（）…—·]/.test(ch) && braceDepth === 0) {
+      break
+    }
 
     if (ch === '\\' && end + 1 < text.length) {
       const nextCh = text[end + 1]
@@ -283,20 +302,34 @@ function wrapBareLatex(text) {
         }
         const cmd = text.substring(i, cmdEnd)
 
+        // 提高门槛：只对已知LaTeX命令进行包裹，避免误识别普通文本
         if (LATEX_COMMAND_SET.has(cmd) || cmd === '\\left' || cmd === '\\right' ||
             cmd === '\\begin' || cmd === '\\end') {
           if (!isInsideMathFromSegments(segments)) {
             const spanEnd = extractBareLatexSpan(text, i)
             const bareContent = text.substring(i, spanEnd)
-            if (bareContent.trim().length > 0) {
-              const isDisplay = shouldUseDisplayMode(bareContent, text, i)
-              if (isDisplay) {
-                segments.push({ type: 'math', content: '$$' + bareContent + '$$' })
-              } else {
-                segments.push({ type: 'math', content: '$' + bareContent + '$' })
+            // 增加最小内容质量门槛：至少包含一个已知的LaTeX命令或特殊字符
+            const hasSubstantialMathContent = /\\(frac|sqrt|sum|prod|int|lim|sin|cos|tan|log|ln|exp|alpha|beta|gamma|delta|theta|lambda|pi|sigma|phi|psi|omega|infty|partial|nabla|left|right|begin|end|cdot|times|pm|mp|ldots|cdots|vdots|ddots|dots|text|mathrm|mathbf|mathcal|mathbb|vec|hat|bar|tilde|dot|overline|underline)/.test(bareContent)
+              || /[_^{}]/.test(bareContent)
+
+            if (bareContent.trim().length > 0 && hasSubstantialMathContent) {
+              // 额外质量检查：LaTeX命令占比不能太低（防止长文本中夹杂单个命令被整体包裹）
+              const latexCmdCount = (bareContent.match(/\\[a-zA-Z]+/g) || []).length
+              const totalLength = bareContent.length
+              // 要求：每20个字符至少有1个LaTeX命令，或总长度不超过30
+              const latexDensityOk = totalLength <= 30 || (latexCmdCount / (totalLength / 20)) >= 1
+
+              if (latexDensityOk) {
+                const isDisplay = shouldUseDisplayMode(bareContent, text, i)
+                if (isDisplay) {
+                  segments.push({ type: 'math', content: '$$' + bareContent + '$$' })
+                } else {
+                  segments.push({ type: 'math', content: '$' + bareContent + '$' })
+                }
+                i = spanEnd
+                continue
               }
-              i = spanEnd
-              continue
+              // LaTeX密度不足，不包裹，作为普通文本处理
             }
           }
         }
@@ -338,7 +371,10 @@ function wrapBareLatex(text) {
       if (i + 1 < text.length && /[\{\\a-zA-Z\d]/.test(text[i + 1])) {
         const spanEnd = extractBareLatexSpan(text, i)
         const bareContent = text.substring(i, spanEnd)
-        if (bareContent.length > 1) {
+        // 严格门槛：_ ^ 触发的包裹必须包含实际LaTeX命令（不仅仅是字母+下标）
+        // 最小长度3且必须包含反斜杠命令或花括号
+        const hasRealMathContent = /\\[a-zA-Z]+/.test(bareContent) || /\{[^{}]+\}/.test(bareContent)
+        if (bareContent.length >= 3 && hasRealMathContent) {
           segments.push({ type: 'math', content: '$' + bareContent + '$' })
           i = spanEnd
           continue
@@ -463,39 +499,76 @@ function fixStreamingIncomplete(text) {
 }
 
 function catchAllWrap(text) {
-  const mathPattern = /(?<!\$)(?:\\(?:begin\{[\w]*\}|[a-zA-Z]+(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})?(?:[_^](?:\{[^{}]*\}|[\w\d]))*|(?:[_^](?:\{[^{}]*\}|[\w\d]))+))(?!\$)/g
-
-  let result = text
+  // 跳过已经在 $...$ 或 $$...$$ 定界符内的内容，避免双重包裹
+  const segments = []
+  const delimiterRegex = /\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$/g
+  let lastIndex = 0
   let match
+
+  while ((match = delimiterRegex.exec(text)) !== null) {
+    // 将定界符之前的部分作为普通文本段
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', start: lastIndex, end: match.index })
+    }
+    // 标记已包裹的数学段
+    segments.push({ type: 'math', start: match.index, end: match.index + match[0].length })
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: 'text', start: lastIndex, end: text.length })
+  }
+
+  // 只对非数学段（type: 'text'）应用 catchAllWrap 逻辑
+  let result = text
+  // 从后往前替换，避免索引偏移
   const processedRanges = []
 
-  while ((match = mathPattern.exec(result)) !== null) {
-    const matched = match[0]
-    const pos = match.index
+  for (const seg of segments) {
+    if (seg.type !== 'math') {
+      const segmentText = text.substring(seg.start, seg.end)
 
-    if (matched.startsWith('\\begin') || matched.startsWith('\\end')) {
-      continue
-    }
+      const mathPattern = /\\(?:begin\{[\w]*\}|end\{[\w]*\})|[a-zA-Z]*(?:\\(?:frac|sqrt|sum|prod|int|lim|sin|cos|tan|log|ln|exp|alpha|beta|gamma|delta|theta|lambda|pi|sigma|phi|psi|omega|infty|partial|nabla|left|right|cdot|times|pm|mp|ldots|cdots|vdots|ddots|dots|text|mathrm|mathbf|mathcal|mathbb|vec|hat|bar|tilde|dot|overline|underline|overbrace|underbrace|quad|qquad|prime|bm|boldsymbol|cancel|bcancel|xcancel|boxed|overset|underset|stackrel|substack|sideset|dotsc|dotsb|dotsm|dotsi|dotso|mod|bmod|pod|pmod|operatorname|DeclareMathOperator)[a-zA-Z]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})*(?:[_^](?:\{[^{}]*\}|[\w\d]))*)+|[a-zA-Z]_(?:\{[^{}]*\}|[\w\d])|[a-zA-Z]\^(?:\{[^{}]*\}|[\w\d])|\\\([^)]+\)|\\\[[^\]]+\]/g
 
-    const beforePos = Math.max(0, pos - 10)
-    const beforeText = result.substring(beforePos, pos)
-    const dollarBefore = (beforeText.match(/\$/g) || []).length
+      let segMatch
+      while ((segMatch = mathPattern.exec(segmentText)) !== null) {
+        const matched = segMatch[0]
+        // 过滤太短的匹配（单个反斜杠命令但无实质内容）
+        if (matched.trim().length <= 2) continue
 
-    if (dollarBefore % 2 === 0) {
-      const afterPos = Math.min(result.length, pos + matched.length + 10)
-      const afterText = result.substring(pos + matched.length, afterPos)
-      const dollarAfter = (afterText.match(/\$/g) || []).length
+        // 过滤纯单字母/短字母数字匹配（如 "A", "AB", "B2" — 这些不是有意义的裸LaTeX）
+        if (/^[a-zA-Z][a-zA-Z\d]?$/.test(matched.trim())) continue
 
-      if (dollarAfter % 2 === 0) {
+        // 过滤重复字符主导的匹配（如 AAAAAAA, yyyyyyy）
+        const repeatPattern = /(.)\1{4,}/  // 5+个相同字符连续出现
+        if (repeatPattern.test(matched)) {
+          // 检查是否超过30%的长度是重复字符
+          const repeatMatches = matched.match(/(.)\1{2,}/g) || []
+          const repeatLength = repeatMatches.reduce((sum, m) => sum + m.length, 0)
+          if (repeatLength > matched.length * 0.3) continue
+        }
+
+        const absPos = seg.start + segMatch.index
+
+        // 检查是否已经在 $ 定界符附近（前后各看5个字符）
+        const beforeArea = text.substring(Math.max(0, absPos - 5), absPos)
+        const afterArea = text.substring(absPos + matched.length, Math.min(text.length, absPos + matched.length + 5))
+
+        // 如果前后已经有未闭合的 $ 符号，跳过
+        const dollarBefore = (beforeArea.match(/\$/g) || []).length
+        const dollarAfter = (afterArea.match(/\$/g) || []).length
+        if (dollarBefore % 2 !== 0 || dollarAfter % 2 !== 0) continue
+
+        // 检查不与已有范围重叠
         let overlaps = false
         for (const [start, end] of processedRanges) {
-          if (!(pos >= end || pos + matched.length <= start)) {
+          if (!(absPos >= end || absPos + matched.length <= start)) {
             overlaps = true
             break
           }
         }
-        if (!overlaps) {
-          processedRanges.push([pos, pos + matched.length])
+        if (!overlaps && matched.trim().length > 1) {
+          processedRanges.push([absPos, absPos + matched.length])
         }
       }
     }
@@ -536,16 +609,38 @@ export class LatexPreprocessor {
     let result = text
 
     try {
+      // 记录原始文本长度用于调试
+      const originalLength = result.length
+
       result = fixDoubleEscape(result)
       result = normalizeDelimiters(result)
       result = fixSpecialCharacters(result)
       result = wrapBareLatex(result)
+
+      // 防止双重包裹：检查并修复已被重复包裹的定界符
+      result = this.fixDoubleWrappedDelimiters(result)
+
       result = catchAllWrap(result)
       result = fixStreamingIncomplete(result)
       result = fixUnclosedDelimiters(result)
       result = balanceDollarSigns(result)
+
+      // 后处理清理：移除无效的单字符 $X$ 包裹（单个字母/数字不是有意义的裸LaTeX公式）
+      // 例如: $A$, $B$, $x$, $1$ → A, B, x, 1
+      // 保留包含反斜杠命令、下标、上标、或花括号的有效公式
+      result = result.replace(/\$([a-zA-Z\d])\$/g, '$1')
+
+      // 验证处理结果没有明显变长（可能表示过度包裹）
+      if (result.length > originalLength * 3) {
+        console.warn('[LatexPreprocessor] 处理后文本异常增长', {
+          originalLength,
+          processedLength: result.length,
+          ratio: (result.length / originalLength).toFixed(2),
+          preview: result.substring(0, 200)
+        })
+      }
     } catch (error) {
-      console.error('[LatexPreprocessor] 处理异常:', error)
+      console.error('[LatexPreprocessor] 处理异常:', error, '\n输入文本预览:', text.substring(0, 200))
       return text
     }
 
@@ -555,6 +650,25 @@ export class LatexPreprocessor {
         console.log(`[LatexPreprocessor] 处理耗时: ${duration.toFixed(2)}ms`)
       }
     }
+
+    return result
+  }
+
+  /**
+   * 修复被重复包裹的定界符，例如 $$...$ 或 $...$$ 变为正确的 $...$
+   */
+  fixDoubleWrappedDelimiters(text) {
+    // 修复连续三个或更多 $ 符号
+    let result = text.replace(/\${3,}/g, (match) => {
+      const count = match.length
+      if (count % 2 === 0) {
+        return '$$'.repeat(count / 2)
+      }
+      return '$' + '$$'.repeat(Math.floor(count / 2))
+    })
+
+    // 修复交错模式如 $...$$...$ 或 $$...$...$
+    // 简单策略：将相邻的 $ 和 $$ 合并
 
     return result
   }

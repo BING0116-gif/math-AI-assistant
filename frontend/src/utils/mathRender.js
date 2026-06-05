@@ -74,51 +74,87 @@ function createFriendlyErrorMessage(originalContent) {
 function tryRenderFormula(formula, displayMode, originalContent) {
   const cleanedFormula = cleanFormula(formula)
 
+  // 验证公式是否包含实质数学内容
+  if (!cleanedFormula || cleanedFormula.trim().length < 1) {
+    return { success: false, error: 'empty formula' }
+  }
+
   const strategies = [
-    () => tryKatexRender(cleanedFormula, displayMode),
-
     () => {
-      const simplified = cleanedFormula
-        .replace(/\\left/g, '')
-        .replace(/\\right/g, '')
-      return tryKatexRender(simplified, displayMode)
+      try {
+        const result = katex.renderToString(cleanedFormula, { ...katexConfig, displayMode })
+        return { success: true, html: result }
+      } catch (error) {
+        return { success: false, error: error.message, detail: 'Level 0 - 原始公式' }
+      }
     },
 
     () => {
-      const simplified = cleanedFormula
-        .replace(/\\left/g, '')
-        .replace(/\\right/g, '')
-        .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
-      return tryKatexRender(simplified, displayMode)
+      try {
+        const simplified = cleanedFormula.replace(/\\left/g, '').replace(/\\right/g, '')
+        const result = katex.renderToString(simplified, { ...katexConfig, displayMode })
+        return { success: true, html: result }
+      } catch (error) {
+        return { success: false, error: error.message, detail: 'Level 1 - 移除 left/right' }
+      }
     },
 
     () => {
-      const simplified = cleanedFormula
-        .replace(/\\left/g, '')
-        .replace(/\\right/g, '')
-        .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
-        .replace(/[\u4e00-\u9fa5]/g, '')
-      const trimmed = simplified.trim()
-      return trimmed ? tryKatexRender(trimmed, displayMode) : { success: false, error: 'empty after cleanup' }
+      try {
+        const simplified = cleanedFormula
+          .replace(/\\left/g, '')
+          .replace(/\\right/g, '')
+          .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
+        const result = katex.renderToString(simplified, { ...katexConfig, displayMode })
+        return { success: true, html: result }
+      } catch (error) {
+        return { success: false, error: error.message, detail: 'Level 2 - 移除 text/rm' }
+      }
+    },
+
+    () => {
+      try {
+        const simplified = cleanedFormula
+          .replace(/\\left/g, '')
+          .replace(/\\right/g, '')
+          .replace(/\\(?:text|mathrm)\{[^}]*\}/g, '')
+          .replace(/[\u4e00-\u9fa5]/g, '')
+        const trimmed = simplified.trim()
+        if (!trimmed) return { success: false, error: 'empty after cleanup', detail: 'Level 3 - 移除中文后为空' }
+        const result = katex.renderToString(trimmed, { ...katexConfig, displayMode })
+        return { success: true, html: result }
+      } catch (error) {
+        return { success: false, error: error.message, detail: 'Level 3 - 移除中文' }
+      }
     },
 
     () => {
       const mathOnly = extractPureMath(cleanedFormula)
-      return mathOnly ? tryKatexRender(mathOnly, displayMode) : { success: false, error: 'no math content' }
+      if (!mathOnly) return { success: false, error: 'no math content', detail: 'Level 4 - 无纯数学内容' }
+      try {
+        const result = katex.renderToString(mathOnly, { ...katexConfig, displayMode })
+        return { success: true, html: result }
+      } catch (error) {
+        return { success: false, error: error.message, detail: 'Level 4 - 纯数学提取' }
+      }
     }
   ]
 
   for (let i = 0; i < strategies.length; i++) {
     const result = strategies[i]()
     if (result.success) {
-      if (i > 0) {
-        console.log(`[mathRender] 公式通过降级策略 Level ${i} 渲染成功`)
-      }
       return { ...result, fallbackLevel: i }
+    } else {
+      console.debug(`[mathRender] 策略 ${result.detail} 失败:`, result.error?.substring(0, 80))
     }
   }
 
-  console.warn('[mathRender] 所有降级策略均失败:', cleanedFormula.substring(0, 100))
+  console.warn('[mathRender] 所有降级策略均失败:', {
+    formula: cleanedFormula.substring(0, 100),
+    displayMode,
+    originalLength: originalContent?.length
+  })
+
   return {
     success: false,
     html: createFriendlyErrorMessage(originalContent || cleanedFormula)
@@ -130,31 +166,67 @@ export function renderMathInElement(element) {
 
   const mathElements = element.querySelectorAll('.math-display, .math-inline')
 
-  if (mathElements.length === 0 && !hasMathContent(element.textContent || '')) {
-    return
-  }
-
+  // 场景1：有明确的数学公式标记元素（来自 markdown.js 的 restoreMathBlocks）
   if (mathElements.length > 0) {
-    mathElements.forEach(el => {
-      const mathContent = el.textContent || ''
+    let successCount = 0
+    let failCount = 0
 
-      if (mathContent.startsWith('$$') && mathContent.endsWith('$$')) {
-        const formula = mathContent.slice(2, -2).trim()
-        const result = tryRenderFormula(formula, true, mathContent)
+    mathElements.forEach((el, index) => {
+      try {
+        const mathContent = el.textContent || ''
+
+        if (!mathContent.trim()) return
+
+        let formula = ''
+        let displayMode = false
+
+        if (mathContent.startsWith('$$') && mathContent.endsWith('$$')) {
+          formula = mathContent.slice(2, -2).trim()
+          displayMode = true
+        } else if (mathContent.startsWith('$') && mathContent.endsWith('$')) {
+          formula = mathContent.slice(1, -1).trim()
+          displayMode = false
+        } else {
+          formula = mathContent.trim()
+          displayMode = false
+        }
+
+        // 跳过空公式或过短的无效内容
+        if (!formula || formula.length < 2) return
+
+        // 跳过单字符"公式"（如 $A$, $B$ — 单个字母不是有意义的数学公式）
+        if (/^[a-zA-Z\d]$/.test(formula)) return
+
+        const result = tryRenderFormula(formula, displayMode, mathContent)
         el.innerHTML = result.html
-        if (result.success) el.classList.add('katex-rendered')
-      } else if (mathContent.startsWith('$') && mathContent.endsWith('$')) {
-        const formula = mathContent.slice(1, -1).trim()
-        const result = tryRenderFormula(formula, false, mathContent)
-        el.innerHTML = result.html
-        if (result.success) el.classList.add('katex-rendered')
-      } else if (mathContent.trim()) {
-        const result = tryRenderFormula(mathContent.trim(), false, mathContent)
-        el.innerHTML = result.html
-        if (result.success) el.classList.add('katex-rendered')
+
+        if (result.success) {
+          el.classList.add('katex-rendered')
+          successCount++
+          if (result.fallbackLevel && result.fallbackLevel > 0) {
+            console.log(`[mathRender] 公式 #${index} 通过降级策略 Level ${result.fallbackLevel} 渲染成功`)
+          }
+        } else {
+          failCount++
+          el.classList.add('math-render-failed')
+        }
+      } catch (err) {
+        failCount++
+        console.error(`[mathRender] 公式元素 #${index} 渲染异常:`, err)
+        el.classList.add('math-render-failed')
       }
     })
 
+    if (failCount > 0) {
+      console.warn(`[mathRender] 渲染完成: ${successCount} 成功, ${failCount} 失败 (共 ${mathElements.length} 个公式)`)
+    }
+
+    return
+  }
+
+  // 场景2：没有明确标记，检查是否包含数学内容，尝试全局渲染
+  const textContent = element.textContent || ''
+  if (!hasMathContent(textContent)) {
     return
   }
 

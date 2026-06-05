@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -17,6 +19,20 @@ from app.data.database import get_db_session
 
 logger = logging.getLogger(__name__)
 
+# ── P2：自动技能重计算触发条件 ──
+RECALC_TRIGGER = {
+    "event_count": 5,          # 每 N 条事件触发一次重计算
+    "min_interval": 60,        # 最小重计算间隔（秒）
+    "batch_threshold": 50,     # 缓冲区满阈值触发
+    "flush_callback": True,    # 是否注册 EventBuffer 刷新回调
+}
+"""技能重计算自动触发配置。
+
+- event_count: record_event 每写入 N 条事件后触发一次 recalculate_skills
+- min_interval: 避免高频率重复重计算的最小间隔（秒）
+- batch_threshold: 缓冲区批量写入 N 条后触发
+- flush_callback: 注册为 EventBuffer 的 on_flush 回调
+"""
 
 @dataclass
 class UserProfile:
@@ -95,9 +111,25 @@ class MemoryPersistenceFacade:
         from app.services.math_skill_dag import MathSkillDAG
         self._skill_aggregator = SkillAggregator(self._session_factory)
         self._skill_aggregator._skill_dag = MathSkillDAG()
-        self._difficulty_estimator = None
+
+        # ── P1：DifficultyEstimator 集成 ──
+        from app.services.difficulty_estimator import DifficultyEstimator
+        self._difficulty_estimator = DifficultyEstimator(
+            skill_aggregator=self._skill_aggregator,
+            db_session_factory=self._session_factory,
+        )
+
+        # ── P2：事件缓冲 + 自动重计算 ──
+        self._last_recalc_time: Dict[str, float] = {}
         self._event_buffer = EnhancedEventBuffer()
-        logger.info("MemoryPersistenceFacade 初始化完成（含 SkillAggregator + EventBuffer）")
+        self._event_count_since_recalc: Dict[str, int] = {}
+        if RECALC_TRIGGER["flush_callback"]:
+            self._event_buffer.on_flush(self._on_buffer_flush)
+
+        logger.info(
+            "MemoryPersistenceFacade 初始化完成 "
+            "(含 SkillAggregator + DifficultyEstimator + EventBuffer)"
+        )
 
     LEARNING_RECORD_FIELDS = {
     "user_id", "question_id", "event_type", "question_content",
@@ -126,7 +158,13 @@ class MemoryPersistenceFacade:
             existing_meta.update(extra_fields)
             event_data["metadata_"] = existing_meta
 
-        return await self._long_term.record_learning_event(event_data)
+        result = await self._long_term.record_learning_event(event_data)
+
+        # ── P2：记录成功后，自动触发技能重计算检查 ──
+        if result and user_id:
+            await self._maybe_trigger_recalc(user_id)
+
+        return result
 
     async def retrieve_context(
         self,
@@ -180,6 +218,19 @@ class MemoryPersistenceFacade:
                 await self._skill_aggregator.get_cognitive_style(user_id)
             )
 
+        # ── P1：使用 DifficultyEstimator 动态计算推荐难度 ──
+        if self._difficulty_estimator:
+            try:
+                dynamic_diff = await self._difficulty_estimator.estimate_for_profile(
+                    user_id=user_id, profile=profile
+                )
+                profile.recommended_difficulty = dynamic_diff
+                logger.debug(
+                    f"动态难度已更新: {base.get('recommended_difficulty', 3)} → {dynamic_diff}"
+                )
+            except Exception as e:
+                logger.warning(f"动态难度计算失败（保留基础值）: {e}")
+
         return profile
 
     async def buffer_event(
@@ -198,6 +249,142 @@ class MemoryPersistenceFacade:
 
     async def flush_buffer(self) -> int:
         return await self._event_buffer.force_flush()
+
+    # ── P1: 公共难度估算接口 ──
+
+    async def estimate_difficulty(
+        self,
+        user_id: str,
+        category: str,
+        sub_category: str = "",
+        context: str = "practice",
+    ) -> int:
+        """
+        估算指定知识点的推荐难度（公共接口）。
+
+        Args:
+            user_id: 用户 ID
+            category: 知识点分类
+            sub_category: 子分类
+            context: 上下文模式（practice/exam/review/error_correction/challenge）
+
+        Returns:
+            int: 推荐难度 1-5
+        """
+        if not self._difficulty_estimator:
+            return 3
+        return await self._difficulty_estimator.estimate(
+            user_id=user_id,
+            category=category,
+            sub_category=sub_category,
+            context=context,
+        )
+
+    # ── P2: 自动技能重计算机制 ──
+
+    async def trigger_skill_recalculation(
+        self,
+        user_id: str,
+        skill_codes: Optional[List[str]] = None,
+    ) -> int:
+        """
+        显式触发技能重计算（供外部调用）。
+
+        Args:
+            user_id: 用户 ID
+            skill_codes: 指定技能代码列表，None 表示重算全部
+
+        Returns:
+            int: 更新的 skill 数量
+        """
+        if not self._skill_aggregator:
+            logger.warning("SkillAggregator 未初始化，跳过重计算")
+            return 0
+
+        try:
+            count = await self._skill_aggregator.recalculate_skills(
+                user_id=user_id, skill_codes=skill_codes
+            )
+            self._last_recalc_time[user_id] = time.time()
+            self._event_count_since_recalc[user_id] = 0
+            logger.info(
+                f"技能重计算完成: user={user_id} "
+                f"skills_updated={count} "
+                f"codes={skill_codes or 'all'}"
+            )
+            return count
+        except Exception as e:
+            logger.error(f"技能重计算失败: user={user_id} error={e}")
+            return 0
+
+    async def get_recalc_status(self, user_id: str) -> Dict[str, Any]:
+        """获取重计算状态信息。"""
+        last_time = self._last_recalc_time.get(user_id, 0.0)
+        last_dt = (
+            datetime.fromtimestamp(last_time, tz=timezone.utc).isoformat()
+            if last_time > 0
+            else None
+        )
+        return {
+            "user_id": user_id,
+            "last_recalc_at": last_dt or "never",
+            "events_since_recalc": self._event_count_since_recalc.get(user_id, 0),
+            "trigger_config": dict(RECALC_TRIGGER),
+        }
+
+    async def _maybe_trigger_recalc(self, user_id: str) -> bool:
+        """
+        检查并触发自动重计算（内部调用）。
+
+        触发条件（任一满足）：
+        1. 距上次重计算记录的事件数 >= event_count
+        2. 距上次重计算时间间隔 >= min_interval（但仅在 event_count 达标时）
+        3. 首次重计算（尚无记录）
+
+        Returns:
+            bool: 是否触发了重计算
+        """
+        # 检查间隔保护
+        now = time.time()
+        last = self._last_recalc_time.get(user_id, 0.0)
+        if last > 0 and (now - last) < RECALC_TRIGGER["min_interval"]:
+            return False  # 间隔太短，跳过
+
+        # 更新事件计数
+        count = self._event_count_since_recalc.get(user_id, 0) + 1
+        self._event_count_since_recalc[user_id] = count
+
+        # 触发条件：事件数达标
+        if count < RECALC_TRIGGER["event_count"]:
+            return False
+
+        # 执行异步重计算（非阻塞）
+        asyncio.ensure_future(self.trigger_skill_recalculation(user_id))
+        return True
+
+    async def _on_buffer_flush(self, events: List) -> None:
+        """
+        EventBuffer 刷新回调。
+        当缓冲区批量写入时，触发技能重计算。
+
+        Args:
+            events: 被刷新的缓冲事件列表
+        """
+        if not events:
+            return
+
+        if len(events) < RECALC_TRIGGER["batch_threshold"]:
+            return
+
+        # 提取唯一的 user_id
+        user_ids = set(e.user_id for e in events if e.user_id)
+        for uid in user_ids:
+            asyncio.ensure_future(self.trigger_skill_recalculation(uid))
+
+        logger.info(
+            f"缓冲区批量刷新回调触发重计算: "
+            f"events={len(events)} users={len(user_ids)}"
+        )
 
     INTENT_PERSISTENCE_MAP = {
         "problem_solving": {

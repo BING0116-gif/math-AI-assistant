@@ -1,69 +1,99 @@
-import { marked } from 'marked'
+import MarkdownIt from 'markdown-it'
+import { katex } from '@mdit/plugin-katex'
 import DOMPurify from 'dompurify'
-import latexPreprocessor from '@/utils/latexPreprocessor'
+import latexPreprocessor from './latexPreprocessor'
 
-const renderer = new marked.Renderer()
+// ============ markdown-it 实例（含 KaTeX 公式渲染） ============
+// 核心变更：用官方 @mdit/plugin-katex 替代自建 latexPreprocessor + mathRender
+// 原理：插件在 markdown 解析阶段直接调用 katex.renderToString()，
+//       输出的 HTML 已包含完整渲染后的公式，无需二次处理
 
-renderer.code = function(code, infostring, escaped) {
-  const lang = (infostring || '').match(/\S*/)[0]
+const md = new MarkdownIt({
+  html: true,        // 允许 HTML（AI 输出可能包含）
+  linkify: true,     // 自动识别链接
+  breaks: true,      // 换行符转 <br>
+  typographer: true  // 排版优化
+})
 
-  if (this.options.highlight) {
-    const highlighted = this.options.highlight(code, lang)
-    if (highlighted !== code) {
-      escaped = true
-      code = highlighted
-    }
-  }
+// 注册 KaTeX 插件 — 自动识别 $...$ 和 $$...$$ 并渲染为 HTML
+// 注意：delimiters 是字符串枚举 ("dollars"|"brackets"|"all")，不是 KaTeX auto-render 的数组格式
+md.use(katex, {
+  delimiters: 'dollars',  // $...$ 行内公式, $$...$$ 块级公式（默认值，显式声明）
+  throwOnError: false,    // 渲染失败时显示原始文本而非报错
+  strict: false           // 宽松模式，兼容 LLM 输出中的不严格 LaTeX
+})
 
-  code = code.replace(/\n$/, '') + '\n'
-
-  if (!lang) {
-    return '<pre><code>' + (escaped ? code : escape(code)) + '</code></pre>\n'
-  }
-
-  return '<pre class="highlight"><code class="language-' + escape(lang) + '">' + (escaped ? code : escape(code)) + '</code></pre>\n'
+// ============ 代码块渲染（无语法高亮） ============
+// 如需代码高亮，可安装 highlight.js 并配置 md.set({ highlight: ... })
+md.renderer.code = function(tokens, idx) {
+  const token = tokens[idx]
+  const lang = (token.info || '').match(/\S*/)[0]
+  return `<pre class="highlight"><code class="language-${md.utils.escape(lang)}">${md.utils.escapeHtml(token.content)}</code></pre>\n`
 }
 
-const mathBlockRegex = /\$\$([\s\S]*?)\$\$/g
-const mathInlineRegex = /\$([^\$\n]+?)\$/g
-
-function extractMathBlocks(text) {
-  const preprocessed = latexPreprocessor.process(text)
-
-  const mathBlocks = []
-  let processed = preprocessed
-
-  processed = processed.replace(mathBlockRegex, (match, math) => {
-    const idx = mathBlocks.length
-    mathBlocks.push({ type: 'block', content: math.trim() })
-    return `%%MATHBLOCK${idx}%%`
-  })
-
-  processed = processed.replace(mathInlineRegex, (match, math) => {
-    const idx = mathBlocks.length
-    mathBlocks.push({ type: 'inline', content: math.trim() })
-    return `%%MATHINLINE${idx}%%`
-  })
-
-  return { processed, mathBlocks }
+// ============ DOMPurify 配置 ============
+// KaTeX 渲染产物包含大量 MathML/SVG 标签，必须在白名单中保留
+const purifyOptions = {
+  ALLOWED_TAGS: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr',
+    'ul', 'ol', 'li',
+    'strong', 'em', 'b', 'i', 'u', 's', 'del',
+    'blockquote', 'pre', 'code',
+    'a', 'img',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'div', 'span',
+    'sup', 'sub'
+  ],
+  ALLOWED_ATTR: [
+    'href', 'target', 'rel',
+    'src', 'alt', 'title', 'width', 'height',
+    'class', 'id', 'style',
+    'start', 'type',
+    'xmlns', 'viewBox', 'd', 'fill', 'stroke', 'stroke-width',
+    'cx', 'cy', 'r', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+    'dx', 'dy', 'text-anchor', 'font-family', 'font-size', 'font-style',
+    'font-weight', 'line-height', 'spacing', 'accent', 'baseline-shift',
+    'clip-path', 'depth', 'maxsize', 'minsize', 'size',
+    'aria-label', 'role', 'semantics', 'namespace'
+  ],
+  ADD_ATTR: ['target'],
+  // KaTeX 生成的数学公式标签白名单
+  ADD_TAGS: [
+    'math', 'mrow', 'mo', 'mi', 'mn', 'msup', 'msub', 'msubsup',
+    'mfrac', 'mover', 'munder', 'munderover', 'msqrt', 'mroot',
+    'menclose', 'mstyle', 'annotation', 'semantics', 'svg', 'path',
+    'use', 'g', 'line', 'rect', 'polygon', 'circle', 'ellipse',
+    'text', 'tspan', 'foreignObject', 'mglyph', 'mpadded', 'mphantom',
+    'mtable', 'mtr', 'mtd', 'mlabeledtr', 'maction'
+  ]
 }
 
-function restoreMathBlocks(html, mathBlocks) {
-  let result = html
-
-  for (let i = 0; i < mathBlocks.length; i++) {
-    const block = mathBlocks[i]
-    const placeholder = block.type === 'block' ? `%%MATHBLOCK${i}%%` : `%%MATHINLINE${i}%%`
-    const mathHtml = block.type === 'block'
-      ? `<div class="math-display">$${block.content}$</div>`
-      : `<span class="math-inline">$${block.content}$</span>`
-
-    result = result.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), mathHtml)
-  }
-
-  return result
+// 流式文本使用的简化版净化配置
+const streamPurifyOptions = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'h1', 'h2', 'h3',
+    'strong', 'em', 'code',
+    'div', 'span'
+  ],
+  ALLOWED_ATTR: ['class', 'style', 'xmlns', 'viewBox', 'd', 'fill',
+    'stroke', 'stroke-width', 'cx', 'cy', 'r', 'x', 'y',
+    'x1', 'y1', 'x2', 'y2', 'dx', 'dy', 'text-anchor',
+    'font-family', 'font-size', 'font-style', 'font-weight',
+    'line-height', 'spacing', 'accent', 'baseline-shift',
+    'clip-path', 'depth', 'height', 'maxsize', 'minsize', 'size',
+    'aria-label', 'role', 'semantics', 'width', 'id'],
+  ADD_TAGS: ['math', 'mrow', 'mo', 'mi', 'mn', 'msup', 'msub', 'msubsup',
+    'mfrac', 'mover', 'munder', 'munderover', 'msqrt', 'mroot',
+    'menclose', 'mstyle', 'annotation', 'semantics', 'svg', 'path',
+    'use', 'g', 'line', 'rect', 'polygon', 'circle', 'ellipse',
+    'text', 'tspan', 'foreignObject', 'mglyph', 'mpadded', 'mphantom',
+    'mtable', 'mtr', 'mtd', 'mlabeledtr', 'maction']
 }
 
+/**
+ * 转义 HTML 特殊字符（降级兜底）
+ */
 function escape(html) {
   return html
     .replace(/&/g, '&amp;')
@@ -73,50 +103,22 @@ function escape(html) {
     .replace(/'/g, '&#39;')
 }
 
+/**
+ * 渲染 Markdown 文本为安全的 HTML（含数学公式）
+ *
+ * 使用 markdown-it + @mdit/plugin-katex 一站式完成：
+ *   Markdown 解析 → KaTeX 公式渲染 → HTML 输出 → DOMPurify 净化
+ * 无需额外的 latexPreprocessor 或 renderMathInElement 二次调用
+ */
 export function renderMarkdown(text) {
   if (!text) return ''
 
   try {
-    const { processed, mathBlocks } = extractMathBlocks(text)
+    // 预处理：给裸 LaTeX（无 $ 包裹的 \frac, \begin{pmatrix} 等）自动添加定界符
+    const preprocessed = latexPreprocessor.process(text)
+    let html = md.render(preprocessed)
 
-    const options = {
-      renderer: renderer,
-      gfm: true,
-      breaks: true,
-      headerIds: false,
-      mangle: false
-    }
-
-    let html = marked.parse(processed, options)
-
-    html = restoreMathBlocks(html, mathBlocks)
-
-    const cleanHtml = DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: [
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'p', 'br', 'hr',
-        'ul', 'ol', 'li',
-        'strong', 'em', 'b', 'i', 'u', 's', 'del',
-        'blockquote', 'pre', 'code',
-        'a', 'img',
-        'table', 'thead', 'tbody', 'tr', 'th', 'td',
-        'div', 'span',
-        'sup', 'sub'
-      ],
-      ALLOWED_ATTR: [
-        'href', 'target', 'rel',
-        'src', 'alt', 'title', 'width', 'height',
-        'class', 'id', 'style',
-        'start', 'type',
-        'xmlns', 'viewBox', 'd', 'fill', 'stroke', 'stroke-width',
-        'cx', 'cy', 'r', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
-        'dx', 'dy', 'text-anchor', 'font-family', 'font-size', 'font-style',
-        'font-weight', 'line-height', 'spacing', 'accent', 'baseline-shift',
-        'clip-path', 'depth', 'height', 'maxsize', 'minsize', 'size',
-        'aria-label', 'role', 'semantics'
-      ],
-      ADD_ATTR: ['target']
-    })
+    const cleanHtml = DOMPurify.sanitize(html, purifyOptions)
 
     return cleanHtml
   } catch (error) {
@@ -125,45 +127,21 @@ export function renderMarkdown(text) {
   }
 }
 
+/**
+ * 格式化流式输出文本（轻量版）
+ *
+ * 用于 AI 打字机效果场景，在内容持续变化时提供快速格式化。
+ * 同样使用 markdown-it + KaTeX 插件，确保公式一致性。
+ */
 export function formatStreamText(text) {
   if (!text) return ''
 
   try {
-    const { processed, mathBlocks } = extractMathBlocks(text)
+    // 预处理：给裸 LaTeX 自动添加定界符（流式场景同样需要）
+    const preprocessed = latexPreprocessor.process(text)
+    let html = md.render(preprocessed)
 
-    let formatted = processed
-
-    formatted = formatted.replace(/\n\n+/g, '</p><p>')
-    formatted = formatted.replace(/^### (.*)$/gm, '<h3>$1</h3>')
-    formatted = formatted.replace(/^## (.*)$/gm, '<h2>$1</h2>')
-    formatted = formatted.replace(/^# (.*)$/gm, '<h1>$1</h1>')
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    formatted = formatted.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    formatted = formatted.replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    formatted = formatted.replace(/\n/g, '<br>')
-
-    formatted = restoreMathBlocks(formatted, mathBlocks)
-
-    return DOMPurify.sanitize(formatted, {
-      ALLOWED_TAGS: [
-        'p', 'br', 'h1', 'h2', 'h3',
-        'strong', 'em', 'code',
-        'div', 'span'
-      ],
-      ALLOWED_ATTR: ['class', 'style', 'xmlns', 'viewBox', 'd', 'fill',
-        'stroke', 'stroke-width', 'cx', 'cy', 'r', 'x', 'y',
-        'x1', 'y1', 'x2', 'y2', 'dx', 'dy', 'text-anchor',
-        'font-family', 'font-size', 'font-style', 'font-weight',
-        'line-height', 'spacing', 'accent', 'baseline-shift',
-        'clip-path', 'depth', 'height', 'maxsize', 'minsize', 'size',
-        'aria-label', 'role', 'semantics', 'width', 'id'],
-      ADD_TAGS: ['math', 'mrow', 'mo', 'mi', 'mn', 'msup', 'msub', 'msubsup',
-        'mfrac', 'mover', 'munder', 'munderover', 'msqrt', 'mroot',
-        'menclose', 'mstyle', 'annotation', 'semantics', 'svg', 'path',
-        'use', 'g', 'line', 'rect', 'polygon', 'circle', 'ellipse',
-        'text', 'tspan', 'foreignObject', 'mglyph', 'mpadded', 'mphantom',
-        'mtable', 'mtr', 'mtd', 'mlabeledtr', 'maction']
-    })
+    return DOMPurify.sanitize(html, streamPurifyOptions)
   } catch (error) {
     console.error('[markdown] 流式文本格式化异常:', error)
     return text

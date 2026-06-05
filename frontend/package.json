@@ -9,10 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mdit/plugin-katex": "^0.25.2",
     "axios": "^1.6.7",
     "dompurify": "^3.4.2",
     "element-plus": "^2.8.0",
     "katex": "^0.16.9",
+    "markdown-it": "^14.2.0",
     "marked": "^18.0.3",
     "pinia": "^2.1.7",
     "vue": "^3.4.21",

@@ -388,6 +388,35 @@ class MathAgent:
             "chat_history": chat_history_dicts,
             "registry": self._registry,
         }
+
+        # ── 🆕 注入用户技能画像到上下文（P0: LLM 感知用户水平）──
+        context["user_skill_instruction"] = ""
+        if user_id and self._persistence_facade:
+            try:
+                profile = await self._persistence_facade.get_profile(user_id)
+                if profile and (profile.skills or profile.weak_points):
+                    skill_text = self._format_skill_profile_for_llm(profile)
+                    context["user_skill_instruction"] = skill_text
+                    context["user_skill_profile"] = profile
+
+                    # 非128K模式：将技能指令注入 chat_history 开头（作为系统消息）
+                    # 128K模式：在下方注入到 System Prompt 中
+                    if not self._enable_128k_context:
+                        chat_history_dicts.insert(0, {
+                            "role": "system",
+                            "content": skill_text,
+                        })
+                        context["chat_history"] = chat_history_dicts
+
+                    logger.info(
+                        f"[Skill] 已注入用户技能画像: "
+                        f"skills={len(profile.skills)}, "
+                        f"weak={len(profile.weak_points)}, "
+                        f"cr={profile.correct_rate:.0%}, "
+                        f"mode={'128K' if self._enable_128k_context else 'chat_history'}"
+                    )
+            except Exception as e:
+                logger.warning(f"[Skill] 加载用户技能画像失败（非阻塞）: {e}")
         
         # ── 🆕 集成128K上下文管理 ──
         if self._enable_128k_context and user_input:
@@ -412,7 +441,12 @@ class MathAgent:
                     )
                 
                 # 构建完整的LLM上下文（严格≤128K）
-                system_prompt = self._get_system_prompt()
+                # P0：将用户技能画像通过 System Prompt 模板注入
+                skill_instruction = context.get("user_skill_instruction", "")
+                system_prompt = self._get_system_prompt(skill_profile=skill_instruction)
+
+                if skill_instruction:
+                    logger.debug(f"[Skill] 已注入技能指令到 System Prompt ({len(skill_instruction)}字符)")
                 
                 llm_messages = ctx_mgr.build_llm_context(
                     system_prompt=system_prompt,
@@ -455,14 +489,98 @@ class MathAgent:
             context["context_128k_enabled"] = False
         
         return context
-    
-    def _build_system_prompt(self, tools: Optional[List[BaseTool]] = None, style: str = "详细") -> str:
+
+    @staticmethod
+    def _format_skill_profile_for_llm(profile) -> str:
         """
-        构建完整的 System Prompt（四层架构 + 工具描述 + ReAct指令 + 教学风格）。
+        将用户技能画像格式化为 LLM 可理解的指令文本。
+
+        设计原则：
+        - 紧凑（<300 tokens），不浪费上下文窗口
+        - 可操作：告诉 LLM 如何根据技能水平调整行为
+        - 容错：数据不足时降级为通用指令
+        """
+        lines = ["【用户学习档案】(基于历史学习数据分析)"]
+
+        # 学习水平判定
+        cr = profile.correct_rate or 0
+        if cr >= 0.85:
+            level, level_hint = "优秀", "可挑战高难度，引入竞赛/拓展内容"
+        elif cr >= 0.7:
+            level, level_hint = "良好", "保持当前节奏，适当增加深度"
+        elif cr >= 0.5:
+            level, level_hint = "中等", "注重基础巩固，循序渐进"
+        elif cr >= 0.3:
+            level, level_hint = "初学", "从基础概念讲起，多用例子"
+        else:
+            level, level_hint = "入门", "用最简单的语言，一步步引导"
+
+        lines.append(f"- 当前水平: {level} (正确率 {cr:.0%}) → {level_hint}")
+
+        # 薄弱知识点（最关键的信息）
+        weak_skills = []
+        if profile.weak_points:
+            for wp in profile.weak_points[:4]:
+                cat = wp.get("category", "")
+                m = wp.get("mastery", 0)
+                weak_skills.append(f"{cat}({m:.0%})")
+        if profile.skills:
+            for s in sorted(profile.skills, key=lambda x: x.get("mastery_level", 0))[:4]:
+                m = s.get("mastery_level", 0)
+                name = s.get("skill_code", s.get("display_name", ""))
+                st = s.get("status", "")
+                if m < 0.35 and st != "mastered":
+                    weak_skills.append(f"{name}({m:.0%})")
+
+        if weak_skills:
+            unique_weak = list(dict.fromkeys(weak_skills))[:5]
+            lines.append(f"- 薄弱知识点: {', '.join(unique_weak)} → 请重点讲解基础概念，多给示例和类比")
+
+        # 已掌握知识点
+        strong_skills = []
+        if profile.strong_points:
+            strong_skills = list(profile.strong_points)[:3]
+        if profile.skills:
+            for s in sorted(profile.skills, key=lambda x: x.get("mastery_level", 0), reverse=True)[:3]:
+                if s.get("status") == "mastered":
+                    name = s.get("skill_code", s.get("display_name", ""))
+                    if name not in strong_skills:
+                        strong_skills.append(name)
+
+        if strong_skills:
+            lines.append(f"- 已掌握: {', '.join(strong_skills[:3])} → 可适当提高深度，引入关联知识")
+
+        # 推荐难度
+        rec_diff = int(profile.recommended_difficulty or 3)
+        lines.append(f"- 推荐答题难度: T{rec_diff}")
+
+        # 易错模式
+        if profile.error_patterns:
+            patterns = [ep.get("pattern", "") for ep in profile.error_patterns[:3] if ep.get("pattern")]
+            if patterns:
+                lines.append(f"- 常见易错: {', '.join(patterns)} → 回答时主动提醒这些错误")
+
+        # 认知风格（如果有）
+        if profile.cognitive_style:
+            style_hint = profile.cognitive_style.get("style_hint", "")
+            if style_hint:
+                lines.append(f"- 学习偏好: {style_hint}")
+
+        return "\n".join(lines)
+
+    def _build_system_prompt(
+        self,
+        tools: Optional[List[BaseTool]] = None,
+        style: str = "详细",
+        skill_profile: str = "",
+    ) -> str:
+        """
+        构建完整的 System Prompt（四层架构 + 工具描述 + ReAct指令 + 教学风格 + 技能画像）。
 
         Args:
             tools: 工具列表，如果为 None 则使用注册表中的所有工具
             style: 教学风格（"详细"/"简洁"/"直观"/"严谨"）
+            skill_profile: 用户技能画像指令文本（P0 注入）
 
         Returns:
             完整的 System Prompt 字符串
@@ -484,11 +602,15 @@ class MathAgent:
         prompt_manager.update_react_instruction(react_instruction)
         prompt_manager.update_style_instruction(style)
 
+        # P0：注入用户技能画像到 System Prompt 模板
+        if skill_profile:
+            prompt_manager.update_skill_profile(skill_profile)
+
         return prompt_manager.get_prompt()
 
-    def _get_system_prompt(self) -> str:
+    def _get_system_prompt(self, skill_profile: str = "") -> str:
         """获取当前System Prompt。"""
-        return self._build_system_prompt()
+        return self._build_system_prompt(skill_profile=skill_profile)
 
     def _classify_intent(self, user_input: str) -> ClassificationResult:
         """

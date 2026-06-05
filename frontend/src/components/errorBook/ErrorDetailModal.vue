@@ -81,7 +81,6 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { renderMathInElement } from '@/utils/mathRender'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps({
@@ -109,9 +108,7 @@ const answerHtml = computed(() =>
 )
 
 onMounted(() => {
-  nextTick(() => {
-    if (answerBox.value) renderMathInElement(answerBox.value)
-  })
+  // 公式已由 markdown.js 中的 @mdit/plugin-katex 在渲染阶段完成
 })
 </script>
 

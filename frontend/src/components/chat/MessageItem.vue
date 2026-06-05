@@ -39,7 +39,6 @@
 <script setup>
 import { computed, onMounted, watch, nextTick } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
-import { renderMathInElement } from '@/utils/mathRender'
 
 const props = defineProps({
   message: { type: Object, required: true },
@@ -55,22 +54,15 @@ const renderedContent = computed(() => {
   return props.message.content || ''
 })
 
+// 公式已由 markdown.js 中的 @mdit/plugin-katex 在渲染阶段完成
+// 无需再调用 renderMathInElement 进行二次渲染
+
 onMounted(() => {
-  if (props.message.sender === 'ai') {
-    nextTick(() => {
-      const el = document.getElementById(`msg-${props.message.id}`)
-      if (el) renderMathInElement(el)
-    })
-  }
+  // DOM 已就绪，公式已渲染完毕
 })
 
 watch(() => [props.isStreaming, props.message.content], () => {
-  if (props.message.sender === 'ai' && !props.isStreaming) {
-    nextTick(() => {
-      const el = document.getElementById(`msg-${props.message.id}`)
-      if (el) renderMathInElement(el)
-    })
-  }
+  // 内容变化时 computed 自动触发重新渲染，无需手动处理
 }, { flush: 'post' })
 </script>
 

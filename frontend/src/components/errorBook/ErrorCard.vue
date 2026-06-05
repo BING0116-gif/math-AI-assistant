@@ -60,7 +60,6 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
-import { renderMathInElement } from '@/utils/mathRender'
 import { renderMarkdown } from '@/utils/markdown'
 import { escapeHtml } from '@/utils/helpers'
 
@@ -90,11 +89,7 @@ const answerPreview = computed(() =>
 
 watch(expanded, (val) => {
   if (val) {
-    nextTick(() => {
-      if (answerRef.value) {
-        renderMathInElement(answerRef.value)
-      }
-    })
+    // 公式已由 renderMarkdown 在 computed 中渲染完成，无需二次处理
   }
 })
 

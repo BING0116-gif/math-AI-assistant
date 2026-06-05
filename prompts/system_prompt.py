@@ -231,6 +231,44 @@ $$\\min_{{[0,2]}} f(x) = f(1) = -2$$
 注意：追问不是必须的，根据回答长度和问题复杂度灵活决定。"""
 
     # ═══════════════════════════════════════════════════════════════
+    # 技能感知指令层（P0：LLM 根据用户技能水平动态调整行为）
+    # ═══════════════════════════════════════════════════════════════
+
+    SKILL_AWARE_INSTRUCTION = """
+【用户学习档案感知规则】(当系统提供用户学习档案时生效)
+
+收到用户学习档案后，请立即调整你的教学策略：
+
+1. **水平匹配**：
+   - 入门/初学 → 用最简单语言，每步都解释"为什么"，多用生活类比
+   - 中等 → 注重基础巩固，推导过程完整但不冗余，关键步骤标注理由
+   - 良好/优秀 → 可跳过基础推导，引入拓展/竞赛视角，鼓励独立思考
+
+2. **薄弱点强化**：
+   - 档案中列出的薄弱知识点，讲解时务必：
+     a) 从最基本定义出发（不要假设用户已掌握前置知识）
+     b) 给出 2-3 个不同角度的示例
+     c) 明确指出常见错误和易混淆点
+
+3. **已掌握点深化**：
+   - 档案中标记为"已掌握"的知识点：
+     a) 不需要从头讲起，直接进入应用层面
+     b) 可以关联到更高阶的概念
+     c) 适当增加挑战性
+
+4. **难度适配**：
+   - 按档案中的推荐难度(T1-T5)调整回答深度
+   - T1-T2：简洁直观，不超过3行核心推导
+   - T3：标准完整解答，含5步流程
+   - T4-T5：深度分析，含多解法、拓展、变式
+
+5. **易错预警**：
+   - 档案中列出易错模式时，在相关步骤主动添加警示注记
+   - 格式：> ⚠️ 常见错误：{具体错误描述}
+
+重要：如果没有提供用户学习档案，或档案数据为空，则按默认策略（T3标准模式）回答。"""
+
+    # ═══════════════════════════════════════════════════════════════
     # 教学风格模板
     # ═══════════════════════════════════════════════════════════════
 
@@ -278,6 +316,7 @@ $$\\min_{{[0,2]}} f(x) = f(1) = -2$$
         + "\n---\n"
         + FORMAT_RULES
         + FOLLOW_UP_GUIDANCE
+        + "\n\n{skill_profile}"
         + "\n\n{react_instruction}"
         + "\n\n{style_instruction}"
     )
@@ -289,6 +328,7 @@ $$\\min_{{[0,2]}} f(x) = f(1) = -2$$
         self._current_tools: str = self.DEFAULT_TOOLS_SECTION
         self._react_instruction: str = ""
         self._style_instruction: str = ""
+        self._skill_profile: str = ""
         self._tool_hash: str = ""
         self._version_counter: int = 0
         self._version_cache: List[SystemPromptVersion] = []
@@ -344,9 +384,28 @@ $$\\min_{{[0,2]}} f(x) = f(1) = -2$$
         """
         self._style_instruction = self.STYLE_TEMPLATES.get(style, self.STYLE_TEMPLATES[self.DEFAULT_STYLE])
 
+    def update_skill_profile(self, skill_profile_text: str) -> None:
+        """
+        更新用户技能画像指令（P0：让 LLM 感知用户水平）。
+
+        Args:
+            skill_profile_text: 格式化后的用户技能画像文本，
+                由 MathAgent._format_skill_profile_for_llm() 生成。
+                为空字符串时表示无技能数据，LLM 使用默认策略。
+                非空时自动追加 SKILL_AWARE_INSTRUCTION 行为规则。
+        """
+        if skill_profile_text and skill_profile_text.strip():
+            self._skill_profile = (
+                self.SKILL_AWARE_INSTRUCTION
+                + "\n\n"
+                + skill_profile_text
+            )
+        else:
+            self._skill_profile = ""
+
     def get_prompt(self) -> str:
         """
-        获取完整的 System Prompt（合并四层架构+工具+ReAct指令+风格指令）。
+        获取完整的 System Prompt（合并四层架构+工具+ReAct指令+风格指令+技能画像）。
 
         Returns:
             完整的 System Prompt 字符串。
@@ -355,6 +414,7 @@ $$\\min_{{[0,2]}} f(x) = f(1) = -2$$
             tools_section=self._current_tools,
             react_instruction=self._react_instruction,
             style_instruction=self._style_instruction,
+            skill_profile=self._skill_profile,
         )
 
     def get_prompt_for_task_type(self, task_type: str) -> str:

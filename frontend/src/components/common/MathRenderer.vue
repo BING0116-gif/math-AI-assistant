@@ -4,8 +4,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
-import { renderMathInElement } from '@/utils/mathRender'
-import latexPreprocessor from '@/utils/latexPreprocessor'
+import katex from 'katex'
 
 const props = defineProps({
   content: { type: String, default: '' },
@@ -16,18 +15,20 @@ const mathRef = ref(null)
 
 const renderedHtml = computed(() => {
   if (!props.content) return ''
-  return latexPreprocessor.process(props.content)
+  try {
+    // 直接使用 katex.renderToString，无需经过 latexPreprocessor
+    return katex.renderToString(props.content, {
+      displayMode: props.displayMode,
+      throwOnError: false,
+      strict: false
+    })
+  } catch (error) {
+    console.warn('[MathRenderer] 渲染失败:', error.message)
+    return `<span class="math-error">${props.content}</span>`
+  }
 })
 
 watch(() => props.content, () => {
-  nextTick(() => {
-    if (mathRef.value) renderMathInElement(mathRef.value)
-  })
+  // 内容变化时 computed 自动更新 renderedHtml，无需手动重新渲染
 }, { flush: 'post' })
-
-onMounted(() => {
-  nextTick(() => {
-    if (mathRef.value) renderMathInElement(mathRef.value)
-  })
-})
 </script>

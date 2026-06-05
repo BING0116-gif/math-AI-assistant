@@ -88,7 +88,6 @@ import InputArea from '@/components/chat/InputArea.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { sendChatMessage, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
-import { renderMathInElement } from '@/utils/mathRender'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
 
@@ -193,7 +192,8 @@ function processTyping(msgId) {
       if (contentDiv) {
         const display = formatStreamText(rawContentBuffer)
         contentDiv.innerHTML = display
-        renderMathInElement(contentDiv)
+        // 公式已由 markdown.js 中的 @mdit/plugin-katex 在 formatStreamText 中完成渲染
+        // 无需再调用 renderMathInElement
         lastRenderedLength = rawContentBuffer.length
       }
       renderRafId = null
@@ -270,10 +270,7 @@ async function handleMultimodalSend(text, imageData) {
       })
 
       nextTick(() => {
-        const el = document.getElementById(`msg-${msgId}`)
-        if (el) {
-          renderMathInElement(el)
-        }
+        // 公式已由 formatStreamText / renderMarkdown 在渲染阶段完成
         scrollToBottom()
       })
     }
@@ -352,10 +349,7 @@ async function handleTextSend(text) {
       })
 
       nextTick(() => {
-        const el = document.getElementById(`msg-${msgId}`)
-        if (el) {
-          renderMathInElement(el)
-        }
+        // 公式已由 formatStreamText / renderMarkdown 在渲染阶段完成
         scrollToBottom()
       })
     }
@@ -411,91 +405,13 @@ function openErrorBookDialog(msgId) {
   currentErrorMsgId = msgId
   errorForm.question = userMsg.content || ''
   errorForm.question_type = userMsg.type === 'image' ? 'image' : 'text'
-  errorForm.correct_answer = extractBestAnswer(aiMsg.content)
+  errorForm.correct_answer = errorBookStore.extractBestAnswer(aiMsg.content)
   errorForm.error_reason = ''
   errorForm.categories = []
   errorForm.notes = ''
 
   showErrorModal.value = true
   nextTick(() => reasonInput.value?.focus())
-}
-
-function extractBestAnswer(content) {
-  if (!content) return ''
-
-  const lines = content.split('\n')
-
-  const answerStartIndex = lines.findIndex(l =>
-    l.includes('【最终答案】') ||
-    l.includes('**【最终答案】**') ||
-    /^(\*\*)?(答案|最终答案|正确答案)/.test(l.trim())
-  )
-
-  if (answerStartIndex !== -1) {
-    const answerLines = lines.slice(answerStartIndex)
-    let result = answerLines.join('\n').trim()
-
-    if (result.length < 200 && answerStartIndex > 0) {
-      const detailStartIndex = lines.findIndex(l =>
-        l.includes('详细解析') ||
-        l.includes('解题过程') ||
-        l.includes('【开始解题】') ||
-        /^\d+\./.test(l.trim())
-      )
-
-      if (detailStartIndex !== -1 && detailStartIndex < answerStartIndex) {
-        result = lines.slice(detailStartIndex).join('\n').trim()
-      } else {
-        const sectionIndex = lines.findIndex(l => /^#{1,3}\s/.test(l))
-        if (sectionIndex !== -1 && sectionIndex < answerStartIndex) {
-          result = lines.slice(sectionIndex).join('\n').trim()
-        } else {
-          result = content.trim()
-        }
-      }
-    }
-
-    return result
-  }
-
-  const hasDetailedContent = lines.some(l =>
-    l.includes('解析') ||
-    l.includes('解题') ||
-    l.includes('步骤') ||
-    l.includes('方法') ||
-    /^\d+\./.test(l.trim())
-  )
-
-  if (hasDetailedContent) {
-    return content.trim()
-  }
-
-  if (content.length <= 10000) {
-    return content.trim()
-  }
-
-  const importantParts = []
-  let currentSection = []
-
-  for (const line of lines) {
-    if (/^#{1,3}\s|^\d+\.\s|^\*\*/.test(line) || line.includes('---')) {
-      if (currentSection.length > 0) {
-        importantParts.push(currentSection.join('\n'))
-        currentSection = []
-      }
-    }
-    currentSection.push(line)
-  }
-
-  if (currentSection.length > 0) {
-    importantParts.push(currentSection.join('\n'))
-  }
-
-  if (importantParts.length > 0) {
-    return importantParts.slice(0, 5).join('\n\n')
-  }
-
-  return content.slice(0, 10000).trim()
 }
 
 function toggleTag(tag) {
