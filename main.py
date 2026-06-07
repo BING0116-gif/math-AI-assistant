@@ -8,6 +8,7 @@ from prompts.dynamic_params import init_dynamic_llm_factory
 import asyncio
 import logging
 import os
+import sys
 import base64
 import json
 import traceback
@@ -38,6 +39,7 @@ from app.api.auth import router as auth_router
 from app.api.memory_api import router as memory_router
 from app.api.profile_api import router as profile_router
 from app.api.data_api import router as data_router
+from app.api.recommendation_api import router as recommendation_router
 from app.data.database import init_db, close_db, check_database_health
 from app.services.cache import get_cache_manager
 from app.security.encryption import get_encryption
@@ -46,7 +48,10 @@ from app.security.audit import get_audit_logger
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    format="%(asctime)s | %(levelname)-6s | %(name)-30s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,  # 强制覆盖uvicorn的日志配置，确保所有模块日志都能输出
+    handlers=[logging.StreamHandler(sys.stdout)],  # 确保输出到stdout
 )
 
 
@@ -55,6 +60,24 @@ async def lifespan(app: FastAPI):
     logger.info("正在初始化数据库...")
     await init_db()
     logger.info("数据库初始化完成")
+
+    # ── RAG 推荐系统初始化 ──
+    if settings.RAG_ENABLED:
+        try:
+            if settings.RAG_ENABLE_VECTOR_SEARCH:
+                from app.services.vector_store import get_vector_store
+                await get_vector_store()
+                logger.info("向量数据库初始化完成")
+        except Exception as e:
+            logger.warning(f"向量数据库初始化失败: {e}")
+        try:
+            if settings.RAG_ENABLE_AI_EXPLANATION:
+                from app.services.llm_service import get_llm_service
+                get_llm_service()
+                logger.info("LLM服务初始化完成")
+        except Exception as e:
+            logger.warning(f"LLM服务初始化失败: {e}")
+    # ── END RAG ──
 
     cache_mgr = get_cache_manager()
     redis_url = settings.REDIS_URL
@@ -117,6 +140,7 @@ app.include_router(auth_router)
 app.include_router(memory_router)
 app.include_router(profile_router)
 app.include_router(data_router)
+app.include_router(recommendation_router)
 
 
 class ChatRequest(BaseModel):

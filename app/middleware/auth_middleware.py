@@ -29,6 +29,7 @@ _DEFAULT_NO_AUTH_PATHS: Set[str] = {
     "/api/health/detailed",
     "/api/health/db",
     "/api/health/cache",
+    "/api/recommend/health",
     "/",
     "/error_book",
     "/docs",

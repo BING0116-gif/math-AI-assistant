@@ -22,7 +22,6 @@ from __future__ import annotations
 import logging
 import re
 import time
-import warnings
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -34,14 +33,12 @@ from tools.base_tool import BaseTool, ToolInput
 from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from tools.tool_invoker import ToolInvoker
 
-warnings.warn(
-    "ReActStrategy 已弃用，请使用 LangChainReActStrategy。"
-    "通过 MathAgent(use_langchain_agent=False) 可回退到此实现。",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
 logger = logging.getLogger(__name__)
+
+logger.debug(
+    "ReActStrategy 已弃用（使用 LangChainReActStrategy 替代）。"
+    "通过 MathAgent(use_langchain_agent=False) 可回退到此实现。"
+)
 
 
 # 工具调用的正则检测模式（预编译提升性能）

@@ -38,6 +38,15 @@ class LangChainToolConverter:
     def __init__(self):
         self._conversion_cache: Dict[str, StructuredTool] = {}
         self._metadata_store: Dict[str, Dict[str, Any]] = {}
+        self._current_context: Dict[str, Any] = {}  # 当前请求的上下文（含user_id）
+
+    def set_context(self, context: Dict[str, Any]) -> None:
+        """设置当前请求的上下文，工具执行时可读取其中的 user_id 等信息。"""
+        self._current_context = context or {}
+
+    def clear_context(self) -> None:
+        """清除当前上下文。"""
+        self._current_context = {}
 
     def convert(self, custom_tool: BaseTool) -> StructuredTool:
         if custom_tool.name in self._conversion_cache:
@@ -52,7 +61,10 @@ class LangChainToolConverter:
                 input_data = ToolInput(
                     query=query,
                     parameters=kwargs,
-                    context={"source": "langchain_agent"},
+                    context={
+                        "source": "langchain_agent",
+                        **self._current_context,  # ← 注入 user_id 等上下文信息
+                    },
                 )
 
                 result: ToolOutput = await custom_tool.execute(input_data)

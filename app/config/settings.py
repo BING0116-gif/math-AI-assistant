@@ -81,6 +81,29 @@ class Settings(BaseSettings):
         alias="CLASSIFIER_TIMEOUT",
     )
 
+    # ── LLM 配置 ──
+    LLM_API_KEY: str = Field(default="", alias="LLM_API_KEY")
+    LLM_API_BASE: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        alias="LLM_API_BASE",
+    )
+    LLM_MODEL: str = Field(default="qwen-max", alias="LLM_MODEL")
+    LLM_MATH_MODEL: str = Field(default="qwen-turbo", alias="LLM_MATH_MODEL")
+    LLM_TEMPERATURE: float = Field(default=0.3, alias="LLM_TEMPERATURE")
+    LLM_MAX_TOKENS: int = Field(default=4096, alias="LLM_MAX_TOKENS")
+    LLM_STREAMING: bool = Field(default=True, alias="LLM_STREAMING")
+
+    # ── 向量数据库配置 ──
+    VECTOR_DB_PATH: str = Field(default="./data/chroma_db", alias="VECTOR_DB_PATH")
+    VECTOR_EMBEDDING_MODEL: str = Field(default="all-MiniLM-L6-v2", alias="VECTOR_EMBEDDING_MODEL")
+
+    # ── 推荐引擎配置 ──
+    RAG_ENABLED: bool = Field(default=True, alias="RAG_ENABLED")
+    RAG_ENABLE_AI_EXPLANATION: bool = Field(default=True, alias="RAG_ENABLE_AI_EXPLANATION")
+    RAG_ENABLE_VECTOR_SEARCH: bool = Field(default=True, alias="RAG_ENABLE_VECTOR_SEARCH")
+    RAG_DEFAULT_RECOMMEND_COUNT: int = Field(default=5, alias="RAG_DEFAULT_RECOMMEND_COUNT")
+    RAG_HYBRID_SEARCH_TOP_K: int = Field(default=20, alias="RAG_HYBRID_SEARCH_TOP_K")
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

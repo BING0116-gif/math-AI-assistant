@@ -387,6 +387,7 @@ class MathAgent:
         context = {
             "chat_history": chat_history_dicts,
             "registry": self._registry,
+            "user_id": user_id or "anonymous",  # ← 确保user_id在context中
         }
 
         # ── 🆕 注入用户技能画像到上下文（P0: LLM 感知用户水平）──

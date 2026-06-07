@@ -28,6 +28,7 @@ class MiddlewareConfig(BaseSettings):
             "/api/health/detailed",
             "/api/health/db",
             "/api/health/cache",
+            "/api/recommend/health",
             "/",
             "/error_book",
             "/docs",

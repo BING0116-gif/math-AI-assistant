@@ -296,17 +296,24 @@ class ThoughtRecordingCallbackHandler(BaseCallbackHandler):
 
     def on_chain_end(
         self,
-        outputs: Dict[str, Any],
+        outputs: Optional[Dict[str, Any] | list] = None,
         **kwargs: Any,
     ) -> None:
-        if self._current_process:
+        if not self._current_process:
+            return
+        # Handle None, dict, list, or other types safely
+        if isinstance(outputs, dict):
             final_output = outputs.get('output', '') or str(outputs)
-            self.finish_process(final_answer=final_output)
-            logger.info(
-                f"思维过程完成: {self._history[-1].process_id}, "
-                f"迭代{self._history[-1].iteration_count}次, "
-                f"耗时{self._history[-1].elapsed_ms:.1f}ms"
-            )
+        elif isinstance(outputs, (list, str)):
+            final_output = str(outputs)
+        else:
+            final_output = ''
+        self.finish_process(final_answer=final_output)
+        logger.info(
+            f"思维过程完成: {self._history[-1].process_id}, "
+            f"迭代{self._history[-1].iteration_count}次, "
+            f"耗时{self._history[-1].elapsed_ms:.1f}ms"
+        )
 
     def on_chain_error(
         self,

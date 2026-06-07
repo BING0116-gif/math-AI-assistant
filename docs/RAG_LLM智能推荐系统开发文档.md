@@ -24,15 +24,15 @@
 
 > 以下命令是 Agent 开发完成后的验证标准，必须全部通过。
 
-| 阶段       | 命令                                                                                                 | 预期结果                       |
-| -------- | -------------------------------------------------------------------------------------------------- | -------------------------- |
-| **安装依赖** | `venv\Scripts\activate && pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple && pip install chromadb pandas openpyxl numpy -i https://pypi.tuna.tsinghua.edu.cn/simple` | 无错误 |
-| **启动服务** | `python main.py`                                                                                   | 服务启动，无报错                   |
-| **健康检查** | `curl http://localhost:8000/api/recommend/health`                                                  | 返回 `{"status": "healthy"}` |
-| **运行测试** | `pytest tests/test_rag_recommender.py -v`                                                          | 全部通过                       |
-| **覆盖率**  | `pytest tests/test_rag_recommender.py -v --cov=app.services --cov=tools --cov-report=term-missing` | ≥ 80%                      |
-| **导入题目** | `curl -X POST /api/recommend/questions/import -d '{"questions":[...]}'`                            | 返回导入成功                     |
-| **推荐接口** | `curl -X POST /api/recommend/questions -d '{"target_category":"导数","count":3}'`                    | 返回题目 + AI 分析               |
+| 阶段       | 命令                                                                                                                                                                                               | 预期结果                       |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| **安装依赖** | `venv\Scripts\activate && pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple && pip install chromadb pandas openpyxl numpy -i https://pypi.tuna.tsinghua.edu.cn/simple` | 无错误                        |
+| **启动服务** | `python main.py`                                                                                                                                                                                 | 服务启动，无报错                   |
+| **健康检查** | `curl http://localhost:8000/api/recommend/health`                                                                                                                                                | 返回 `{"status": "healthy"}` |
+| **运行测试** | `pytest tests/test_rag_recommender.py -v`                                                                                                                                                        | 全部通过                       |
+| **覆盖率**  | `pytest tests/test_rag_recommender.py -v --cov=app.services --cov=tools --cov-report=term-missing`                                                                                               | ≥ 80%                      |
+| **导入题目** | `curl -X POST /api/recommend/questions/import -d '{"questions":[...]}'`                                                                                                                          | 返回导入成功                     |
+| **推荐接口** | `curl -X POST /api/recommend/questions -d '{"target_category":"导数","count":3}'`                                                                                                                  | 返回题目 + AI 分析               |
 
 ### 0.2 技术栈（已批准，不可替换）
 
@@ -118,9 +118,11 @@ Agent 开发时**不得**替换以下组件：
 
 目标用户是**大学本科生**，核心学科覆盖**高等数学、线性代数、概率论与数理统计**。核心产出是：学生提问后，系统能自动推荐适合其难度水平的练习题，并给出 AI 讲解。
 
-同时补齐项目最大短板——**工具层**。当前项目只有 1 个 vision_tool 注册在册，导致 Agent 的策略模式（ReAct / TaskPlanner）虽然有工具调用能力，但实际无工具可用。本次新增 5 个 P0 工具，使 Agent 在**两种策略模式**下都具备智能决策能力：
-- **LangChain ReAct 策略**：通过 function calling 自动调用工具
-- **TaskPlanner 策略**：生成 ExecutionPlan 后通过 ToolInvoker 执行工具调用
+同时补齐项目最大短板——**工具层**。当前项目只有 1 个 vision\_tool 注册在册，导致 Agent 的策略模式（ReAct / TaskPlanner）虽然有工具调用能力，但实际无工具可用。本次新增 5 个 P0 工具，使 Agent 在**两种策略模式**下都具备智能决策能力：
+
+* **LangChain ReAct 策略**：通过 function calling 自动调用工具
+
+* **TaskPlanner 策略**：生成 ExecutionPlan 后通过 ToolInvoker 执行工具调用
 
 ***
 
@@ -129,7 +131,7 @@ Agent 开发时**不得**替换以下组件：
 ### 当前痛点
 
 1. **无个性化推荐**: 大学生做完高数/线代/概率论题目后没有"接着练"的机制，学习链断裂
-2. **工具层严重不足**: 只有 vision_tool 一个工具，Agent 的 ReAct 和 TaskPlanner 两种策略都退化为纯对话模式
+2. **工具层严重不足**: 只有 vision\_tool 一个工具，Agent 的 ReAct 和 TaskPlanner 两种策略都退化为纯对话模式
 3. **题库未向量化**: 学校题库导入后无法按语义相似度检索
 4. **LLM 调用分散**: 各处直接调用 openai SDK，没有缓存、没有流式统一接口
 5. **无降级策略**: 任何组件故障都会导致功能不可用
@@ -313,14 +315,16 @@ Agent 开发时**不得**替换以下组件：
 
 **双策略兼容**: 所有工具注册到 `HybridToolRegistry` 后，自动对两种策略模式可用：
 
-| 策略模式 | 工具调用方式 | 适用场景 |
-|---------|------------|---------|
-| **LangChain ReAct** | function calling 自动调用（`create_agent(tools=...)`） | 单轮简单问题，如"推荐几道导数题" |
+| 策略模式                              | 工具调用方式                                                 | 适用场景                        |
+| --------------------------------- | ------------------------------------------------------ | --------------------------- |
+| **LangChain ReAct**               | function calling 自动调用（`create_agent(tools=...)`）       | 单轮简单问题，如"推荐几道导数题"           |
 | **TaskPlanner (PlannedStrategy)** | 生成 `ExecutionPlan(DAG)` → `ToolInvoker.invoke()` 逐节点执行 | 复杂多步问题，如"帮我分析薄弱点→推荐题目→讲解错题" |
 
 > **关键机制**: `HybridToolRegistry.register()` 注册时自动双向同步：
-> - 存入 `_custom_tools` → 供 PlannedStrategy / 自定义 ReAct 通过 `ToolInvoker` 调用
-> - 转换为 `_langchain_tools`（StructuredTool）→ 供 LangChain ReAct 通过 function calling 调用
+>
+> * 存入 `_custom_tools` → 供 PlannedStrategy / 自定义 ReAct 通过 `ToolInvoker` 调用
+>
+> * 转换为 `_langchain_tools`（StructuredTool）→ 供 LangChain ReAct 通过 function calling 调用
 >
 > 因此新工具**无需额外配置**即可被两种策略使用。
 
@@ -2616,13 +2620,13 @@ pip install pytest pytest-asyncio pytest-cov -i https://pypi.tuna.tsinghua.edu.c
 
 ### 虚拟环境说明
 
-| 项目 | 说明 |
-|------|------|
-| **环境名称** | `venv`（项目根目录下） |
-| **创建命令** | `python -m venv venv` |
-| **激活命令 (Windows)** | `venv\Scripts\activate` |
-| **激活命令 (Linux/Mac)** | `source venv/bin/activate` |
-| **pip 源** | 清华源: `https://pypi.tuna.tsinghua.edu.cn/simple` |
+| 项目                   | 说明                                              |
+| -------------------- | ----------------------------------------------- |
+| **环境名称**             | `venv`（项目根目录下）                                  |
+| **创建命令**             | `python -m venv venv`                           |
+| **激活命令 (Windows)**   | `venv\Scripts\activate`                         |
+| **激活命令 (Linux/Mac)** | `source venv/bin/activate`                      |
+| **pip 源**            | 清华源: `https://pypi.tuna.tsinghua.edu.cn/simple` |
 
 ### Agent 操作规范
 

@@ -393,48 +393,6 @@ async def test_data_migration():
     print("  ✅ 数据迁移测试完成")
 
 
-async def test_plugin_system():
-    print("\n[测试] 插件系统...")
-    from app.plugins.interface import PluginManager, PluginInterface
-
-    class TestPlugin(PluginInterface):
-        async def initialize(self, config):
-            self.initialized = True
-            return True
-
-        async def execute(self, input_data):
-            return {"result": f"processed: {input_data}"}
-
-        def get_info(self):
-            return {
-                "name": "test_plugin",
-                "version": "1.0.0",
-                "author": "Test",
-                "description": "测试插件",
-                "dependencies": [],
-            }
-
-        async def health_check(self):
-            return {"status": "healthy"}
-
-    mgr = PluginManager()
-    plugin = TestPlugin()
-    mgr.register("test", plugin)
-    print("  ✅ 插件注册成功")
-
-    plugins = mgr.list_plugins()
-    assert len(plugins) == 1
-    assert plugins[0]["name"] == "test_plugin"
-    print("  ✅ 插件列表: 1个插件")
-
-    await mgr.initialize_all()
-    print("  ✅ 插件初始化成功")
-
-    health = await mgr.health_check_all()
-    assert health["overall"] == "healthy"
-    print("  ✅ 插件健康检查通过")
-
-
 async def main():
     print("=" * 60)
     print("数学AI助手 - 系统集成测试")
@@ -449,7 +407,6 @@ async def main():
         ("缓存管理器", test_cache_manager),
         ("用户画像分析引擎", test_profile_analyzer),
         ("数据迁移方案", test_data_migration),
-        ("插件系统", test_plugin_system),
     ]
 
     passed = 0

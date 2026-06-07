@@ -43,6 +43,7 @@ class ToolOutput(BaseModel):
     """工具输出标准模型 — 所有工具的出参结构。"""
     success: bool = Field(..., description="执行是否成功")
     result: Any = Field(None, description="执行结果数据")
+    data: Dict[str, Any] = Field(default_factory=dict, description="结构化数据（供前端/Agent使用）")
     error: Optional[str] = Field(None, description="错误信息")
     tool_name: str = Field("", description="执行工具名称")
     execution_time_ms: float = Field(0.0, description="执行耗时（毫秒）")

@@ -156,6 +156,10 @@ class LangChainReActStrategy(AgentStrategy):
         agent = self._ensure_agent_initialized()
         recorder = self._get_recorder(session_id)
 
+        # 将 context（含 user_id）注入到工具转换器，让工具执行时能获取用户身份
+        converter = get_tool_converter()
+        converter.set_context(context)
+
         recorder.start_process(user_input)
 
         chat_history = self._format_chat_history(context.get("chat_history", []))

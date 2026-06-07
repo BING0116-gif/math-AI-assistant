@@ -147,10 +147,10 @@ class DifficultyEstimator:
 
         difficulty = self._score_to_difficulty(score)
         logger.info(
-            f"难度估算 [{context}]: mastery={category_mastery:.2f} "
-            f"overall={overall_rate:.2f} trend={trend_score:.2f} "
-            f"decay={time_decay:.2f} bonus={difficulty_bonus:.2f} "
-            f"adj={adjustment:.1f} → score={score:.2f} → d={difficulty}"
+            f"  [难度估算] {context}模式: 掌握度={category_mastery:.2f} "
+            f"正确率={overall_rate:.2f} 趋势={trend_score:.2f} "
+            f"遗忘={time_decay:.2f} 奖励={difficulty_bonus:.2f} "
+            f"调整={adjustment:+.1f} → 综合分={score:.2f} → 难度{difficulty}级"
         )
         return difficulty
 
