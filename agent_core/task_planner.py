@@ -500,13 +500,13 @@ class ExecutionPlan:
         lines = [f"【解题计划】{self.total_tasks} 个步骤"]
         for task in self.task_list:
             status_icon = {
-                TaskStatus.COMPLETED: "✅",
-                TaskStatus.RUNNING: "⏳",
-                TaskStatus.FAILED: "❌",
-                TaskStatus.SKIPPED: "⏭️",
-                TaskStatus.PENDING: "⬜",
-                TaskStatus.BLOCKED: "🔒",
-            }.get(task.status, "⬜")
+                TaskStatus.COMPLETED: "[OK]",
+                TaskStatus.RUNNING: "...",
+                TaskStatus.FAILED: "[ERR]",
+                TaskStatus.SKIPPED: ">>",
+                TaskStatus.PENDING: "[ ]",
+                TaskStatus.BLOCKED: "[LCK]",
+            }.get(task.status, "[?]")
             lines.append(f"  {status_icon} {task.name}")
         return "\n".join(lines)
 

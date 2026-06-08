@@ -138,6 +138,10 @@ async def get_skill_profile(http_request: Request):
 @router.post("/ai-analyze")
 async def ai_analyze_question(http_request: Request):
     try:
+        user_id = _get_user_id(http_request)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="未认证")
+
         body = await http_request.json()
         question_content = body.get("content", "")
         category = body.get("category", "数学")

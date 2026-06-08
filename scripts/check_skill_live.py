@@ -48,7 +48,7 @@ def main():
         # 检查是否有 session_id 作为 user 的记录（说明 fallback 生效）
         session_users = [r for r in rows if r[1].startswith("23e64e50") or r[1] == "anonymous"]
         if session_users:
-            print(f"\n   ★ 发现 {len(session_users)} 条使用 session_id 的记录（fallback 生效）✅")
+            print(f"\n   ★ 发现 {len(session_users)} 条使用 session_id 的记录（fallback 生效） [OK]")
         else:
             # 检查所有 user_id
             all_uids = set(r[1] for r in rows)

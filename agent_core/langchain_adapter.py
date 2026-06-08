@@ -57,6 +57,11 @@ class LangChainToolConverter:
         async def _execute_async(query: str, **kwargs) -> str:
             start_time = time.time()
 
+            # ===== 强制输出：验证LangChain工具调用链 =====
+            tool_name = getattr(custom_tool, 'name', '?')
+            print(f"\n[LANGCHAIN_ADAPTER] 工具被调用: name={tool_name}, query={query[:50]}...", flush=True)
+            # ============================================
+
             try:
                 input_data = ToolInput(
                     query=query,

@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 # ── P2：自动技能重计算触发条件 ──
 RECALC_TRIGGER = {
-    "event_count": 5,          # 每 N 条事件触发一次重计算
-    "min_interval": 60,        # 最小重计算间隔（秒）
+    "event_count": 3,          # 每 N 条事件触发一次重计算（降低门槛：聊天场景下更快反馈）
+    "min_interval": 30,        # 最小重计算间隔（秒）（从60降到30）
     "batch_threshold": 50,     # 缓冲区满阈值触发
     "flush_callback": True,    # 是否注册 EventBuffer 刷新回调
 }

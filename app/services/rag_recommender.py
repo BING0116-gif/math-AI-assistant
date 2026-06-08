@@ -74,6 +74,9 @@ class RAGRecommender:
 
     async def recommend(self, request: RecommendationRequest) -> RecommendationResult:
         start_time = time.time()
+        print(f"\n{'='*60}", flush=True)
+        print(f"[RAG] ====== 推荐引擎启动 ======", flush=True)
+        print(f"[RAG] 用户={request.user_id} | 目标分类={request.target_category or '自动'} | 模式={request.context}", flush=True)
         logger.info(f"━━━ 推荐引擎启动 ━━━ 用户={request.user_id} 目标分类={request.target_category or '自动'} 模式={request.context}")
 
         try:
@@ -84,6 +87,7 @@ class RAGRecommender:
 
             correct_rate = user_profile.get("correct_rate", 0.5)
             total_q = user_profile.get("total_questions", 0)
+            print(f"[RAG] [第1步-用户画像] 正确率={correct_rate:.0%} | 总答题数={total_q} | 薄弱点={len(user_skills)}个技能", flush=True)
             logger.info(f"  [第1步-用户画像] 正确率={correct_rate:.0%} 总答题数={total_q} 薄弱点={len(user_skills)}个技能")
 
             # ── 第2步：确定目标分类和难度 ──
@@ -95,7 +99,24 @@ class RAGRecommender:
                 user_id=request.user_id, category=target_category,
                 context=request.context, profile=user_profile,
             )
+            # 同时传入user_skills让难度估算器能获取子分类级别的掌握度
+            if user_skills:
+                # 取第一个技能的sub_category（如果有）
+                first_skill = next(iter(user_skills.values()), {})
+                sub_cat = first_skill.get("sub_category", "") or first_skill.get("skill_code", "").replace(f"{target_category}_", "")
+                if sub_cat and sub_cat != target_category.lower():
+                    # 用带sub_category的方式重新估算（更精确）
+                    recommended_difficulty_refined = await self._difficulty_estimator.estimate(
+                        user_id=request.user_id, category=target_category,
+                        sub_category=sub_cat, context=request.context,
+                        profile=user_profile, skill_data=list(user_skills.values()),
+                    )
+                    if recommended_difficulty != recommended_difficulty_refined:
+                        print(f"[RAG] 难度修正: {recommended_difficulty} → {recommended_difficulty_refined} (基于skill数据)", flush=True)
+                        recommended_difficulty = recommended_difficulty_refined
+
             logger.info(f"  [第2步-目标确定] 分类={target_category} 推荐难度={recommended_difficulty}/5 薄弱点={weak_points}")
+            print(f"[RAG] [第2步-目标确定] 分类={target_category} | 推荐难度={recommended_difficulty}/5 | 薄弱点={weak_points} | skill数量={len(user_skills)}", flush=True)
 
             all_exclude = list(set(request.exclude_ids + recently_done))
             if all_exclude:
@@ -115,6 +136,7 @@ class RAGRecommender:
                 kg_suggestions = []
 
             logger.info(f"  [第3步-三路检索] SQL精确={len(sql_results)}题 | 向量语义={len(vector_results)}题 | 知识图谱={len(kg_suggestions)}个建议")
+            print(f"[RAG] [第3步-三路检索] SQL精确={len(sql_results)}题 | 向量语义={len(vector_results)}题 | 知识图谱={len(kg_suggestions)}个建议", flush=True)
 
             # ── 第4步：融合排序 ──
             final_questions = await self._fuse_and_rank(
@@ -123,6 +145,7 @@ class RAGRecommender:
                 difficulty=recommended_difficulty,
             )
             logger.info(f"  [第4步-融合排序] 融合后取前{len(final_questions)}题")
+            print(f"[RAG] [第4步-融合排序] 融合后取前{len(final_questions)}题", flush=True)
 
             # ── 第5步：AI生成个性化分析（可选）──
             ai_analysis = {}
@@ -137,6 +160,7 @@ class RAGRecommender:
                         timeout=15.0,
                     )
                     logger.info(f"  [第5步-AI分析] 已生成（能力评估+推荐理由+学习建议）")
+                    print(f"[RAG] [第5步-AI分析] 已生成（能力评估+推荐理由+学习建议）", flush=True)
                 except asyncio.TimeoutError:
                     logger.warning("  [第5步-AI分析] 超时(>15s)，跳过AI分析")
                     correct_rate = user_profile.get("correct_rate", 0.5)
@@ -162,6 +186,8 @@ class RAGRecommender:
                 processing_time_ms=total_time,
             )
             logger.info(f"━━━ 推荐完成 ━━━ 共{len(result.questions)}题 总耗时{total_time:.0f}ms ━━━")
+            print(f"[RAG] ====== 推荐完成 ====== 共{len(result.questions)}题 | 总耗时{total_time:.0f}ms", flush=True)
+            print(f"{'='*60}\n", flush=True)
             return result
         except Exception as e:
             logger.error(f"━━━ 推荐异常: {e} ━━━", exc_info=True)

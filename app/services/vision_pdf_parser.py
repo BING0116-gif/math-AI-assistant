@@ -31,6 +31,7 @@ if sys.platform == 'win32':
 
 # Use fitz/PyMuPDF for PDF→image conversion (already installed)
 import fitz  # PyMuPDF
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ class VisionPDFParser:
     def __init__(self, api_key: str = "", api_base: str = "", model: str = ""):
         from openai import AsyncOpenAI
         
-        self.api_key = api_key
+        self.api_key = api_key or settings.LLM_API_KEY
         self.api_base = api_base or "https://dashscope.aliyuncs.com/compatible-mode/v1"
         self.model = model or "qwen-vl-max"  # 千问视觉模型
         

@@ -35,7 +35,7 @@ class ReActPromptTemplate:
         names = tool_names or []
         tools_list = "、".join(names) if names else "无专用工具"
 
-        return f"""【工具调用规范 — 仅当需要时才使用】
+        return f"""【工具调用规范 — 必须严格遵守】
 
 可用工具：{tools_list}
 
@@ -43,11 +43,12 @@ class ReActPromptTemplate:
 Action: 工具名称
 Action Input: {{"query": "具体问题", "parameters": {{}}}}
 
-重要规则：
-1. 简单问答（T1-T3场景）→ 直接回答，不使用工具
-2. 计算/画图/识别（T4-T5场景）→ 按需使用工具
-3. 工具失败时手动推导，不重复调用同一工具
-4. 最多进行 3 次工具调用"""
+重要规则（违反将导致错误结果）：
+1. **出题/推荐/练习/测试请求（T6场景）→ 必须调用 recommend_questions 工具，绝对禁止自己编造题目**
+2. 简单问答（T1-T3场景）→ 直接回答，不使用工具
+3. 计算/画图/识别（T4-T5场景）→ 按需使用工具
+4. 工具失败时手动推导，不重复调用同一工具
+5. 最多进行 3 次工具调用"""
 
     @staticmethod
     def build_observation(result_text: str) -> str:

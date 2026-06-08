@@ -230,6 +230,7 @@ class SkillAggregator:
         from sqlalchemy import text
 
         async with self._session_factory() as db:
+            # 查询1: 有sub_categories的记录（精确匹配）
             result = await db.execute(
                 text(
                     "SELECT DISTINCT sub_categories, category "
@@ -239,7 +240,25 @@ class SkillAggregator:
                 ),
                 {"uid": user_id},
             )
-            skill_rows = result.fetchall()
+            precise_rows = result.fetchall()
+
+            # 查询2: 只有category没有sub_category的记录（兜底，避免浪费数据）
+            result2 = await db.execute(
+                text(
+                    "SELECT DISTINCT NULL as sub_categories, category "
+                    "FROM learning_records "
+                    "WHERE user_id = :uid AND (sub_categories IS NULL OR sub_categories = '')"
+                    " AND category IS NOT NULL AND category != ''"
+                    " AND category NOT IN ("
+                    "   SELECT DISTINCT category FROM learning_records "
+                    "   WHERE user_id = :uid AND sub_categories IS NOT NULL AND sub_categories != ''"
+                    " )"
+                ),
+                {"uid": user_id},
+            )
+            fallback_rows = result2.fetchall()
+
+            skill_rows = list(precise_rows) + list(fallback_rows)
 
             skills = []
             now = datetime.now(timezone.utc)
@@ -247,7 +266,19 @@ class SkillAggregator:
             for row in skill_rows:
                 sub_cat = row[0]
                 category = row[1]
-                skill_code = self._derive_skill_code(category, sub_cat)
+
+                # 处理sub_category为空的情况（category级别兜底）
+                if not sub_cat or str(sub_cat).strip() == '':
+                    sub_cat_display = f"{category}(综合)"
+                    skill_code = self._derive_skill_code(category, "general")
+                    cat_path = category
+                    # 查询时只按category匹配
+                    query_sc = ""
+                else:
+                    sub_cat_display = sub_cat
+                    skill_code = self._derive_skill_code(category, sub_cat)
+                    cat_path = f"{category} > {sub_cat}"
+                    query_sc = sub_cat
 
                 records_result = await db.execute(
                     text(
@@ -255,10 +286,13 @@ class SkillAggregator:
                         "created_at "
                         "FROM learning_records "
                         "WHERE user_id = :uid "
-                        "AND (sub_categories = :sc OR category = :cat) "
+                        "AND ("
+                        "  (:sc != '' AND sub_categories = :sc)"
+                        "  OR (:sc = '' AND (sub_categories IS NULL OR sub_categories = '') AND category = :cat)"
+                        ") "
                         "ORDER BY created_at DESC"
                     ),
-                    {"uid": user_id, "sc": sub_cat, "cat": category},
+                    {"uid": user_id, "sc": query_sc or "", "cat": category},
                 )
                 records = records_result.fetchall()
 
@@ -273,8 +307,8 @@ class SkillAggregator:
                 skills.append(
                     {
                         "skill_code": skill_code,
-                        "display_name": sub_cat,
-                        "category_path": f"{category} > {sub_cat}",
+                        "display_name": sub_cat_display,
+                        "category_path": cat_path,
                         "mastery_level": round(mastery, 3),
                         "status": status,
                         "total_attempts": len(records),

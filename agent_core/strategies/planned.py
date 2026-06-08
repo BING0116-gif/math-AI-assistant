@@ -173,7 +173,7 @@ class PlannedStrategy(AgentStrategy):
                 self._skip_remaining(execution_plan)
                 break
 
-        yield "\n\n---\n\n**✅ 最终答案**\n\n"
+        yield "\n\n---\n\n**[OK] 最终答案**\n\n"
         final_answer = self._aggregate_results(execution_plan)
         yield final_answer
 
@@ -196,9 +196,9 @@ class PlannedStrategy(AgentStrategy):
                 logger.error("并行任务'%s'执行异常: %s", task.id, result)
                 task.status = TaskStatus.FAILED
                 task.error = str(result)
-                yield f"  ❌ {task.name}: {result}\n"
+                yield f"  [ERR] {task.name}: {result}\n"
             else:
-                yield f"  ✅ {task.name}\n"
+                yield f"  [OK] {task.name}\n"
                 if result:
                     yield f"  > {str(result)[:300]}\n"
 
@@ -269,7 +269,7 @@ class PlannedStrategy(AgentStrategy):
         )
 
         yield ""
-        yield f"  ⏳ {task.name}..."
+        yield f"  ... {task.name}..."
 
         try:
             if task.tool_name is not None:
@@ -298,7 +298,7 @@ class PlannedStrategy(AgentStrategy):
                         metadata={"tool": task.tool_name, "success": True},
                     )
 
-                    yield f" ✅\n"
+                    yield f" [OK]\n"
                     result_preview = str(result.result)[:500] if result.result else ""
                     if result_preview:
                         yield f"  > {result_preview}\n\n"
@@ -306,7 +306,7 @@ class PlannedStrategy(AgentStrategy):
                     task.error = result.error
                     await self._handle_task_failure(task, result.error or "未知错误", plan, session_id, process)
                     if task.status == TaskStatus.FAILED:
-                        yield f" ❌\n"
+                        yield f" [ERR]\n"
                         yield f"  > 错误: {result.error}\n\n"
             else:
                 prompt = self._build_llm_prompt(task, plan)
@@ -325,7 +325,7 @@ class PlannedStrategy(AgentStrategy):
                 task.result = llm_result
                 task.status = TaskStatus.COMPLETED
                 plan.mark_completed(task.id, llm_result)
-                yield f" ✅\n"
+                yield f" [OK]\n"
                 preview = str(llm_result)[:500] if llm_result else ""
                 if preview:
                     yield f"  > {preview}\n\n"
@@ -334,7 +334,7 @@ class PlannedStrategy(AgentStrategy):
             logger.error("任务'%s'执行异常: %s", task.id, e)
             task.error = str(e)
             await self._handle_task_failure(task, str(e), plan, session_id, process)
-            yield f" ❌\n"
+            yield f" [ERR]\n"
             yield f"  > 错误: {e}\n\n"
 
         finally:

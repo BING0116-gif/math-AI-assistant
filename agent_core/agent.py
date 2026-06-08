@@ -159,12 +159,12 @@ class MathAgent:
         
         if enable_128k_context:
             logger.info(
-                f"✅ 128K上下文记忆系统已启用: "
+                f"[OK] 128K上下文记忆系统已启用: "
                 f"budget={context_budget_tokens} tokens, "
                 f"strategy={context_strategy.value}"
             )
         else:
-            logger.info("⚠️ 128K上下文记忆系统已禁用，使用传统模式")
+            logger.info("[WARN] 128K上下文记忆系统已禁用，使用传统模式")
 
         # 任务规划器（可选）
         self._task_planner: Optional[TaskPlanner] = None
@@ -203,16 +203,16 @@ class MathAgent:
                 )
 
                 logger.info(
-                    f"✅ LLM复杂度分类器已启用 "
+                    f"[OK] LLM复杂度分类器已启用 "
                     f"(model={classifier_model}, "
                     f"cache={_classifier_config.cache_max_size}条)"
                 )
             except Exception as e:
-                logger.warning(f"⚠️ LLM复杂度分类器初始化失败: {e}，将使用原有策略路由")
+                logger.warning(f"[WARN] LLM复杂度分类器初始化失败: {e}，将使用原有策略路由")
                 self._classifier = None
                 self._enable_classifier = False
         else:
-            logger.info("⚠️ LLM复杂度分类器已禁用，使用原有策略路由")
+            logger.info("[WARN] LLM复杂度分类器已禁用，使用原有策略路由")
 
         # 意图分类器（轻量规则匹配，<1ms，零Token消耗）
         self._task_classifier = get_classifier()
@@ -240,7 +240,7 @@ class MathAgent:
             f"(model={model}, max_iterations={max_iterations}, "
             f"planner={enable_planner}, "
             f"agent={'langchain' if self._use_langchain else 'custom'}, "
-            f"context_128k={'✅' if enable_128k_context else '❌'})"
+            f"context_128k={'[OK]' if enable_128k_context else '[X]'})"
         )
 
     def _create_react_strategy(
@@ -338,7 +338,7 @@ class MathAgent:
             )
             
             logger.debug(
-                f"✅ 为session '{session_id}' 创建新的ContextManager"
+                f"[OK] 为session '{session_id}' 创建新的ContextManager"
             )
         
         return self._context_managers[session_id]
@@ -437,7 +437,7 @@ class MathAgent:
                 
                 if not add_success:
                     logger.warning(
-                        f"⚠️ Session {session_id}: 无法将用户消息添加到128K上下文"
+                        f"[WARN] Session {session_id}: 无法将用户消息添加到128K上下文"
                         "(可能已达到容量上限)"
                     )
                 
@@ -476,14 +476,14 @@ class MathAgent:
                 }
                 
                 logger.debug(
-                    f"✅ 128K上下文构建完成: "
+                    f"[OK] 128K上下文构建完成: "
                     f"session={session_id}, "
                     f"tokens={ctx_mgr.get_total_tokens_used()}/128000, "
                     f"messages={len(llm_messages)}"
                 )
                 
             except Exception as e:
-                logger.error(f"❌ 128K上下文构建失败，回退到传统模式: {e}")
+                logger.error(f"[ERR] 128K上下文构建失败，回退到传统模式: {e}")
                 context["context_128k_enabled"] = False
                 context["context_error"] = str(e)
         else:
@@ -682,12 +682,12 @@ class MathAgent:
         
         if success:
             logger.debug(
-                f"✅ Assistant回复已保存到128K上下文: "
+                f"[OK] Assistant回复已保存到128K上下文: "
                 f"session={session_id}, length={len(response_text)}"
             )
         else:
             logger.warning(
-                f"⚠️ 无法保存Assistant回复到128K上下文: "
+                f"[WARN] 无法保存Assistant回复到128K上下文: "
                 f"session={session_id}"
             )
 
@@ -940,7 +940,7 @@ class MathAgent:
         if sid in self._context_managers:
             self._context_managers[sid].clear(preserve_critical=False)
             del self._context_managers[sid]
-            logger.info(f"🧹 已清空session '{sid}'的128K上下文记忆")
+            logger.info(f"[CLEAN] 已清空session '{sid}'的128K上下文记忆")
 
     def get_thought_recorder(self):
         """获取思维记录器。"""
@@ -1097,19 +1097,19 @@ class MathAgent:
 
                 if strategy_name == "planned":
                     if self._task_planner is not None and self._task_planner.enabled:
-                        logger.info(f"✅ 使用 PlannedStrategy (score={score}, {label})")
+                        logger.info(f"[OK] 使用 PlannedStrategy (score={score}, {label})")
                         return self._get_or_create_planned_strategy(llm=_optimized_llm)
 
                     logger.warning("分类器建议 Planned，但规划器未启用，回退到 ReAct")
                     return dynamic_strategy or self._strategy
 
                 else:
-                    logger.info(f"✅ 使用 ReActStrategy (score={score}, {label})")
+                    logger.info(f"[OK] 使用 ReActStrategy (score={score}, {label})")
                     return dynamic_strategy or self._strategy
 
             except Exception as e:
                 logger.error(
-                    f"❌ LLM分类器异常: {type(e).__name__}: {e}，"
+                    f"[ERR] LLM分类器异常: {type(e).__name__}: {e}，"
                     f"降级到原有逻辑"
                 )
 

@@ -478,7 +478,7 @@ def add_error(request: ErrorItemRequest):
                 f"这可能是前端extractBestAnswer函数的bug导致的。"
             )
             _warning_note = (
-                "⚠️ [系统警告] 此题的答案解析可能不完整\n"
+                "[WARN] [系统警告] 此题的答案解析可能不完整\n"
                 "原因: 检测到答案只包含标题标记（如'【最终答案】'），缺少实际解题过程\n"
                 "建议: 请重新添加此错题，或手动补充完整解析"
             )

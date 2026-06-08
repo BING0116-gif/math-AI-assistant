@@ -152,6 +152,17 @@ class DifficultyEstimator:
             f"遗忘={time_decay:.2f} 奖励={difficulty_bonus:.2f} "
             f"调整={adjustment:+.1f} → 综合分={score:.2f} → 难度{difficulty}级"
         )
+        print(
+            f"[DIFF] 难度估算详情 | user={user_id} | category={category} | "
+            f"掌握度={category_mastery:.2f}(权重35%) | "
+            f"正确率={overall_rate:.2f}(权重20%) | "
+            f"趋势={trend_score:.2f}(权重25%) | "
+            f"遗忘={time_decay:.2f}(权重15%) | "
+            f"奖励={difficulty_bonus:.2f}(权重5%) | "
+            f"上下文调整={adjustment:+.1f} | "
+            f"综合分={score:.3f} → 难度{difficulty}级",
+            flush=True
+        )
         return difficulty
 
     async def estimate_for_profile(

@@ -17,8 +17,12 @@ logger = logging.getLogger(__name__)
 
 class RecommendTool(BaseTool):
     name = "recommend_questions"
-    description = "根据用户的学习情况推荐个性化数学题目，支持指定知识点、数量和场景"
-    version = "1.2.0"
+    description = (
+        "【出题/推荐题目的唯一工具】当用户要求出题、推荐题目、练习、测试、挑战时，"
+        "必须调用此工具从题库中检索真实题目。禁止自己编造题目。"
+        "支持指定知识点（如'导数'、'极限'）、数量和场景模式。"
+    )
+    version = "1.3.0"
     capabilities = [ToolCapability.PRACTICE_GENERATION, ToolCapability.KNOWLEDGE_RETRIEVAL]
 
     def get_info(self) -> dict:
@@ -39,6 +43,13 @@ class RecommendTool(BaseTool):
         }
 
     async def execute(self, input_data: ToolInput) -> ToolOutput:
+        # ===== 强制输出：验证此方法是否被调用 =====
+        print(f"\n{'='*60}")
+        print(f"[RECOMMEND_TOOL] >>>>> 推荐工具被触发！<<<<")
+        print(f"[RECOMMEND_TOOL] user_id={input_data.context.get('user_id', '?')}")
+        print(f"{'='*60}\n", flush=True)
+        # ============================================
+
         try:
             from app.services.rag_recommender import get_rag_recommender, RecommendationRequest
 
@@ -73,6 +84,7 @@ class RecommendTool(BaseTool):
                 f"SQL精确={sql_count}题 + 向量语义={vec_count}题 → 融合排序后取{final_count}题 | "
                 f"耗时{elapsed_ms:.0f}ms"
             )
+            print(f"[RECOMMEND_TOOL] 三路检索完成 | SQL={sql_count} + 向量={vec_count} → {final_count}题 | {elapsed_ms:.0f}ms", flush=True)
 
             # ── 中文日志：每道题的来源追踪 ──
             for i, q in enumerate(result.questions):
@@ -81,12 +93,19 @@ class RecommendTool(BaseTool):
                 diff = q.get('difficulty', '?')
                 content_preview = (q.get('content') or '')[:80].replace('\n', ' ')
                 logger.info(f"  第{i+1}题 ID={qid} 来源={src} 难度={diff} 内容={content_preview}")
+                print(f"[RECOMMEND_TOOL]   第{i+1}题 | ID={qid} | 来源={src} | 难度={diff}", flush=True)
 
-            # ── 构建返回给LLM的文本（干净格式，不含技术细节）──
+            # ── 构建返回给LLM的文本（含来源标注，强制原样展示）──
             question_lines = []
             for i, q in enumerate(result.questions):
                 content = q.get('content', '')
-                question_lines.append(f"**第{i+1}题:**\n{content}")
+                qid = q.get('id', '?')
+                src = q.get('source', '?')
+                diff = q.get('difficulty', '?')
+                # 每道题附带来源信息，用户可交叉验证
+                question_lines.append(
+                    f"**第{i+1}题** (ID: {qid} | 来源: {src} | 难度: {diff}级):\n{content}"
+                )
 
             ai_advice = ""
             if result.ai_analysis:
@@ -99,16 +118,23 @@ class RecommendTool(BaseTool):
                 if ai.get('learning_advice'):
                     parts.append(f"- 学习建议: {ai['learning_advice']}")
                 if parts:
-                    ai_advice = "\n\n**学习建议:**\n" + "\n".join(parts)
+                    ai_advice = "\n\n---\n\n**[AI学习建议]**（以下为补充分析，非题目内容）:\n" + "\n".join(parts)
                     logger.info(f"【推荐工具】AI分析已生成: {list(ai.keys())}")
 
-            # 返回给LLM的文本——简洁明了，让LLM直接展示给用户
-            result_text = f"""为你推荐以下{final_count}道{category}题目：
+            # 返回给LLM的文本 — 格式化为"引用块"，明确告诉LLM这是不可修改的内容
+            result_text = f"""<<RAG推荐结果_开始>>
+以下是系统从题库中检索出的{final_count}道{category}题目（已通过SQL精确匹配+向量语义搜索+知识图谱融合排序）：
 
 {''.join(question_lines)}
 {ai_advice}
+<<RAG推荐结果_结束>>
 
-请将以上题目完整展示给用户，保持公式和文字原样。"""
+【输出要求】你必须将 <<RAG推荐结果_开始>> 和 <<RAG推荐结果_结束>> 之间的内容逐字原样展示给用户，不得修改、省略或替换其中的任何题目。"""
+
+            # 记录原始返回文本的hash，用于后续对比LLM实际输出
+            import hashlib
+            _result_hash = hashlib.md5(result_text.encode()).hexdigest()[:8]
+            print(f"[RECOMMEND_TOOL] 返回LLM的原文hash={_result_hash} | 长度={len(result_text)}字符", flush=True)
 
             logger.info(f"【推荐工具】推荐完成，共{final_count}题已返回给Agent")
             return ToolOutput(

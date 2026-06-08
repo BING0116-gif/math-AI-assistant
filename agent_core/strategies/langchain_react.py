@@ -110,12 +110,14 @@ class LangChainReActStrategy(AgentStrategy):
 
         middleware: List[AgentMiddleware] = []
 
-        try:
-            middleware.append(SummarizationMiddleware(
-                model=self._llm,
-            ))
-        except Exception:
-            logger.debug("SummarizationMiddleware初始化失败，跳过")
+        # [已移除] SummarizationMiddleware 会对工具返回内容进行摘要压缩，
+        # 导致推荐题目等结构化数据在传回LLM时丢失细节或被改写。
+        # 对于需要原样展示工具结果的场景（如RAG推荐），此中间件有害无益。
+        # 如需恢复，取消下方注释即可：
+        # try:
+        #     middleware.append(SummarizationMiddleware(model=self._llm))
+        # except Exception:
+        #     logger.debug("SummarizationMiddleware初始化失败，跳过")
 
         self._agent = create_agent(
             model=self._llm,
@@ -176,6 +178,7 @@ class LangChainReActStrategy(AgentStrategy):
         try:
             token_count = 0
             yield_count = 0
+            _full_output = []  # 可观测性：累积完整输出用于日志
 
             async for event in agent.astream_events(
                 {"messages": messages},
@@ -195,8 +198,18 @@ class LangChainReActStrategy(AgentStrategy):
 
                 token_count += 1
                 yield_count += 1
+                _full_output.append(content)
                 logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
                 yield content
+
+            # 可观测性：记录LLM完整输出，便于对比工具返回原文
+            _complete = "".join(_full_output)
+            import hashlib as _hl
+            _out_hash = _hl.md5(_complete.encode()).hexdigest()[:8]
+            print(f"\n[OBSERVE] LLM完整输出 | hash={_out_hash} | 长度={len(_complete)}字符 | tokens={token_count}", flush=True)
+            # 检测是否包含RAG标记（说明LLM确实展示了推荐结果）
+            _has_rag = "RAG推荐结果" in _complete or "来源:" in _complete
+            print(f"[OBSERVE] RAG内容检测: {'检测到RAG题目展示' if _has_rag else '未检测到RAG内容 — 可能被LLM改写或忽略!'}", flush=True)
 
             logger.info(
                 f"[STREAM] 流式执行完成: session={session_id}, "
@@ -210,7 +223,7 @@ class LangChainReActStrategy(AgentStrategy):
 
         except Exception as e:
             logger.error(f"[STREAM] Agent执行失败: {type(e).__name__}: {e}", exc_info=True)
-            yield f"\n\n**【❌ 执行错误】** {type(e).__name__}: {str(e)}"
+            yield f"\n\n**【[ERR] 执行错误】** {type(e).__name__}: {str(e)}"
             recorder.finish_process(f"[错误] {e}")
 
     def _format_chat_history(

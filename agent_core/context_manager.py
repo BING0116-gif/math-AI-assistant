@@ -144,12 +144,12 @@ class ContextBudget:
         
         if reserved_total >= self.total_tokens:
             logger.error(
-                f"❌ 预算配置非法: 预留总和({reserved_total}) >= 总额({self.total_tokens})"
+                f"[ERR] 预算配置非法: 预留总和({reserved_total}) >= 总额({self.total_tokens})"
             )
             return False
         
         logger.debug(
-            f"✅ 预算验证通过: 总额={self.total_tokens}, "
+            f"[OK] 预算验证通过: 总额={self.total_tokens}, "
             f"可用历史={self.available_for_history}, "
             f"预留={reserved_total}"
         )
@@ -224,7 +224,7 @@ class ContextMessage:
         
         if not is_valid:
             logger.warning(
-                f"⚠️ 消息完整性校验失败: id={self.message_id}, "
+                f"[WARN] 消息完整性校验失败: id={self.message_id}, "
                 f"expected_hash={self.content_hash}, actual_hash={current_hash}"
             )
         
@@ -241,7 +241,7 @@ class ContextMessage:
             self.content_hash = self._compute_hash(self.content)
             
             logger.debug(
-                f"✅ 消息已压缩: id={self.message_id}, "
+                f"[OK] 消息已压缩: id={self.message_id}, "
                 f"原始长度={len(self.original_content)}, "
                 f"摘要长度={len(summary)}"
             )
@@ -255,7 +255,7 @@ class ContextMessage:
             self.content_hash = self._compute_hash(self.content)
             
             logger.debug(
-                f"✅ 消息已恢复: id={self.message_id}"
+                f"[OK] 消息已恢复: id={self.message_id}"
             )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -396,14 +396,14 @@ class TiktokenBackend(TokenizerBackend):
             import tiktoken
             self._tokenizer = tiktoken.get_encoding(encoding_name)
             self._available = True
-            logger.info(f"✅ TiktokenBackend初始化成功: {encoding_name}")
+            logger.info(f"[OK] TiktokenBackend初始化成功: {encoding_name}")
         except ImportError:
             logger.warning(
-                "⚠️ tiktoken未安装，TiktokenBackend不可用"
+                "[WARN] tiktoken未安装，TiktokenBackend不可用"
                 "(建议运行: pip install tiktoken)"
             )
         except Exception as e:
-            logger.error(f"❌ TiktokenBackend初始化失败: {e}")
+            logger.error(f"[ERR] TiktokenBackend初始化失败: {e}")
 
     def count(self, text: str) -> int:
         if not self._available:
@@ -569,7 +569,7 @@ class TokenCounter:
             self._cache = NoOpCache()
 
         logger.info(
-            f"✅ TokenCounter初始化完成: "
+            f"[OK] TokenCounter初始化完成: "
             f"backend={type(self._backend).__name__}, "
             f"cache={type(self._cache).__name__}"
         )
@@ -580,7 +580,7 @@ class TokenCounter:
         backend = TiktokenBackend(encoding_name)
         if backend.is_available():
             return backend
-        logger.warning("⚠️ 使用HeuristicBackend作为fallback")
+        logger.warning("[WARN] 使用HeuristicBackend作为fallback")
         return HeuristicBackend()
 
     def count_tokens(self, text: str) -> int:
@@ -749,10 +749,10 @@ class SmartContextManager:
         
         # 验证预算合法性
         if not self._budget.validate_budget():
-            raise ValueError("❌ ContextBudget配置非法，请检查预留项设置")
+            raise ValueError("[ERR] ContextBudget配置非法，请检查预留项设置")
         
         logger.info(
-            f"✅ SmartContextManager初始化完成: "
+            f"[OK] SmartContextManager初始化完成: "
             f"session={session_id}, "
             f"budget={self._budget.total_tokens} tokens, "
             f"strategy={strategy.value}, "
@@ -795,7 +795,7 @@ class SmartContextManager:
             BudgetExceededError: 如果auto_optimize=False且无法腾出空间
         """
         if not content or not content.strip():
-            logger.warning("⚠️ 尝试添加空消息，已忽略")
+            logger.warning("[WARN] 尝试添加空消息，已忽略")
             return False
         
         # Step 1: 计算Token数量
@@ -805,7 +805,7 @@ class SmartContextManager:
             else:
                 token_count = self._tokenizer.count_tokens(content)
         except TokenCountingError as e:
-            logger.error(f"❌ Token计数失败: {e}")
+            logger.error(f"[ERR] Token计数失败: {e}")
             # Fallback到估算
             token_count = self._tokenizer.estimate_tokens_for_role(role, len(content))
         
@@ -832,7 +832,7 @@ class SmartContextManager:
                 success = self._make_space_for_new_message(token_count)
                 if not success:
                     logger.warning(
-                        f"⚠️ 无法为消息腾出足够空间: "
+                        f"[WARN] 无法为消息腾出足够空间: "
                         f"需要{token_count} tokens, 当前已用{current_total}/{self._budget.total_tokens}"
                     )
                     self._stats["budget_overflows_avoided"] += 1
@@ -858,7 +858,7 @@ class SmartContextManager:
             self._trigger_auto_optimization(utilization)
         
         logger.debug(
-            f"✅ 消息已添加: id={message.message_id[:8]}, "
+            f"[OK] 消息已添加: id={message.message_id[:8]}, "
             f"role={role}, tokens={token_count}, "
             f"priority={priority.value}, "
             f"当前总量={self.get_total_tokens_used()}/{self._budget.total_tokens} "
@@ -921,7 +921,7 @@ class SmartContextManager:
         # 1. System Prompt（必须包含，最高优先级）
         if system_prompt:
             if not _safe_add("system", system_prompt):
-                logger.error("❌ System Prompt超出预算，这不应该发生！")
+                logger.error("[ERR] System Prompt超出预算，这不应该发生！")
                 # 截断System Prompt（极端情况下的保底措施）
                 truncated = system_prompt[:int(len(system_prompt) * 0.8)]
                 _safe_add("system", truncated)
@@ -930,7 +930,7 @@ class SmartContextManager:
         if user_profile:
             profile_str = json.dumps(user_profile, ensure_ascii=False, indent=2)
             if not _safe_add("system", f"[User Profile]\n{profile_str}"):
-                logger.warning("⚠️ 用户画像因空间不足被省略")
+                logger.warning("[WARN] 用户画像因空间不足被省略")
         
         # 3. 注入的记忆（如有，限制数量）
         if injected_memories:
@@ -972,7 +972,7 @@ class SmartContextManager:
         
         # 记录统计
         logger.info(
-            f"✅ LLM上下文构建完成: "
+            f"[OK] LLM上下文构建完成: "
             f"total_tokens={tokens_used}/{self._budget.total_tokens} "
             f"({tokens_used/self._budget.total_tokens*100:.1f}%), "
             f"messages={len(result_messages)}, "
@@ -1147,10 +1147,10 @@ class SmartContextManager:
         
         if not is_all_ok:
             logger.error(
-                f"❌ 完整性校验发现 {len(failed_ids)} 条异常消息: {failed_ids}"
+                f"[ERR] 完整性校验发现 {len(failed_ids)} 条异常消息: {failed_ids}"
             )
         else:
-            logger.debug(f"✅ 完整性校验通过: {len(self._messages)} 条消息均正常")
+            logger.debug(f"[OK] 完整性校验通过: {len(self._messages)} 条消息均正常")
         
         return is_all_ok, failed_ids
     
@@ -1276,7 +1276,7 @@ class SmartContextManager:
             return evict_success and summarize_success
         
         else:
-            logger.error(f"❌ 未知的策略: {self._strategy}")
+            logger.error(f"[ERR] 未知的策略: {self._strategy}")
             return False
     
     def _evict_oldest_messages(self, target_tokens: int) -> bool:
@@ -1313,7 +1313,7 @@ class SmartContextManager:
         logger.info(
             f"🗑️ 滑动窗口清理: 移除{len(evicted_indices)}条消息, "
             f"释放{released} tokens, 目标{target_tokens}, "
-            f"{'✅ 成功' if success else '⚠️ 未达目标'}"
+            f"{'[OK] 成功' if success else '[WARN] 未达目标'}"
         )
         
         return success
@@ -1358,7 +1358,7 @@ class SmartContextManager:
         logger.info(
             f"⭐ 重要性加权清理: 移除{len(evicted_indices)}条低重要性消息, "
             f"释放{released} tokens, 目标{target_tokens}, "
-            f"{'✅ 成功' if success else '⚠️ 未达目标'}"
+            f"{'[OK] 成功' if success else '[WARN] 未达目标'}"
         )
         
         return success
@@ -1412,7 +1412,7 @@ class SmartContextManager:
         logger.info(
             f"📝 摘要压缩: 压缩{summarized_count}条消息, "
             f"释放{released} tokens, 目标{target_tokens}, "
-            f"{'✅ 成功' if success else '⚠️ 未达目标'}"
+            f"{'[OK] 成功' if success else '[WARN] 未达目标'}"
         )
         
         return success
@@ -1480,7 +1480,7 @@ class SmartContextManager:
         
         if remaining_for_normal <= 0:
             # 空间仅够CRITICAL消息，只返回它们
-            logger.warning("⚠️ 预算空间仅够容纳CRITICAL消息")
+            logger.warning("[WARN] 预算空间仅够容纳CRITICAL消息")
             return critical_msgs
         
         # 从普通消息中选择（优先选最新的）
@@ -1523,7 +1523,7 @@ class SmartContextManager:
             utilization: 当前利用率
         """
         logger.warning(
-            f"⚠️ 上下文利用率过高 ({utilization:.1%}), "
+            f"[WARN] 上下文利用率过高 ({utilization:.1%}), "
             f"触发自动优化..."
         )
         
@@ -1542,7 +1542,7 @@ class SmartContextManager:
         }
         
         # 可以在这里发送到监控系统
-        logger.info(f"✅ 自动优化完成: {optimization_event}")
+        logger.info(f"[OK] 自动优化完成: {optimization_event}")
     
     def clear(self, preserve_critical: bool = True):
         """
@@ -1564,7 +1564,7 @@ class SmartContextManager:
         }
         
         logger.info(
-            f"🧹 上下文已清空: 保留{len(self._messages)}条消息 "
+            f"[CLEAN] 上下文已清空: 保留{len(self._messages)}条消息 "
             f"({'仅CRITICAL' if preserve_critical else '全部'})"
         )
 
@@ -1627,7 +1627,7 @@ if __name__ == "__main__":
             role="user" if i % 2 == 0 else "assistant",
             content=f"这是第{i+1}轮对话: {'用户提问' if i % 2 == 0 else 'AI回答'} 关于积分的问题",
         )
-        print(f"  消息{i+1}: {'✅' if success else '❌'}")
+        print(f"  消息{i+1}: {'[OK]' if success else '[ERR]'}")
     
     # 查看统计
     stats = mgr.get_stats()
@@ -1642,7 +1642,7 @@ if __name__ == "__main__":
         system_prompt="你是一个数学辅导助手。",
         user_profile={"level": "高中", "weak_points": ["积分"]},
     )
-    print(f"  ✅ 上下文构建成功: {len(llm_ctx)} 条消息")
+    print(f"  [OK] 上下文构建成功: {len(llm_ctx)} 条消息")
     
     # 测试3: 搜索功能
     print("\n[Test 3] 搜索功能测试...")
@@ -1654,7 +1654,7 @@ if __name__ == "__main__":
     # 测试4: 完整性校验
     print("\n[Test 4] 完整性校验...")
     all_ok, failed = mgr.verify_all_integrity()
-    print(f"  🔒 校验结果: {'✅ 全部通过' if all_ok else f'❌ {len(failed)} 条异常'}")
+    print(f"  [LCK] 校验结果: {'[OK] 全部通过' if all_ok else f'[ERR] {len(failed)} 条异常'}")
     
     # 测试5: 快照
     print("\n[Test 5] 上下文快照...")
@@ -1662,5 +1662,5 @@ if __name__ == "__main__":
     print(snapshot.to_report())
     
     print("\n" + "=" * 60)
-    print("✅ 所有自测通过!")
+    print("[OK] 所有自测通过!")
     print("=" * 60)
