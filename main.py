@@ -1,6 +1,10 @@
 from tools.vision_tool import VisionTool
 from tools import get_registry, ToolNotFoundError
-from agent_core import MathAgent
+from agent_core import (
+    MathAgent,
+    MathAgentConfig,
+    AgentClassifierConfig,
+)
 from error_book import ErrorBookManager, ErrorItem
 from data_processing.validators import ErrorBookValidator
 from data_processing.formatters import ErrorBookFormatter
@@ -200,18 +204,18 @@ init_dynamic_llm_factory(
 )
 
 agent = MathAgent(
-    api_key=api_key,
-    registry=registry,
-    enable_dynamic_params=True,
-    use_langchain_agent=True,
-    enable_classifier=settings.CLASSIFIER_ENABLED,
-    classifier_model=settings.CLASSIFIER_MODEL,
-    classifier_config={
-        "cache_max_size": settings.CLASSIFIER_CACHE_SIZE,
-        "classification_timeout": settings.CLASSIFIER_TIMEOUT,
-        "enable_cache": True,
-        "enable_fallback": True,
-    },
+    MathAgentConfig(
+        api_key=api_key,
+        registry=registry,
+        classifier=AgentClassifierConfig(
+            enabled=settings.CLASSIFIER_ENABLED,
+            model=settings.CLASSIFIER_MODEL,
+            cache_max_size=settings.CLASSIFIER_CACHE_SIZE,
+            classification_timeout=settings.CLASSIFIER_TIMEOUT,
+            enable_cache=True,
+            enable_fallback=True,
+        ),
+    )
 )
 
 error_book_manager = ErrorBookManager()

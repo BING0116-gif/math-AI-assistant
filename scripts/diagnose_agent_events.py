@@ -23,7 +23,7 @@ async def diagnose_agent_events():
     from app.config.settings import settings
     
     # 初始化 Agent（和 main.py 一样的方式）
-    agent = MathAgent(
+    agent = MathAgent.create(
         api_key=settings.LLM_API_KEY,
         model=settings.LLM_MODEL,
         base_url=settings.LLM_API_BASE,

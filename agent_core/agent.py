@@ -16,6 +16,7 @@ import asyncio
 import logging
 import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
@@ -68,6 +69,86 @@ from app.services.behavior_tracker import LearningBehaviorTracker
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# 配置数据类 (Configuration Objects)
+# ============================================================================
+
+@dataclass
+class LLMConfig:
+    """LLM 相关配置。"""
+    model: str = "qwen-max"
+    temperature: float = 0
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+@dataclass
+class StrategyConfig:
+    """执行策略配置。"""
+    use_langchain_agent: bool = True
+    max_iterations: int = 5
+    enable_planner: bool = True
+    stream: bool = True
+
+
+@dataclass
+class ContextConfig:
+    """上下文管理配置。"""
+    enable_128k_context: bool = True
+    context_budget_tokens: int = 128000
+    context_strategy: ContextStrategy = ContextStrategy.HYBRID
+
+
+@dataclass
+class DynamicParamsConfig:
+    """动态参数配置。"""
+    enabled: bool = True
+
+
+@dataclass
+class AgentClassifierConfig:
+    """分类器配置。"""
+    enabled: bool = True
+    model: str = "qwen-turbo"
+    cache_max_size: int = 2000
+    classification_timeout: float = 5.0
+    enable_cache: bool = True
+    enable_fallback: bool = True
+
+
+@dataclass
+class MathAgentConfig:
+    """
+    MathAgent 完整配置对象。
+
+    将 14 个分散的构造函数参数整合为结构化配置，
+    支持按功能分组（LLM / 策略 / 上下文 / 动态参数 / 分类器）。
+
+    Example:
+        config = MathAgentConfig(api_key="your-key")
+        agent = MathAgent(config)
+
+        # 自定义配置
+        config = MathAgentConfig(
+            api_key="your-key",
+            llm=LLMConfig(model="qwen-max", temperature=0),
+            strategy=StrategyConfig(max_iterations=5),
+            classifier=AgentClassifierConfig(cache_max_size=2000),
+        )
+        agent = MathAgent(config)
+    """
+    api_key: str
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    context: ContextConfig = field(default_factory=ContextConfig)
+    dynamic_params: DynamicParamsConfig = field(default_factory=DynamicParamsConfig)
+    classifier: AgentClassifierConfig = field(default_factory=AgentClassifierConfig)
+    registry: Optional[ToolRegistry] = None
+
+    def __post_init__(self):
+        if not self.api_key:
+            raise ValueError("api_key 不能为空")
+
+
 class MathAgent:
     """
     统一的数学解题 Agent。
@@ -81,143 +162,80 @@ class MathAgent:
     默认使用 ReAct 执行策略，具备完整工具调用和思维链记录能力。
 
     Example:
-        agent = MathAgent(api_key="your-key")
+        # 使用配置对象（推荐）
+        config = MathAgentConfig(api_key="your-key")
+        agent = MathAgent(config)
+
+        # 向后兼容工厂方法
+        agent = MathAgent.create(api_key="your-key")
         result = await agent.process("求∫x²dx", session_id="user_1")
         async for chunk in agent.stream("求极限"):
             print(chunk, end="")
     """
 
-    def __init__(
-        self,
-        api_key: str,
-        registry: Optional[ToolRegistry] = None,
-        model: str = "qwen-max",
-        temperature: float = 0,
-        max_iterations: int = 5,
-        stream: bool = True,
-        base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        enable_planner: bool = True,
-        enable_128k_context: bool = True,
-        context_budget_tokens: int = 128000,
-        context_strategy: ContextStrategy = ContextStrategy.HYBRID,
-        enable_dynamic_params: bool = True,
-        use_langchain_agent: bool = True,
-        enable_classifier: bool = True,
-        classifier_model: str = "qwen-turbo",
-        classifier_config: Optional[dict] = None,
-    ):
-        assert api_key, "API 密钥必须提供"
+    def __init__(self, config: MathAgentConfig):
+        """
+        初始化 MathAgent（使用配置对象）。
 
-        self._api_key = api_key
-        self._registry = registry or get_registry()
-        self._model = model
-        self._temperature = temperature
-        self._max_iterations = max_iterations
-        self._stream_enabled = stream
-        self._base_url = base_url
+        Args:
+            config: MathAgentConfig 配置对象，包含所有初始化参数。
+
+        Raises:
+            ValueError: 如果 api_key 为空。
+        """
+        assert config.api_key, "API 密钥必须提供"
+
+        self._config = config
+        self._api_key = config.api_key
+        self._registry = config.registry or get_registry()
+        self._model = config.llm.model
+        self._temperature = config.llm.temperature
+        self._max_iterations = config.strategy.max_iterations
+        self._stream_enabled = config.strategy.stream
+        self._base_url = config.llm.base_url
         self._default_session_id = "default"
         self._session_histories: Dict[str, InMemoryChatMessageHistory] = {}
         self._strategy: Optional[AgentStrategy] = None
-        self._enable_planner = enable_planner
+        self._enable_planner = config.strategy.enable_planner
         self._planned_strategy: Optional[PlannedStrategy] = None
 
         # 统一 LLM 实例
         self._llm = ChatOpenAI(
-            model=model,
-            temperature=temperature,
-            api_key=api_key,
-            base_url=base_url,
-            streaming=stream,
+            model=config.llm.model,
+            temperature=config.llm.temperature,
+            api_key=config.api_key,
+            base_url=config.llm.base_url,
+            streaming=config.strategy.stream,
         )
 
-        self._enable_dynamic_params = enable_dynamic_params
+        # 动态参数工厂
+        self._enable_dynamic_params = config.dynamic_params.enabled
         self._dynamic_llm_factory: Optional[DynamicLLMFactory] = None
-        if enable_dynamic_params:
-            try:
-                self._dynamic_llm_factory = get_dynamic_llm_factory()
-                logger.info("使用全局 DynamicLLMFactory 单例")
-            except RuntimeError:
-                self._dynamic_llm_factory = DynamicLLMFactory(
-                    api_key=api_key,
-                    base_url=base_url,
-                    model=model,
-                    streaming=stream,
-                )
-                logger.info("全局单例未初始化，创建独立 DynamicLLMFactory 实例")
-            logger.info("动态参数配置已启用")
-        else:
-            logger.info("动态参数配置已禁用，使用固定LLM配置")
+        self._init_dynamic_llm_factory(config)
 
         # 统一会话历史访问器（初始化默认 session）
         self._get_session_history(self._default_session_id)
 
-        # ── 🆕 新增：128K 上下文记忆管理系统 ──
-        self._enable_128k_context = enable_128k_context
-        self._context_budget_tokens = context_budget_tokens
-        self._context_strategy = context_strategy
+        # 128K 上下文记忆管理系统
+        self._enable_128k_context = config.context.enable_128k_context
+        self._context_budget_tokens = config.context.context_budget_tokens
+        self._context_strategy = config.context.context_strategy
         self._context_managers: Dict[str, SmartContextManager] = {}
-        
-        if enable_128k_context:
-            logger.info(
-                f"[OK] 128K上下文记忆系统已启用: "
-                f"budget={context_budget_tokens} tokens, "
-                f"strategy={context_strategy.value}"
-            )
-        else:
-            logger.info("[WARN] 128K上下文记忆系统已禁用，使用传统模式")
+        self._init_context(config)
 
         # 任务规划器（可选）
         self._task_planner: Optional[TaskPlanner] = None
-        if enable_planner:
-            self._task_planner = TaskPlanner(
-                llm=self._llm,
-                registry=self._registry,
-            )
-            logger.info("TaskPlanner 已启用")
+        self._init_planner(config)
 
-        # ── 🆕 新增: LLM复杂度分类器 ──
-        self._enable_classifier = enable_classifier
+        # LLM复杂度分类器
+        self._enable_classifier = config.classifier.enabled
         self._classifier: Optional[LLMComplexityClassifier] = None
-
-        if enable_classifier:
-            try:
-                classifier_llm = ChatOpenAI(
-                    model=classifier_model,
-                    temperature=0.0,
-                    api_key=api_key,
-                    base_url=base_url,
-                    streaming=False,
-                )
-
-                _cfg = classifier_config or {}
-                _classifier_config = ClassifierConfig(
-                    cache_max_size=_cfg.get("cache_max_size", 2000),
-                    enable_cache=_cfg.get("enable_cache", True),
-                    enable_fallback=_cfg.get("enable_fallback", True),
-                    classification_timeout=_cfg.get("classification_timeout", 5.0),
-                )
-
-                self._classifier = LLMComplexityClassifier(
-                    llm=classifier_llm,
-                    config=_classifier_config,
-                )
-
-                logger.info(
-                    f"[OK] LLM复杂度分类器已启用 "
-                    f"(model={classifier_model}, "
-                    f"cache={_classifier_config.cache_max_size}条)"
-                )
-            except Exception as e:
-                logger.warning(f"[WARN] LLM复杂度分类器初始化失败: {e}，将使用原有策略路由")
-                self._classifier = None
-                self._enable_classifier = False
-        else:
-            logger.info("[WARN] LLM复杂度分类器已禁用，使用原有策略路由")
+        self._init_classifier(config)
 
         # 意图分类器（轻量规则匹配，<1ms，零Token消耗）
         self._task_classifier = get_classifier()
 
-        self._use_langchain = use_langchain_agent
+        self._use_langchain = config.strategy.use_langchain_agent
 
         # 构建默认 ReAct 策略
         if self._use_langchain:
@@ -237,11 +255,167 @@ class MathAgent:
 
         logger.info(
             f"MathAgent 初始化完成"
-            f"(model={model}, max_iterations={max_iterations}, "
-            f"planner={enable_planner}, "
+            f"(model={config.llm.model}, max_iterations={config.strategy.max_iterations}, "
+            f"planner={config.strategy.enable_planner}, "
             f"agent={'langchain' if self._use_langchain else 'custom'}, "
-            f"context_128k={'[OK]' if enable_128k_context else '[X]'})"
+            f"context_128k={'[OK]' if config.context.enable_128k_context else '[X]'})"
         )
+
+    @classmethod
+    def create(
+        cls,
+        api_key: str,
+        registry: Optional[ToolRegistry] = None,
+        model: str = "qwen-max",
+        temperature: float = 0,
+        max_iterations: int = 5,
+        stream: bool = True,
+        base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        enable_planner: bool = True,
+        enable_128k_context: bool = True,
+        context_budget_tokens: int = 128000,
+        context_strategy: ContextStrategy = ContextStrategy.HYBRID,
+        enable_dynamic_params: bool = True,
+        use_langchain_agent: bool = True,
+        enable_classifier: bool = True,
+        classifier_model: str = "qwen-turbo",
+        classifier_config: Optional[dict] = None,
+    ) -> "MathAgent":
+        """
+        向后兼容的工厂方法，支持旧的参数调用方式。
+
+        新代码推荐使用 MathAgent(config) 方式创建。
+
+        Args:
+            api_key: API 密钥。
+            registry: 工具注册表（可选）。
+            model: 模型名称。
+            temperature: 温度参数。
+            max_iterations: 最大迭代次数。
+            stream: 是否启用流式输出。
+            base_url: API 基础 URL。
+            enable_planner: 是否启用任务规划器。
+            enable_128k_context: 是否启用 128K 上下文。
+            context_budget_tokens: 上下文预算（tokens）。
+            context_strategy: 上下文管理策略。
+            enable_dynamic_params: 是否启用动态参数。
+            use_langchain_agent: 是否使用 LangChain Agent。
+            enable_classifier: 是否启用分类器。
+            classifier_model: 分类器模型。
+            classifier_config: 分类器配置字典。
+
+        Returns:
+            MathAgent 实例。
+        """
+        _cfg = classifier_config or {}
+        config = MathAgentConfig(
+            api_key=api_key,
+            registry=registry,
+            llm=LLMConfig(
+                model=model,
+                temperature=temperature,
+                base_url=base_url,
+            ),
+            strategy=StrategyConfig(
+                use_langchain_agent=use_langchain_agent,
+                max_iterations=max_iterations,
+                enable_planner=enable_planner,
+                stream=stream,
+            ),
+            context=ContextConfig(
+                enable_128k_context=enable_128k_context,
+                context_budget_tokens=context_budget_tokens,
+                context_strategy=context_strategy,
+            ),
+            dynamic_params=DynamicParamsConfig(
+                enabled=enable_dynamic_params,
+            ),
+            classifier=AgentClassifierConfig(
+                enabled=enable_classifier,
+                model=classifier_model,
+                cache_max_size=_cfg.get("cache_max_size", 2000),
+                classification_timeout=_cfg.get("classification_timeout", 5.0),
+                enable_cache=_cfg.get("enable_cache", True),
+                enable_fallback=_cfg.get("enable_fallback", True),
+            ),
+        )
+        return cls(config)
+
+    def _init_dynamic_llm_factory(self, config: MathAgentConfig) -> None:
+        """初始化动态参数工厂。"""
+        if not config.dynamic_params.enabled:
+            logger.info("动态参数配置已禁用，使用固定LLM配置")
+            return
+
+        try:
+            self._dynamic_llm_factory = get_dynamic_llm_factory()
+            logger.info("使用全局 DynamicLLMFactory 单例")
+        except RuntimeError:
+            self._dynamic_llm_factory = DynamicLLMFactory(
+                api_key=config.api_key,
+                base_url=config.llm.base_url,
+                model=config.llm.model,
+                streaming=config.strategy.stream,
+            )
+            logger.info("全局单例未初始化，创建独立 DynamicLLMFactory 实例")
+        logger.info("动态参数配置已启用")
+
+    def _init_context(self, config: MathAgentConfig) -> None:
+        """初始化128K上下文管理系统。"""
+        if config.context.enable_128k_context:
+            logger.info(
+                f"[OK] 128K上下文记忆系统已启用: "
+                f"budget={config.context.context_budget_tokens} tokens, "
+                f"strategy={config.context.context_strategy.value}"
+            )
+        else:
+            logger.info("[WARN] 128K上下文记忆系统已禁用，使用传统模式")
+
+    def _init_planner(self, config: MathAgentConfig) -> None:
+        """初始化任务规划器。"""
+        if config.strategy.enable_planner:
+            self._task_planner = TaskPlanner(
+                llm=self._llm,
+                registry=self._registry,
+            )
+            logger.info("TaskPlanner 已启用")
+
+    def _init_classifier(self, config: MathAgentConfig) -> None:
+        """初始化LLM复杂度分类器。"""
+        if not config.classifier.enabled:
+            logger.info("[WARN] LLM复杂度分类器已禁用，使用原有策略路由")
+            return
+
+        try:
+            classifier_llm = ChatOpenAI(
+                model=config.classifier.model,
+                temperature=0.0,
+                api_key=config.api_key,
+                base_url=config.llm.base_url,
+                streaming=False,
+            )
+
+            _classifier_config = ClassifierConfig(
+                cache_max_size=config.classifier.cache_max_size,
+                enable_cache=config.classifier.enable_cache,
+                enable_fallback=config.classifier.enable_fallback,
+                classification_timeout=config.classifier.classification_timeout,
+            )
+
+            self._classifier = LLMComplexityClassifier(
+                llm=classifier_llm,
+                config=_classifier_config,
+            )
+
+            logger.info(
+                f"[OK] LLM复杂度分类器已启用 "
+                f"(model={config.classifier.model}, "
+                f"cache={_classifier_config.cache_max_size}条)"
+            )
+        except Exception as e:
+            logger.warning(f"[WARN] LLM复杂度分类器初始化失败: {e}，将使用原有策略路由")
+            self._classifier = None
+            self._enable_classifier = False
 
     def _create_react_strategy(
         self,
@@ -1224,9 +1398,7 @@ def create_math_agent(
     enable_dynamic_params: bool = True,
 ) -> MathAgent:
     """
-    工厂函数：创建 MathAgent 实例。
-
-    这是推荐的创建 Agent 的方式，与原 create_react_agent() 签名兼容。
+    工厂函数：创建 MathAgent 实例（向后兼容）。
 
     Args:
         api_key: API 密钥。
@@ -1241,13 +1413,20 @@ def create_math_agent(
     Returns:
         MathAgent 实例。
     """
-    return MathAgent(
+    config = MathAgentConfig(
         api_key=api_key,
         registry=registry,
-        model=model,
-        temperature=temperature,
-        max_iterations=max_iterations,
-        stream=stream,
-        enable_planner=enable_planner,
-        enable_dynamic_params=enable_dynamic_params,
+        llm=LLMConfig(
+            model=model,
+            temperature=temperature,
+        ),
+        strategy=StrategyConfig(
+            max_iterations=max_iterations,
+            stream=stream,
+            enable_planner=enable_planner,
+        ),
+        dynamic_params=DynamicParamsConfig(
+            enabled=enable_dynamic_params,
+        ),
     )
+    return MathAgent(config)

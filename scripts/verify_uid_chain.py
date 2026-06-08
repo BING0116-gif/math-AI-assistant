@@ -22,7 +22,7 @@ async def verify_user_id_chain():
     from agent_core.agent import MathAgent
     from app.config.settings import settings
 
-    agent = MathAgent(
+    agent = MathAgent.create(
         api_key=settings.LLM_API_KEY,
         model=settings.LLM_MODEL,
         base_url=settings.LLM_API_BASE,

@@ -577,7 +577,7 @@ class TestDynamicParamsDisabled:
         """测试 disable 时不创建 DynamicLLMFactory。"""
         from agent_core.agent import MathAgent
 
-        agent = MathAgent(
+        agent = MathAgent.create(
             api_key="test-key",
             enable_dynamic_params=False,
         )
@@ -588,7 +588,7 @@ class TestDynamicParamsDisabled:
         """测试默认启用动态参数。"""
         from agent_core.agent import MathAgent
 
-        agent = MathAgent(api_key="test-key")
+        agent = MathAgent.create(api_key="test-key")
 
         assert agent.dynamic_llm_factory is not None
 
@@ -601,7 +601,7 @@ class TestMathAgentIntegration:
         from agent_core.agent import MathAgent
         from prompts.dynamic_params import DynamicLLMFactory
 
-        agent = MathAgent(api_key="test-key")
+        agent = MathAgent.create(api_key="test-key")
         factory = agent.dynamic_llm_factory
 
         assert factory is not None
@@ -611,7 +611,7 @@ class TestMathAgentIntegration:
         """测试 Agent 禁用动态参数后的状态。"""
         from agent_core.agent import MathAgent
 
-        agent = MathAgent(api_key="test-key", enable_dynamic_params=False)
+        agent = MathAgent.create(api_key="test-key", enable_dynamic_params=False)
 
         assert agent.dynamic_llm_factory is None
         assert agent._enable_dynamic_params is False
@@ -620,7 +620,7 @@ class TestMathAgentIntegration:
         """测试 _select_strategy 应用动态参数（集成验证）。"""
         from agent_core.agent import MathAgent
 
-        agent = MathAgent(api_key="test-key", enable_dynamic_params=True)
+        agent = MathAgent.create(api_key="test-key", enable_dynamic_params=True)
 
         assert agent._enable_dynamic_params is True
         assert agent._dynamic_llm_factory is not None
@@ -634,7 +634,7 @@ class TestMathAgentIntegration:
         from agent_core.agent import MathAgent
         from prompts.dynamic_params import TaskType
 
-        agent = MathAgent(api_key="test-key")
+        agent = MathAgent.create(api_key="test-key")
 
         params = agent._get_task_params(TaskType.QUICK_ANSWER)
         assert params.max_tokens == 300
@@ -645,7 +645,7 @@ class TestMathAgentIntegration:
         from agent_core.agent import MathAgent
         from prompts.dynamic_params import TaskType
 
-        agent = MathAgent(api_key="test-key")
+        agent = MathAgent.create(api_key="test-key")
 
         result = agent._classify_intent("这道题考什么知识点？")
         assert result.task_type == TaskType.KNOWLEDGE_QUERY
