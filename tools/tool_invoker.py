@@ -15,6 +15,7 @@ from typing import Any, Dict, Tuple, Union
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput
 from tools.hybrid_registry import HybridToolRegistry
+from tools.tool_call_parser import ToolCallParser
 
 ToolRegistryType = HybridToolRegistry
 
@@ -55,6 +56,7 @@ class ToolInvoker:
         self._registry = registry
         self._max_retries = max_retries
         self._timeout_seconds = timeout_seconds
+        self._call_parser = ToolCallParser(available_tools=set(registry.tool_names))
 
     @property
     def registry(self) -> ToolRegistryType:
@@ -63,7 +65,7 @@ class ToolInvoker:
 
     def parse_action_input(self, action_text: str) -> Tuple[str, Dict[str, Any]]:
         """
-        解析 Action Input 文本，提取工具名和参数。
+        解析 Action Input 文本，提取工具名和参数（委托给统一解析器）。
 
         支持多种格式：
         - JSON: {"query": "...", "parameters": {...}}
@@ -83,32 +85,7 @@ class ToolInvoker:
         if not action_text:
             raise ToolInvokeError("", "Action Input 为空", recoverable=False)
 
-        try:
-            parsed = json.loads(action_text)
-            if isinstance(parsed, dict):
-                return self._extract_from_dict(parsed)
-            raise ToolInvokeError("", f"无法理解的 JSON 结构: {action_text}", recoverable=False)
-        except json.JSONDecodeError:
-            return self._parse_text_format(action_text)
-
-    def _extract_from_dict(self, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-        """从字典中提取工具名和参数。"""
-        query = data.get("query", data.get("question", data.get("text", "")))
-        parameters = data.get("parameters", data.get("params", {}))
-        tool_name = data.get("tool", data.get("tool_name", ""))
-
-        if not query and not parameters:
-            query = str(data)
-
-        return tool_name, {"query": query, "parameters": parameters}
-
-    def _parse_text_format(self, text: str) -> Tuple[str, Dict[str, Any]]:
-        """
-        从纯文本中提取参数。
-
-        策略：直接作为 query 处理。
-        """
-        return "", {"query": text, "parameters": {}}
+        return self._call_parser.parse_action_input(action_text)
 
     async def invoke(
         self,

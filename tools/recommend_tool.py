@@ -7,12 +7,42 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
 
 logger = logging.getLogger(__name__)
+
+# ── 知识点关键词映射：用于从自然语言中提取 category ──
+# 覆盖 math_skill_graph.yml 中的主要分类
+_CATEGORY_KEYWORDS = {
+    '导数': ['导数', '微分', '求导', 'f\'', '切线', '单调性', '极值', '最值', '凹凸', '洛必达', '中值定理'],
+    '极限': ['极限', 'lim', '无穷大', '无穷小', '收敛', '发散', '渐近线', '连续'],
+    '积分': ['积分', 'int', '原函数', '不定积分', '定积分', '反常积分', '面积', '体积', '弧长'],
+    '代数': ['代数', '方程', '不等式', '多项式', '因式分解', '集合', '函数'],
+    '函数': ['函数', '定义域', '值域', '映射', '复合函数', '反函数', '周期', '奇偶', '单调'],
+    '三角': ['三角', 'sin', 'cos', 'tan', '正弦', '余弦', '正切', '弧度', '角度'],
+    '数列': ['数列', '等差', '等比', '通项', '求和', '递推', '极限(数列)'],
+    '概率': ['概率', '统计', '期望', '方差', '分布', '排列', '组合', '贝叶斯'],
+    '几何': ['几何', '向量', '空间', '立体', '解析', '坐标', '距离', '角度(几何)', '垂直', '平行'],
+    '线性代数': ['矩阵', '行列式', '线性', '特征值', '特征向量', '秩', '向量空间'],
+}
+
+
+def _extract_category_from_text(text: str) -> str:
+    """从自然语言文本中提取知识点分类（兜底机制）。"""
+    if not text:
+        return ''
+    text_lower = text.lower()
+    # 按匹配词长度降序排列，优先匹配更具体的关键词
+    for category, keywords in _CATEGORY_KEYWORDS.items():
+        for kw in sorted(keywords, key=len, reverse=True):
+            if kw.lower() in text_lower:
+                logger.info(f"[category提取] 从文本 '{text[:30]}...' 中识别到 category='{category}' (关键词: '{kw}')")
+                return category
+    return ''
 
 
 class RecommendTool(BaseTool):
@@ -47,6 +77,10 @@ class RecommendTool(BaseTool):
         print(f"\n{'='*60}")
         print(f"[RECOMMEND_TOOL] >>>>> 推荐工具被触发！<<<<")
         print(f"[RECOMMEND_TOOL] user_id={input_data.context.get('user_id', '?')}")
+        # ★ 诊断: 打印完整的输入参数
+        print(f"[RECOMMEND_DIAG] input_data.query = {repr(input_data.query)}")
+        print(f"[RECOMMEND_DIAG] input_data.parameters = {input_data.parameters}")
+        print(f"[RECOMMEND_DIAG] input_data.context keys = {list(input_data.context.keys()) if input_data.context else 'None'}")
         print(f"{'='*60}\n", flush=True)
         # ============================================
 
@@ -54,10 +88,28 @@ class RecommendTool(BaseTool):
             from app.services.rag_recommender import get_rag_recommender, RecommendationRequest
 
             params = input_data.parameters or {}
-            category = params.get("category", input_data.query or "")
+            category = params.get("category", "")
+
+            # ★ 兜底机制：如果 LLM 没传 category 或传的是整句文本，尝试从 query 中提取
+            if not category or len(category) > 10:
+                extracted = _extract_category_from_text(input_data.query or "")
+                if extracted:
+                    if category and len(category) > 10:
+                        print(f"[RECOMMEND_DIAG] category参数异常(长度={len(category)})，使用提取值: '{extracted}'", flush=True)
+                    elif not category:
+                        print(f"[RECOMMEND_DIAG] category为空，从query提取: '{extracted}'", flush=True)
+                    category = extracted
+                elif not category:
+                    # 最终兜底：使用整个 query（保持原有行为）
+                    category = input_data.query or ""
+                    print(f"[RECOMMEND_DIAG] 无法提取category，fallback到query: {repr(category[:50])}", flush=True)
+
             count = int(params.get("count", 5))
             context = params.get("context", "practice")
-            user_id = input_data.context.get("user_id", "anonymous")
+            user_id = input_data.context.get('user_id', "anonymous")
+
+            # ★ 诊断: 打印提取后的关键参数
+            print(f"[RECOMMEND_DIAG] 提取后参数 | category={repr(category)} | count={count} | context={context} | user_id={user_id}", flush=True)
 
             # ── 中文日志：开始推荐 ──
             logger.info(f"【推荐工具】开始为用户「{user_id}」推荐 {count} 道「{category}」题目 (模式={context})")

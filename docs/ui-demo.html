@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数学AI助手 - Mint UI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ═══════════════════════════════════════════════════
+       Mint Theme — Light
+       ═══════════════════════════════════════════════════ */
+    :root, [data-theme="light"] {
+      --bg-base: #f8fcfa;
+      --bg-elevated: #ffffff;
+      --bg-surface: #f2faf6;
+      --bg-surface-hover: #eaf7f1;
+      --bg-accent-soft: rgba(52, 211, 153, 0.08);
+
+      --fg: #1a2e28;
+      --fg-muted: #5a7a6e;
+      --fg-subtle: #94b5a5;
+
+      --border: rgba(52, 211, 153, 0.15);
+      --border-subtle: rgba(52, 211, 153, 0.08);
+      --border-hover: rgba(52, 211, 153, 0.28);
+
+      --accent: #34d399;
+      --accent-hover: #10b981;
+      --accent-soft: rgba(52, 211, 153, 0.12);
+      --accent-glow: rgba(52, 211, 153, 0.25);
+
+      --shadow-sm: 0 1px 3px rgba(16, 46, 40, 0.04);
+      --shadow-md: 0 4px 16px rgba(16, 46, 40, 0.06);
+      --shadow-lg: 0 8px 32px rgba(16, 46, 40, 0.08);
+
+      --glass-bg: rgba(255, 255, 255, 0.65);
+      --glass-border: rgba(255, 255, 255, 0.5);
+      --glass-blur: 16px;
+
+      --orb-1: #a7f3d0;
+      --orb-2: #d1fae5;
+      --orb-3: #6ee7b7;
+      --orb-4: #bbf7d0;
+      --orb-opacity: 0.40;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       Mint Theme — Dark
+       ═══════════════════════════════════════════════════ */
+    [data-theme="dark"] {
+      --bg-base: #0a0a0a;
+      --bg-elevated: #141414;
+      --bg-surface: #1c1c1c;
+      --bg-surface-hover: #242424;
+      --bg-accent-soft: rgba(163, 163, 163, 0.06);
+
+      --fg: #f5f5f5;
+      --fg-muted: #a3a3a3;
+      --fg-subtle: #525252;
+
+      --border: rgba(255, 255, 255, 0.08);
+      --border-subtle: rgba(255, 255, 255, 0.04);
+      --border-hover: rgba(255, 255, 255, 0.15);
+
+      --accent: #d4d4d4;
+      --accent-hover: #e5e5e5;
+      --accent-soft: rgba(212, 212, 212, 0.08);
+      --accent-glow: rgba(212, 212, 212, 0.15);
+
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.40);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.50);
+      --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.60);
+
+      --glass-bg: rgba(255, 255, 255, 0.02);
+      --glass-border: rgba(255, 255, 255, 0.05);
+      --glass-blur: 20px;
+
+      --orb-1: #262626;
+      --orb-2: #1f1f1f;
+      --orb-3: #404040;
+      --orb-4: #2d2d2d;
+      --orb-opacity: 0.50;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+      font-size: 14px;
+      color: var(--fg);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      letter-spacing: -0.01em;
+      transition: background 0.4s ease, color 0.3s ease;
+    }
+
+    /* ─── Background ─── */
+    .bg-canvas {
+      position: fixed;
+      inset: 0;
+      background: var(--bg-base);
+      z-index: 0;
+      overflow: hidden;
+      transition: background 0.4s ease;
+    }
+
+    .bg-orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(100px);
+      opacity: var(--orb-opacity);
+      animation: orbFloat 25s ease-in-out infinite alternate;
+      transition: opacity 0.4s ease;
+    }
+
+    .bg-orb-1 { width: 600px; height: 600px; background: var(--orb-1); top: -15%; left: -10%; animation-duration: 28s; }
+    .bg-orb-2 { width: 450px; height: 450px; background: var(--orb-2); bottom: -10%; right: -8%; animation-duration: 22s; animation-delay: -6s; }
+    .bg-orb-3 { width: 380px; height: 380px; background: var(--orb-3); top: 45%; left: 55%; animation-duration: 24s; animation-delay: -12s; }
+    .bg-orb-4 { width: 280px; height: 280px; background: var(--orb-4); top: 8%; right: 25%; opacity: calc(var(--orb-opacity) * 0.6); animation-duration: 20s; animation-delay: -4s; }
+
+    @keyframes orbFloat {
+      0% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(30px, -25px) scale(1.04); }
+      66% { transform: translate(-25px, 20px) scale(0.96); }
+      100% { transform: translate(15px, -10px) scale(1.02); }
+    }
+
+    /* ─── Layout ─── */
+    .app { position: relative; z-index: 1; display: flex; height: 100vh; overflow: hidden; }
+
+    /* ─── Sidebar ─── */
+    .sidebar {
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      padding: 16px 12px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(var(--glass-blur));
+      backdrop-filter: blur(var(--glass-blur));
+      border-right: 1px solid var(--border-subtle);
+      transition: background 0.3s ease, border-color 0.3s ease;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 4px 8px 20px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+
+    .brand-name { font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.3px; }
+    .brand-sub { font-size: 11px; color: var(--fg-subtle); margin-top: 1px; display: block; }
+
+    .btn-new {
+      width: 100%;
+      height: 44px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      margin-bottom: 20px;
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+
+    .btn-new:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 20px var(--accent-glow); }
+    .btn-new:active { transform: translateY(0) scale(0.98); }
+
+    .sidebar-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0 10px 8px;
+    }
+
+    .history-list { flex: 1; overflow-y: auto; }
+
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 2px;
+      border: 1px solid transparent;
+    }
+
+    .history-item:hover { background: var(--bg-surface); border-color: var(--border-subtle); }
+
+    .history-item.active {
+      background: var(--accent-soft);
+      border-color: var(--border);
+    }
+
+    .history-icon { color: var(--fg-subtle); flex-shrink: 0; }
+    .history-item.active .history-icon { color: var(--accent); }
+    .history-text { flex: 1; min-width: 0; }
+    .history-title { font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .history-item.active .history-title { font-weight: 500; }
+    .history-time { font-size: 11px; color: var(--fg-subtle); display: block; margin-top: 2px; }
+
+    .sidebar-footer { padding-top: 12px; border-top: 1px solid var(--border-subtle); margin-top: 8px; }
+
+    .btn-footer {
+      width: 100%;
+      height: 44px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--fg);
+    }
+
+    .btn-footer:hover { background: var(--bg-surface-hover); border-color: var(--border-hover); }
+
+    /* ─── Main ─── */
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+    /* ─── TopBar ─── */
+    .topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 12px;
+      flex-shrink: 0;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle);
+      transition: background 0.3s ease;
+    }
+
+    .topbar-title { flex: 1; font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+
+    .topbar-actions { display: flex; gap: 6px; }
+
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--fg-muted);
+    }
+
+    .btn-icon:hover { background: var(--bg-surface-hover); border-color: var(--border-hover); color: var(--fg); }
+
+    .theme-toggle {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      color: var(--accent);
+    }
+
+    .theme-toggle:hover { background: var(--accent); color: #fff; }
+
+    /* ─── Content ─── */
+    .content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+    /* ─── Hero ─── */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 64px 24px 36px;
+      text-align: center;
+    }
+
+    .hero-orb {
+      width: 80px;
+      height: 80px;
+      border-radius: 24px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 28px;
+      color: var(--accent);
+      box-shadow: 0 0 40px var(--accent-glow);
+      transition: all 0.3s ease;
+    }
+
+    .hero-title {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -2px;
+      line-height: 1.05;
+      color: var(--fg);
+      margin-bottom: 12px;
+    }
+
+    .hero-sub { font-size: 16px; color: var(--fg-muted); line-height: 1.6; max-width: 420px; }
+
+    /* ─── Input ─── */
+    .input-section { max-width: 640px; margin: 0 auto; padding: 0 24px 36px; width: 100%; }
+
+    .input-box {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow-md);
+      transition: all 0.3s ease;
+    }
+
+    .input-box:focus-within {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-md), 0 0 0 3px var(--accent-soft);
+    }
+
+    .input-box textarea {
+      flex: 1;
+      min-height: 24px;
+      max-height: 120px;
+      border: none;
+      resize: none;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      background: transparent;
+      color: var(--fg);
+      line-height: 1.5;
+    }
+
+    .input-box textarea::placeholder { color: var(--fg-subtle); }
+
+    .btn-send {
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+
+    .btn-send:hover { background: var(--accent-hover); transform: scale(1.05); }
+    .btn-send:active { transform: scale(0.95); }
+
+    .input-chips { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+
+    .chip {
+      height: 34px;
+      padding: 0 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--fg-muted);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .chip:hover { background: var(--accent-soft); border-color: var(--border); color: var(--accent); }
+
+    /* ─── Features ─── */
+    .features { max-width: 800px; margin: 0 auto; padding: 0 24px 60px; width: 100%; }
+
+    .features-heading {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 14px;
+      text-align: center;
+    }
+
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+    .feature-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 22px 20px;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .feature-card:hover {
+      background: var(--bg-surface);
+      border-color: var(--border);
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-3px);
+    }
+
+    .card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s ease;
+      background: var(--accent-soft);
+      border: 1px solid var(--border-subtle);
+      color: var(--accent);
+    }
+
+    .feature-card:hover .card-icon {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+
+    .card-title { font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 5px; letter-spacing: -0.2px; }
+    .card-desc { font-size: 13px; color: var(--fg-muted); line-height: 1.5; }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 900px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .hero-title { font-size: 34px; letter-spacing: -1.2px; }
+      .hero { padding: 48px 24px 24px; }
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <div class="bg-canvas">
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+    <div class="bg-orb bg-orb-4"></div>
+  </div>
+
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">数学AI助手</div>
+          <span class="brand-sub">智能学习伙伴</span>
+        </div>
+      </div>
+
+      <button class="btn-new">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        新对话
+      </button>
+
+      <div class="sidebar-label">最近对话</div>
+      <div class="history-list">
+        <div class="history-item active">
+          <span class="history-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+          <div class="history-text"><span class="history-title">微积分基础问题</span><span class="history-time">今天 14:30</span></div>
+        </div>
+        <div class="history-item">
+          <span class="history-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+          <div class="history-text"><span class="history-title">线性代数矩阵运算</span><span class="history-time">昨天 10:15</span></div>
+        </div>
+        <div class="history-item">
+          <span class="history-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+          <div class="history-text"><span class="history-title">概率论习题讲解</span><span class="history-time">3天前</span></div>
+        </div>
+        <div class="history-item">
+          <span class="history-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+          <div class="history-text"><span class="history-title">微分方程求解方法</span><span class="history-time">1周前</span></div>
+        </div>
+        <div class="history-item">
+          <span class="history-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+          <div class="history-text"><span class="history-title">泰勒展开式推导</span><span class="history-time">1周前</span></div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <a href="#" class="btn-footer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          错题本
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title">新对话</div>
+        <div class="topbar-actions">
+          <button class="theme-toggle" id="themeToggle" title="切换主题">
+            <svg id="sunIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg id="moonIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+          </button>
+          <button class="btn-icon" title="设置">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="hero">
+          <div class="hero-orb">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h1 class="hero-title">数学AI助手</h1>
+          <p class="hero-sub">智能对话、公式推导、错题管理<br>你的数学学习伙伴</p>
+        </section>
+
+        <section class="input-section">
+          <div class="input-box">
+            <textarea placeholder="输入你的数学问题..." rows="1"></textarea>
+            <button class="btn-send">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+          <div class="input-chips">
+            <button class="chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>拍照搜题</button>
+            <button class="chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>知识库</button>
+            <button class="chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>代码执行</button>
+            <button class="chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>数据分析</button>
+          </div>
+        </section>
+
+        <section class="features">
+          <div class="features-heading">功能</div>
+          <div class="features-grid">
+            <div class="feature-card">
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></div>
+              <div class="card-title">智能对话</div>
+              <div class="card-desc">自然语言解答数学问题，推导公式、解释概念</div>
+            </div>
+            <div class="feature-card">
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="12" height="20" rx="2"/><line x1="10" y1="7" x2="14" y2="7"/><line x1="10" y1="11" x2="14" y2="11"/><line x1="10" y1="15" x2="12" y2="15"/></svg></div>
+              <div class="card-title">错题本</div>
+              <div class="card-desc">自动收录错题，分类整理，定期复习提醒</div>
+            </div>
+            <div class="feature-card">
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+              <div class="card-title">知识搜索</div>
+              <div class="card-desc">海量数学知识库，快速查找定理与经典例题</div>
+            </div>
+            <div class="feature-card">
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>
+              <div class="card-title">视觉识别</div>
+              <div class="card-desc">上传题目图片，自动识别并解答</div>
+            </div>
+            <div class="feature-card">
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+              <div class="card-title">代码执行</div>
+              <div class="card-desc">Python 实时运行，数值计算与图表绘制</div>
+            </div>
+            <div class="feature-card">
+              <div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+              <div class="card-title">数据分析</div>
+              <div class="card-desc">统计分析与可视化，理解数据规律</div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Theme toggle
+    const toggle = document.getElementById('themeToggle');
+    const sunIcon = document.getElementById('sunIcon');
+    const moonIcon = document.getElementById('moonIcon');
+
+    function setTheme(theme) {
+      document.body.setAttribute('data-theme', theme);
+      if (theme === 'dark') {
+        sunIcon.style.display = 'none';
+        moonIcon.style.display = 'block';
+      } else {
+        sunIcon.style.display = 'block';
+        moonIcon.style.display = 'none';
+      }
+      localStorage.setItem('mint-theme', theme);
+    }
+
+    toggle.addEventListener('click', () => {
+      const current = document.body.getAttribute('data-theme');
+      setTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    // Restore saved theme
+    const saved = localStorage.getItem('mint-theme');
+    if (saved) setTheme(saved);
+
+    // History click
+    document.querySelectorAll('.history-item').forEach(item => {
+      item.addEventListener('click', function() {
+        document.querySelectorAll('.history-item').forEach(i => i.classList.remove('active'));
+        this.classList.add('active');
+      });
+    });
+
+    // Textarea auto-resize
+    const textarea = document.querySelector('textarea');
+    textarea.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+
+    textarea.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const text = this.value.trim();
+        if (text) { this.value = ''; this.style.height = 'auto'; }
+      }
+    });
+  </script>
+</body>
+</html>

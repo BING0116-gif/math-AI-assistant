@@ -45,6 +45,18 @@ services:
     networks:
       - mathai-network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - mathai-network
+
   db:
     image: postgres:15-alpine
     environment:

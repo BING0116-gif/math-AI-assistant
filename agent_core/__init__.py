@@ -10,7 +10,6 @@ from agent_core.agent import (
     MathAgentConfig,
     LLMConfig,
     StrategyConfig,
-    ContextConfig,
     DynamicParamsConfig,
     AgentClassifierConfig,
 )
@@ -27,7 +26,6 @@ from agent_core.task_planner import (
     PlanningError,
     CircularDependencyError,
 )
-from agent_core.strategies.planned import PlannedStrategy
 from agent_core.strategies.langchain_react import LangChainReActStrategy
 from agent_core.callbacks import ThoughtRecordingCallbackHandler
 from agent_core.langchain_adapter import LangChainToolConverter, get_tool_converter, convert_tools_to_langchain
@@ -49,7 +47,6 @@ __all__ = [
     "MathAgentConfig",
     "LLMConfig",
     "StrategyConfig",
-    "ContextConfig",
     "DynamicParamsConfig",
     "AgentClassifierConfig",
     "ThoughtRecorder",
@@ -65,7 +62,6 @@ __all__ = [
     "PlannerConfig",
     "PlanningError",
     "CircularDependencyError",
-    "PlannedStrategy",
     "LangChainReActStrategy",
     "ThoughtRecordingCallbackHandler",
     "LangChainToolConverter",

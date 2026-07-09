@@ -76,25 +76,39 @@
 
 ```
 math AI assistant/
-├── main.py                # 主应用入口（FastAPI）
-├── agent_core/
-│   └── agent.py          # AI Agent 核心逻辑
-├── tools/
-│   └── vision_tool.py     # 图片识别工具
-├── error_book.py          # 错题本管理模块
-├── data_processing/
-│   ├── validators.py      # 数据验证模块
-│   └── formatters.py      # 数据格式化模块
-├── config/
-│   └── prompts.py         # 系统提示词配置
-├── static/
-│   ├── index.html         # 主界面
-│   └── error_book.html    # 错题本界面
-├── data/
-│   └── error_book.json    # 错题数据存储
-├── requirements.txt       # 依赖配置
-└── README.md              # 项目文档
+├── main.py                    # 应用入口（FastAPI，<200行）
+├── app/
+│   ├── api/                   # API 路由层
+│   │   ├── chat_api.py        # 聊天相关路由
+│   │   ├── error_api.py       # 错题本相关路由
+│   │   └── agent_api.py       # Agent 相关路由
+│   ├── services/              # 业务服务层
+│   │   ├── llm_service.py     # LLM 服务
+│   │   ├── vector_store.py    # 向量存储
+│   │   ├── rag_recommender.py # RAG 推荐引擎
+│   │   └── stream_handler.py  # 流式响应处理
+│   ├── data/                  # 数据访问层
+│   │   ├── models.py          # 数据模型
+│   │   └── database.py        # 数据库配置
+│   ├── config/                # 配置管理
+│   ├── lifespan.py            # 应用生命周期
+│   ├── middleware_setup.py    # 中间件配置
+│   └── dependencies.py        # 依赖注入
+├── agent_core/                # Agent 核心层
+│   ├── agent.py               # AI Agent 核心
+│   └── tool_registry.py       # 工具注册中心
+├── frontend/                  # 前端 (Vue 3 + Vite)
+├── tests/                     # 测试
+├── scripts/                   # 核心工具脚本
+├── docs/                      # 项目文档
+│   ├── architecture/          # 架构设计文档
+│   ├── development/           # 开发文档
+│   ├── api/                   # API 文档
+│   └── prd/                   # PRD 文档
+└── requirements.txt           # 依赖配置
 ```
+
+详细文档请查看 [docs/](docs/) 目录。
 
 ## 快速开始
 

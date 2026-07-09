@@ -85,7 +85,7 @@ async def init_db() -> None:
             _os.path.dirname(__file__), "migrations", "003_add_user_skills.sql"
         )
         if _os.path.exists(migration_path):
-            with open(migration_path, "r") as f:
+            with open(migration_path, "r", encoding="utf-8") as f:
                 migration_sql = f.read()
             async with engine.begin() as conn:
                 await conn.run_sync(

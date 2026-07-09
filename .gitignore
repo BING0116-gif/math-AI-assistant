@@ -19,13 +19,15 @@ ENV/
 *.swp
 *.swo
 
-# 测试覆盖率
+# 测试
+.pytest_cache/
 .coverage
 htmlcov/
 
 # 临时文件
 *.tmp
 *.log
+logs/
 
 # 前端构建产物
 frontend/node_modules/
@@ -33,10 +35,16 @@ frontend/dist/
 
 # 数据文件
 data/*.json
+data/*.db
+data/*.sqlite3
 !data/.gitkeep
 
-# macOS系统文件
-.DS_Store
+# 备份
+backup/
 
-# Windows系统文件
+# Docker
+.dockerignore
+
+# 系统文件
+.DS_Store
 Thumbs.db

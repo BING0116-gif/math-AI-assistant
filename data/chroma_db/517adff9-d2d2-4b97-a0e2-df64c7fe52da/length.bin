@@ -1,1 +1,4 @@
-invalid type: string "题目: 2. 证明：由于 $f(a) = f(b) = 0$，因此 $f'_+(a) = \\lim_{x \\to a^+} \\frac{f(x)}{x - a}$, $f'_-(b) = \\lim_{x \\to b^-} \\frac{f(x)}{x - b}$。又由于 $f'_+(a) < 0$, $f'_-(b) < 0$。根据函数极限的局部保号性，存在 $\\delta_1\\left(0 < \\delta_1 < \\frac{b - a}{2}\\right)$ 与 $\\delta_2\\left(0 < \\delta_2 < \\frac{b - a}{2}\\right)$，使得\n
+题目: 所以 $\lim_{x \to \infty} \frac{\ln f\left(a + \frac{1}{x}\right) - \ln f(a)}{\frac{1}{x}} = [\ln f(x)]'\Big|_{x=a} = \frac{f'(a)}{f(a)}$，即 $\lim_{x \to \infty} \left[\frac{f\left(a + \frac{1}{x}\right)}{f(a)}\right]^x = e^{\frac{f'(a)}{f(a)}}$.
+分类: 导数
+知识点: []
+解析: 该式为极限推导过程，利用对数函数的导数性质和指数极限公式得出结果。����

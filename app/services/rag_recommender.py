@@ -191,6 +191,9 @@ class RAGRecommender:
             return result
         except Exception as e:
             logger.error(f"━━━ 推荐异常: {e} ━━━", exc_info=True)
+            print(f"[RAG_DIAG] !!! 推荐异常 !!! error={e}", flush=True)
+            import traceback
+            traceback.print_exc()
             fallback = await self._get_fallback_recommendation(request)
             fallback.processing_time_ms = (time.time() - start_time) * 1000
             fallback.meta["error"] = str(e)
@@ -239,6 +242,7 @@ class RAGRecommender:
     async def _sql_retrieval(
         self, category: str, difficulty: int, exclude_ids: List[str], count: int
     ) -> List[Question]:
+        print(f"[RAG_DIAG] SQL检索参数 | category={repr(category)} | difficulty={difficulty} | exclude_count={len(exclude_ids)} | count={count}", flush=True)
         async with self._session_factory() as db:
             query = select(Question).where(
                 and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True)
@@ -248,6 +252,7 @@ class RAGRecommender:
             query = query.order_by(Question.usage_count.asc()).limit(count * 2)
             result = await db.execute(query)
             questions = list(result.scalars().all())
+            print(f"[RAG_DIAG] SQL精确匹配返回 {len(questions)} 题", flush=True)
 
             if len(questions) < count:
                 relaxed = select(Question).where(

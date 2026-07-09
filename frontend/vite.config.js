@@ -11,6 +11,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    fs: {
+      // 允许访问 node_modules，使 KaTeX 等库的字体/资源可被正确提供
+      strict: false
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

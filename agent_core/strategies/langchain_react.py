@@ -84,6 +84,7 @@ class LangChainReActStrategy(AgentStrategy):
         self._max_iterations = max_iterations
         self._timeout_seconds = timeout_seconds
         self._verbose = verbose
+        self._last_used_tools: set = set()  # 最近一次 stream 执行中使用的工具集
 
         self._recorders: Dict[str, ThoughtRecordingCallbackHandler] = {}
 
@@ -179,13 +180,23 @@ class LangChainReActStrategy(AgentStrategy):
             token_count = 0
             yield_count = 0
             _full_output = []  # 可观测性：累积完整输出用于日志
+            _used_tools = set()  # 追踪本次执行中使用的工具名称
 
             async for event in agent.astream_events(
                 {"messages": messages},
                 config={'callbacks': [recorder]},
                 version="v2",
             ):
-                if event.get("event") != "on_chat_model_stream":
+                event_name = event.get("event", "")
+
+                # 追踪工具调用（用于去重检测）
+                if event_name == "on_tool_start":
+                    tool_name = event.get("name", "")
+                    if tool_name:
+                        _used_tools.add(tool_name)
+                        logger.debug(f"[STREAM] 工具调用: {tool_name}")
+
+                if event_name != "on_chat_model_stream":
                     continue
 
                 chunk = event.get("data", {}).get("chunk")
@@ -202,11 +213,14 @@ class LangChainReActStrategy(AgentStrategy):
                 logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
                 yield content
 
-            # 可观测性：记录LLM完整输出，便于对比工具返回原文
+            # 可观测性：记录LLM完整输出和工具使用情况
             _complete = "".join(_full_output)
             import hashlib as _hl
             _out_hash = _hl.md5(_complete.encode()).hexdigest()[:8]
             print(f"\n[OBSERVE] LLM完整输出 | hash={_out_hash} | 长度={len(_complete)}字符 | tokens={token_count}", flush=True)
+            print(f"[OBSERVE] 本次工具调用: {_used_tools or '(无)'}", flush=True)
+            # 暴露工具使用记录，供 agent.py 去重检测使用
+            self._last_used_tools = _used_tools
             # 检测是否包含RAG标记（说明LLM确实展示了推荐结果）
             _has_rag = "RAG推荐结果" in _complete or "来源:" in _complete
             print(f"[OBSERVE] RAG内容检测: {'检测到RAG题目展示' if _has_rag else '未检测到RAG内容 — 可能被LLM改写或忽略!'}", flush=True)
