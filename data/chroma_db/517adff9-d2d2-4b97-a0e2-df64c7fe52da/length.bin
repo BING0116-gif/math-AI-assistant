@@ -1,4 +1,0 @@
-题目: 所以 $\lim_{x \to \infty} \frac{\ln f\left(a + \frac{1}{x}\right) - \ln f(a)}{\frac{1}{x}} = [\ln f(x)]'\Big|_{x=a} = \frac{f'(a)}{f(a)}$，即 $\lim_{x \to \infty} \left[\frac{f\left(a + \frac{1}{x}\right)}{f(a)}\right]^x = e^{\frac{f'(a)}{f(a)}}$.
-分类: 导数
-知识点: []
-解析: 该式为极限推导过程，利用对数函数的导数性质和指数极限公式得出结果。����
