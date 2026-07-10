@@ -18,6 +18,9 @@ ENV/
 .idea/
 *.swp
 *.swo
+.agents/
+.claude/
+.trae/
 
 # 测试
 .pytest_cache/
@@ -36,8 +39,14 @@ frontend/dist/
 # 数据文件
 data/*.json
 data/*.db
+data/*.db-shm
+data/*.db-wal
 data/*.sqlite3
+data/chroma_db/
 !data/.gitkeep
+
+# 向量数据库存储
+qdrant_storage/
 
 # 备份
 backup/
@@ -48,3 +57,11 @@ backup/
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 临时报告和文档
+architecture-report.html
+theme-preview.html
+docs/ui-demo.html
+
+# 本地设计文件
+math-ai-assistant.design/

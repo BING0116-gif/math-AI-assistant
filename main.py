@@ -35,7 +35,7 @@ from app.api.agent_api import router as agent_router
 
 # 核心组件
 from tools import get_registry
-from agent_core import MathAgent, MathAgentConfig, AgentClassifierConfig
+from agent_core import MathAgent, MathAgentConfig, AgentClassifierConfig, LLMConfig
 from error_book import ErrorBookManager
 from prompts.dynamic_params import init_dynamic_llm_factory
 
@@ -82,7 +82,7 @@ registry = get_registry()
 init_dynamic_llm_factory(
     api_key=api_key,
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model="qwen-max",
+    model=settings.LLM_MODEL,
     streaming=True,
 )
 
@@ -90,6 +90,10 @@ agent = MathAgent(
     MathAgentConfig(
         api_key=api_key,
         registry=registry,
+        llm=LLMConfig(
+            model=settings.LLM_MODEL,
+            base_url=settings.LLM_API_BASE,
+        ),
         classifier=AgentClassifierConfig(
             enabled=settings.CLASSIFIER_ENABLED,
             model=settings.CLASSIFIER_MODEL,

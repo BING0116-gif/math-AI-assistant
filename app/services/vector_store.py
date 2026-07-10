@@ -1,28 +1,76 @@
 """
-向量数据库模块 — 基于 ChromaDB 的题目向量存储与语义检索。
+向量数据库模块 — 基于 Qdrant 的题目向量存储与语义检索。
 
 设计要点：
-- ChromaDB 持久化存储（自动创建目录）
-- 默认使用内置 embedding 函数（all-MiniLM-L6-v2）
+- Qdrant 高性能向量搜索（Rust 编写，延迟低、吞吐高）
 - 支持语义搜索、混合搜索（向量 + 关键词 + 筛选）
-- metadata 自动清理（只保留 str/int/float/bool 类型）
-- 增量更新（先删后加）
+- payload 过滤在 ANN 前应用（召回率稳定）
+- 支持量化技术（可选，减少内存占用）
+- 降级策略：Qdrant 不可用时自动降级到内存模式
+- 重试机制：初始化失败自动重试 3 次
+- Embedding 模型集成：SentenceTransformer 自动生成向量
 """
 
 from __future__ import annotations
 
+# 必须在导入 sentence_transformers 之前设置，避免联网检查 HuggingFace
+import os
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+import asyncio
 import json
 import logging
-import os
-from dataclasses import dataclass
+import time
+import traceback
+import uuid
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+
+QDRANT_UUID_NAMESPACE = uuid.UUID("12345678-1234-5678-1234-567812345678")
+
+
+def _to_qdrant_id(question_id: str) -> uuid.UUID:
+    return uuid.uuid5(QDRANT_UUID_NAMESPACE, question_id)
+
+logger = logging.getLogger(__name__)
+
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import (
+        Distance,
+        VectorParams,
+        PointStruct,
+        Filter,
+        FieldCondition,
+        MatchValue,
+        Range,
+        QuantizationConfig,
+        ScalarQuantization,
+        ScalarQuantizationConfig,
+        ScalarType,
+    )
+    QDRANT_AVAILABLE = True
+except ImportError:
+    QDRANT_AVAILABLE = False
+    logger.warning("[向量库] qdrant-client 未安装，将使用内存模式降级")
+
+try:
+    from sentence_transformers import SentenceTransformer
+    EMBEDDER_AVAILABLE = True
+except ImportError:
+    EMBEDDER_AVAILABLE = False
+    logger.warning("[向量库] sentence-transformers 未安装，将使用随机向量降级")
 
 from app.config.settings import settings
 
-logger = logging.getLogger(__name__)
+
+class VectorStoreStatus(Enum):
+    INITIALIZING = "initializing"
+    READY = "ready"
+    ERROR = "error"
+    DEGRADED = "degraded"
 
 
 @dataclass
@@ -34,194 +82,688 @@ class VectorSearchResult:
     distance: float
 
 
-class VectorStoreManager:
+class QdrantVectorStoreManager:
     def __init__(
         self,
-        persist_directory: Optional[str] = None,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
         collection_name: str = "math_questions",
+        vector_size: int = 384,
+        use_quantization: bool = False,
+        embedder_model: str = "all-MiniLM-L6-v2",
+        max_retries: int = 3,
+        retry_delay: float = 5.0,
+        availability_check_interval: float = 30.0,
     ):
-        self.persist_directory = persist_directory or settings.VECTOR_DB_PATH
+        self.host = host or os.getenv("QDRANT_HOST", "localhost")
+        self.port = port or int(os.getenv("QDRANT_PORT", "6333"))
         self.collection_name = collection_name
-        self._client: Optional[chromadb.PersistentClient] = None
-        self._collection: Optional[chromadb.Collection] = None
-        self._initialized = False
+        self.vector_size = vector_size
+        self.use_quantization = use_quantization
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.availability_check_interval = availability_check_interval
+
+        self._client: Optional[Any] = None
+        self._status = VectorStoreStatus.INITIALIZING
+        self._last_availability_check: float = 0
+        self._is_available: bool = False
+
+        self._embedder: Optional[Any] = None
+        self._embedder_model = embedder_model
+
+        self._in_memory_points: Dict[str, PointStruct] = {}
+        self._use_memory_fallback: bool = False
 
     async def initialize(self) -> None:
-        if self._initialized:
+        if self._status == VectorStoreStatus.READY:
             return
-        os.makedirs(self.persist_directory, exist_ok=True)
-        self._client = chromadb.PersistentClient(
-            path=self.persist_directory,
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
-        self._collection = self._client.get_or_create_collection(
-            name=self.collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
-        self._initialized = True
-        logger.info(f"  [向量库] ChromaDB就绪: 集合={self.collection_name}, 文档数={self._collection.count()}")
 
-    async def add_question(self, question_id: str, content: str, metadata: Dict[str, Any]) -> bool:
-        await self.initialize()
+        self._status = VectorStoreStatus.INITIALIZING
+        logger.info("[向量库] 开始初始化...")
+
+        await self._init_embedder()
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                if not QDRANT_AVAILABLE:
+                    raise ImportError("qdrant-client 未安装")
+
+                self._client = QdrantClient(host=self.host, port=self.port)
+
+                collections = self._client.get_collections()
+                exists = any(
+                    c.name == self.collection_name for c in collections.collections
+                )
+
+                if not exists:
+                    self._create_collection()
+
+                collection_info = self._client.get_collection(self.collection_name)
+                logger.info(
+                    f"[向量库] Qdrant 就绪: collection={self.collection_name}, "
+                    f"points={collection_info.points_count}, "
+                    f"status={collection_info.status}"
+                )
+
+                self._status = VectorStoreStatus.READY
+                self._is_available = True
+                self._use_memory_fallback = False
+                self._last_availability_check = time.time()
+                return
+
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"[向量库] 初始化失败（第 {attempt + 1}/{self.max_retries} 次）: {e}"
+                )
+
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay)
+
+        logger.error(
+            f"[向量库] 初始化失败，已重试 {self.max_retries} 次，"
+            f"降级到内存模式: {last_error}"
+        )
+        logger.error(traceback.format_exc())
+
+        self._status = VectorStoreStatus.DEGRADED
+        self._is_available = False
+        self._use_memory_fallback = True
+
+    async def _init_embedder(self) -> None:
+        if not EMBEDDER_AVAILABLE:
+            logger.warning("[向量库] sentence-transformers 未安装，使用随机向量")
+            return
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _load_model():
+            return SentenceTransformer(self._embedder_model)
+
         try:
-            self._collection.add(
-                ids=[question_id],
-                documents=[content],
-                metadatas=[self._clean_metadata(metadata)],
-            )
-            return True
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                self._embedder = await asyncio.wait_for(
+                    loop.run_in_executor(executor, _load_model),
+                    timeout=30.0
+                )
+            logger.info(f"[向量库] Embedding 模型加载成功: {self._embedder_model}")
+        except asyncio.TimeoutError:
+            logger.warning("[向量库] Embedding 模型加载超时（30秒），降级到随机向量")
+            logger.warning("  提示：可设置 HF_ENDPOINT 环境变量使用国内镜像源")
+            self._embedder = None
         except Exception as e:
-            logger.error(f"  [向量库] 添加题目失败: id={question_id}, error={e}")
+            logger.warning(f"[向量库] Embedding 模型加载失败，降级到随机向量: {e}")
+            self._embedder = None
+
+    def _create_collection(self) -> None:
+        if not self._client:
+            return
+
+        vector_config = VectorParams(
+            size=self.vector_size,
+            distance=Distance.COSINE,
+        )
+
+        quantization_config = None
+        if self.use_quantization:
+            quantization_config = QuantizationConfig(
+                scalar=ScalarQuantization(
+                    type=ScalarType.INT8,
+                    quantile=0.99,
+                    always_ram=True,
+                )
+            )
+
+        self._client.recreate_collection(
+            collection_name=self.collection_name,
+            vectors_config=vector_config,
+            quantization_config=quantization_config,
+        )
+        logger.info(f"[向量库] Qdrant collection 创建: {self.collection_name}")
+
+    async def check_availability(self) -> bool:
+        now = time.time()
+        if now - self._last_availability_check < self.availability_check_interval:
+            return self._is_available
+
+        self._last_availability_check = now
+
+        if self._use_memory_fallback:
+            self._is_available = False
+            return False
+
+        try:
+            if self._client:
+                self._client.get_collections()
+                self._is_available = True
+                if self._status == VectorStoreStatus.DEGRADED:
+                    self._status = VectorStoreStatus.READY
+                    logger.info("[向量库] Qdrant 服务恢复，切回正常模式")
+            else:
+                self._is_available = False
+        except Exception as e:
+            logger.warning(f"[向量库] Qdrant 不可用: {e}")
+            self._is_available = False
+            if self._status == VectorStoreStatus.READY:
+                self._status = VectorStoreStatus.DEGRADED
+                logger.warning("[向量库] 降级到内存模式")
+
+        return self._is_available
+
+    def _generate_vector(self, text: str) -> List[float]:
+        if self._embedder is not None:
+            try:
+                return self._embedder.encode(text).tolist()
+            except Exception as e:
+                logger.error(f"[向量库] 向量生成失败: {e}")
+
+        import random
+
+        return [random.random() for _ in range(self.vector_size)]
+
+    @property
+    def status(self) -> VectorStoreStatus:
+        return self._status
+
+    @property
+    def is_available(self) -> bool:
+        return self._is_available
+
+    @property
+    def is_degraded(self) -> bool:
+        return self._use_memory_fallback
+
+    async def add_question(
+        self,
+        question_id: str,
+        content: str,
+        metadata: Dict[str, Any],
+        vector: Optional[List[float]] = None,
+    ) -> bool:
+        await self.initialize()
+
+        if vector is None:
+            vector = self._generate_vector(content)
+
+        if self._use_memory_fallback:
+            return self._memory_add(question_id, content, metadata, vector)
+
+        try:
+            payload = self._clean_metadata(metadata)
+            payload["question_id"] = question_id
+
+            point = PointStruct(
+                id=_to_qdrant_id(question_id),
+                vector=vector,
+                payload=payload,
+            )
+
+            self._client.upsert(
+                collection_name=self.collection_name,
+                points=[point],
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"[向量库] 添加题目失败: id={question_id}, error={e}\n"
+                f"{traceback.format_exc()}"
+            )
             return False
 
     async def add_questions_batch(
-        self, questions: List[Tuple[str, str, Dict[str, Any]]], batch_size: int = 100
+        self,
+        questions: List[Tuple[str, str, Dict[str, Any], Optional[List[float]]]],
+        batch_size: int = 100,
     ) -> int:
         await self.initialize()
         success = 0
+
         for i in range(0, len(questions), batch_size):
-            batch = questions[i:i + batch_size]
-            try:
-                self._collection.add(
-                    ids=[q[0] for q in batch],
-                    documents=[q[1] for q in batch],
-                    metadatas=[self._clean_metadata(q[2]) for q in batch],
+            batch = questions[i : i + batch_size]
+            points = []
+
+            for question_id, content, metadata, vector in batch:
+                if vector is None:
+                    vector = self._generate_vector(content)
+
+                if self._use_memory_fallback:
+                    if self._memory_add(question_id, content, metadata, vector):
+                        success += 1
+                    continue
+
+                payload = self._clean_metadata(metadata)
+                payload["question_id"] = question_id
+
+                points.append(
+                    PointStruct(
+                        id=_to_qdrant_id(question_id),
+                        vector=vector,
+                        payload=payload,
+                    )
                 )
-                success += len(batch)
-            except Exception as e:
-                logger.error(f"  [向量库] 批量添加失败: batch={i}, error={e}")
+
+            if points and not self._use_memory_fallback:
+                try:
+                    self._client.upsert(
+                        collection_name=self.collection_name,
+                        points=points,
+                    )
+                    success += len(batch)
+                except Exception as e:
+                    logger.error(
+                        f"[向量库] 批量添加失败: batch={i}, error={e}\n"
+                        f"{traceback.format_exc()}"
+                    )
+
         return success
 
     async def semantic_search(
-        self, query: str, n_results: int = 10, where: Optional[Dict[str, Any]] = None
+        self,
+        query_vector: List[float],
+        n_results: int = 10,
+        where: Optional[Dict[str, Any]] = None,
     ) -> List[VectorSearchResult]:
         await self.initialize()
+        await self.check_availability()
+
+        if self._use_memory_fallback:
+            return self._memory_search(query_vector, n_results, where)
+
         try:
-            results = self._collection.query(query_texts=[query], n_results=n_results, where=where)
-            return self._format_results(results)
+            filter_obj = self._build_filter(where)
+
+            response = self._client.query_points(
+                collection_name=self.collection_name,
+                query=query_vector,
+                limit=n_results,
+                query_filter=filter_obj,
+                with_payload=True,
+            )
+
+            return self._format_results(response.points)
+
         except Exception as e:
-            logger.error(f"  [向量库] 语义搜索失败: {e}")
+            logger.error(
+                f"[向量库] 语义搜索失败: {e}\n{traceback.format_exc()}"
+            )
             return []
 
     async def hybrid_search(
         self,
-        query: str,
+        query_vector: List[float],
+        query_text: str,
         category_filter: Optional[str] = None,
         difficulty_range: Optional[Tuple[int, int]] = None,
         n_results: int = 10,
         vector_weight: float = 0.7,
     ) -> List[VectorSearchResult]:
         await self.initialize()
-        # ChromaDB only supports: equality, $in, $and, $or, $not
-        # Does NOT support $gte/$lte — do post-filtering instead
+
         where_filter = {}
         if category_filter:
             where_filter["category"] = category_filter
+        if difficulty_range:
+            where_filter["difficulty"] = {
+                "gte": difficulty_range[0],
+                "lte": difficulty_range[1],
+            }
 
-        # Fetch more results than needed (for post-filtering)
-        fetch_count = n_results * 5 if difficulty_range else n_results * 3
         vector_results = await self.semantic_search(
-            query=query, n_results=fetch_count,
-            where=where_filter if where_filter else None,
+            query_vector=query_vector,
+            n_results=n_results * 2,
+            where=where_filter,
         )
+
         if not vector_results:
             return []
 
-        # Post-filter by difficulty range (ChromaDB doesn't support range queries in where clause)
-        if difficulty_range:
-            lo, hi = difficulty_range
-            vector_results = [
-                vr for vr in vector_results
-                if lo <= (vr.metadata.get("difficulty") or 3) <= hi
-            ]
+        keyword_scores = self._calculate_keyword_scores(query_text, vector_results)
 
-        keyword_scores = self._calculate_keyword_scores(query, vector_results)
         for vr in vector_results:
             kw_score = keyword_scores.get(vr.id, 0.0)
             vr.score = vector_weight * vr.score + (1 - vector_weight) * kw_score
+
         vector_results.sort(key=lambda x: x.score, reverse=True)
         return vector_results[:n_results]
 
     async def remove_question(self, question_id: str) -> bool:
         await self.initialize()
+
+        if self._use_memory_fallback:
+            if question_id in self._in_memory_points:
+                del self._in_memory_points[question_id]
+                return True
+            return False
+
         try:
-            self._collection.delete(ids=[question_id])
+            self._client.delete(
+                collection_name=self.collection_name,
+                points_selector=[_to_qdrant_id(question_id)],
+            )
             return True
         except Exception as e:
-            logger.error(f"  [向量库] 移除题目失败: {e}")
+            logger.error(
+                f"[向量库] 移除题目失败: {e}\n{traceback.format_exc()}"
+            )
             return False
 
     async def update_question(
-        self, question_id: str, content: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
+        self,
+        question_id: str,
+        content: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        vector: Optional[List[float]] = None,
     ) -> bool:
         await self.initialize()
+
+        if self._use_memory_fallback:
+            if question_id not in self._in_memory_points:
+                return False
+
+            existing = self._in_memory_points[question_id]
+            new_payload = self._clean_metadata(
+                metadata if metadata else existing.payload
+            )
+            new_vector = vector if vector else existing.vector
+
+            if new_vector is None and content:
+                new_vector = self._generate_vector(content)
+
+            self._in_memory_points[question_id] = PointStruct(
+                id=question_id,
+                vector=new_vector,
+                payload=new_payload,
+            )
+            return True
+
         try:
-            existing = self._collection.get(ids=[question_id])
-            if existing["ids"]:
-                current_content = existing["documents"][0] if existing["documents"] else ""
-                current_metadata = existing["metadatas"][0] if existing["metadatas"] else {}
-                self._collection.delete(ids=[question_id])
-                self._collection.add(
-                    ids=[question_id],
-                    documents=[content if content is not None else current_content],
-                    metadatas=[self._clean_metadata(metadata if metadata is not None else current_metadata)],
+            qid = _to_qdrant_id(question_id)
+            existing = self._client.retrieve(
+                collection_name=self.collection_name,
+                ids=[qid],
+            )
+
+            if existing:
+                current_payload = (
+                    existing[0].payload if existing[0].payload else {}
+                )
+                current_vector = (
+                    existing[0].vector if existing[0].vector else None
+                )
+
+                new_payload = self._clean_metadata(
+                    metadata if metadata else current_payload
+                )
+                new_payload["question_id"] = question_id
+                new_vector = vector if vector else current_vector
+
+                if new_vector is None and content:
+                    new_vector = self._generate_vector(content)
+
+                point = PointStruct(
+                    id=qid,
+                    vector=new_vector,
+                    payload=new_payload,
+                )
+
+                self._client.upsert(
+                    collection_name=self.collection_name,
+                    points=[point],
                 )
                 return True
+
             return False
+
         except Exception as e:
-            logger.error(f"  [向量库] 更新题目失败: {e}")
+            logger.error(
+                f"[向量库] 更新题目失败: {e}\n{traceback.format_exc()}"
+            )
             return False
 
     async def get_collection_stats(self) -> Dict[str, Any]:
         await self.initialize()
-        try:
-            count = self._collection.count()
-            all_metadatas = self._collection.get(limit=min(count, 1000))["metadatas"]
-            categories = {m["category"] for m in all_metadatas if m and "category" in m}
-            difficulties = {m["difficulty"] for m in all_metadatas if m and "difficulty" in m}
-            return {
-                "total_documents": count,
-                "categories": sorted(categories),
-                "difficulty_range": (min(difficulties) if difficulties else None, max(difficulties) if difficulties else None),
+
+        if self._use_memory_fallback:
+            points = list(self._in_memory_points.values())
+            categories = {
+                p.payload.get("category")
+                for p in points
+                if p.payload and "category" in p.payload
             }
+            difficulties = {
+                p.payload.get("difficulty")
+                for p in points
+                if p.payload and "difficulty" in p.payload
+            }
+
+            return {
+                "total_documents": len(points),
+                "categories": sorted(categories),
+                "difficulty_range": (
+                    min(difficulties) if difficulties else None,
+                    max(difficulties) if difficulties else None,
+                ),
+                "status": "degraded",
+                "mode": "memory",
+            }
+
+        try:
+            collection_info = self._client.get_collection(self.collection_name)
+
+            points = self._client.scroll(
+                collection_name=self.collection_name,
+                limit=min(collection_info.points_count, 1000),
+            )[0]
+
+            categories = {
+                p.payload.get("category")
+                for p in points
+                if p.payload and "category" in p.payload
+            }
+            difficulties = {
+                p.payload.get("difficulty")
+                for p in points
+                if p.payload and "difficulty" in p.payload
+            }
+
+            return {
+                "total_documents": collection_info.points_count,
+                "categories": sorted(categories),
+                "difficulty_range": (
+                    min(difficulties) if difficulties else None,
+                    max(difficulties) if difficulties else None,
+                ),
+                "status": collection_info.status,
+                "optimizer_status": collection_info.optimizer_status,
+                "mode": "qdrant",
+            }
+
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": str(e), "mode": "error"}
 
     async def get_all_ids(self) -> List[str]:
         await self.initialize()
-        count = self._collection.count()
-        if count == 0:
+
+        if self._use_memory_fallback:
+            return list(self._in_memory_points.keys())
+
+        try:
+            all_ids = []
+            offset = None
+
+            while True:
+                points, next_offset = self._client.scroll(
+                    collection_name=self.collection_name,
+                    limit=1000,
+                    offset=offset,
+                    with_payload=True,
+                )
+                for p in points:
+                    payload = p.payload if p.payload else {}
+                    qid = payload.get("question_id", str(p.id))
+                    all_ids.append(qid)
+
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+            return all_ids
+
+        except Exception as e:
+            logger.error(
+                f"[向量库] 获取所有ID失败: {e}\n{traceback.format_exc()}"
+            )
             return []
-        return self._collection.get(limit=count)["ids"]
+
+    def _memory_add(
+        self,
+        question_id: str,
+        content: str,
+        metadata: Dict[str, Any],
+        vector: List[float],
+    ) -> bool:
+        point = PointStruct(
+            id=question_id,
+            vector=vector,
+            payload=self._clean_metadata(metadata),
+        )
+        self._in_memory_points[question_id] = point
+        return True
+
+    def _memory_search(
+        self,
+        query_vector: List[float],
+        n_results: int,
+        where: Optional[Dict[str, Any]],
+    ) -> List[VectorSearchResult]:
+        candidates = []
+
+        for qid, point in self._in_memory_points.items():
+            if where and not self._memory_match_filter(point.payload, where):
+                continue
+
+            similarity = self._cosine_similarity(
+                query_vector, point.vector
+            )
+            candidates.append((qid, point, similarity))
+
+        candidates.sort(key=lambda x: x[2], reverse=True)
+        top_k = candidates[:n_results]
+
+        results = []
+        for qid, point, score in top_k:
+            results.append(
+                VectorSearchResult(
+                    id=str(qid),
+                    content=point.payload.get("content", "") if point.payload else "",
+                    metadata=point.payload if point.payload else {},
+                    score=score,
+                    distance=1.0 - score,
+                )
+            )
+
+        return results
+
+    def _memory_match_filter(
+        self, payload: Dict[str, Any], where: Dict[str, Any]
+    ) -> bool:
+        for key, value in where.items():
+            payload_value = payload.get(key)
+
+            if isinstance(value, dict):
+                if "gte" in value and payload_value < value["gte"]:
+                    return False
+                if "lte" in value and payload_value > value["lte"]:
+                    return False
+            else:
+                if payload_value != value:
+                    return False
+
+        return True
+
+    @staticmethod
+    def _cosine_similarity(v1: List[float], v2: List[float]) -> float:
+        dot_product = sum(a * b for a, b in zip(v1, v2))
+        norm1 = sum(a * a for a in v1) ** 0.5
+        norm2 = sum(b * b for b in v2) ** 0.5
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot_product / (norm1 * norm2)
+
+    def _build_filter(self, where: Optional[Dict[str, Any]]) -> Optional[Filter]:
+        if not where:
+            return None
+
+        if not QDRANT_AVAILABLE:
+            return None
+
+        conditions = []
+
+        for key, value in where.items():
+            if isinstance(value, dict):
+                if "gte" in value or "lte" in value:
+                    gte = value.get("gte")
+                    lte = value.get("lte")
+
+                    conditions.append(
+                        FieldCondition(
+                            key=key,
+                            range=Range(gte=gte, lte=lte),
+                        )
+                    )
+            else:
+                conditions.append(
+                    FieldCondition(
+                        key=key,
+                        match=MatchValue(value=value),
+                    )
+                )
+
+        return Filter(must=conditions) if conditions else None
 
     def _format_results(self, raw_results) -> List[VectorSearchResult]:
         results = []
-        if not raw_results or not raw_results["ids"]:
-            return results
-        for i in range(len(raw_results["ids"][0])):
-            results.append(VectorSearchResult(
-                id=raw_results["ids"][0][i],
-                content=raw_results["documents"][0][i] if raw_results["documents"] else "",
-                metadata=raw_results["metadatas"][0][i] if raw_results["metadatas"] else {},
-                score=1.0 - raw_results["distances"][0][i] if raw_results["distances"] else 0.0,
-                distance=raw_results["distances"][0][i] if raw_results["distances"] else 0.0,
-            ))
+        for r in raw_results:
+            payload = r.payload if r.payload else {}
+            question_id = payload.get("question_id", str(r.id))
+            results.append(
+                VectorSearchResult(
+                    id=question_id,
+                    content=payload.get("content", ""),
+                    metadata=payload,
+                    score=r.score,
+                    distance=1.0 - r.score,
+                )
+            )
         return results
 
-    def _calculate_keyword_scores(self, query: str, results: List[VectorSearchResult]) -> Dict[str, float]:
+    def _calculate_keyword_scores(
+        self, query: str, results: List[VectorSearchResult]
+    ) -> Dict[str, float]:
         import re
+
         query_lower = query.lower()
-        chinese_chars = set(re.findall(r'[\u4e00-\u9fff]+', query_lower))
-        english_words = set(re.findall(r'[a-z]+', query_lower))
+        chinese_chars = set(re.findall(r"[\u4e00-\u9fff]+", query_lower))
+        english_words = set(re.findall(r"[a-z]+", query_lower))
         keywords = chinese_chars | english_words
+
         if not keywords:
             return {}
+
         scores = {}
         for r in results:
             content_lower = r.content.lower()
             meta_str = json.dumps(r.metadata, ensure_ascii=False).lower()
-            match_count = sum(1 for kw in keywords if kw in content_lower or kw in meta_str)
+            match_count = sum(
+                1 for kw in keywords if kw in content_lower or kw in meta_str
+            )
             scores[r.id] = match_count / len(keywords)
+
         return scores
 
     @staticmethod
@@ -239,12 +781,15 @@ class VectorStoreManager:
         return cleaned
 
 
-_vector_store_instance: Optional[VectorStoreManager] = None
+_qdrant_vector_store_instance: Optional[QdrantVectorStoreManager] = None
 
 
-async def get_vector_store() -> VectorStoreManager:
-    global _vector_store_instance
-    if _vector_store_instance is None:
-        _vector_store_instance = VectorStoreManager()
-        await _vector_store_instance.initialize()
-    return _vector_store_instance
+async def get_vector_store() -> QdrantVectorStoreManager:
+    global _qdrant_vector_store_instance
+    if _qdrant_vector_store_instance is None:
+        _qdrant_vector_store_instance = QdrantVectorStoreManager()
+        await _qdrant_vector_store_instance.initialize()
+    return _qdrant_vector_store_instance
+
+
+VectorStoreManager = QdrantVectorStoreManager
