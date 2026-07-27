@@ -218,8 +218,7 @@ class TestRecentTrend:
     def estimator(self):
         return DifficultyEstimator()
 
-    @pytest.mark.asyncio
-    async def test_insufficient_data_returns_neutral(self, estimator):
+    def test_insufficient_data_returns_neutral(self, estimator):
         """数据不足时返回中性值 0.5"""
         skill_data = [
             {
@@ -227,16 +226,14 @@ class TestRecentTrend:
                 "evolution_history": [{"mastery": 0.7}],  # 只有1条记录
             }
         ]
-        result = await estimator._calculate_recent_trend(
-            user_id="test",
+        result = estimator._calculate_recent_trend(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,
         )
         assert result == 0.5
 
-    @pytest.mark.asyncio
-    async def test_rising_trend(self, estimator):
+    def test_rising_trend(self, estimator):
         """上升趋势返回高分"""
         skill_data = [
             {
@@ -248,16 +245,14 @@ class TestRecentTrend:
                 ],
             }
         ]
-        result = await estimator._calculate_recent_trend(
-            user_id="test",
+        result = estimator._calculate_recent_trend(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,
         )
         assert result > 0.5  # 上升趋势
 
-    @pytest.mark.asyncio
-    async def test_falling_trend(self, estimator):
+    def test_falling_trend(self, estimator):
         """下降趋势返回低分"""
         skill_data = [
             {
@@ -269,19 +264,16 @@ class TestRecentTrend:
                 ],
             }
         ]
-        result = await estimator._calculate_recent_trend(
-            user_id="test",
+        result = estimator._calculate_recent_trend(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,
         )
         assert result < 0.5  # 下降趋势
 
-    @pytest.mark.asyncio
-    async def test_no_skill_data_returns_neutral(self, estimator):
+    def test_no_skill_data_returns_neutral(self, estimator):
         """无 skill_data 时返回中性值"""
-        result = await estimator._calculate_recent_trend(
-            user_id="test",
+        result = estimator._calculate_recent_trend(
             category="calculus",
             sub_category="integration",
             skill_data=[],
@@ -296,18 +288,15 @@ class TestTimeFactor:
     def estimator(self):
         return DifficultyEstimator()
 
-    @pytest.mark.asyncio
-    async def test_no_data_returns_neutral(self, estimator):
-        result = await estimator._calculate_time_factor(
-            user_id="test",
+    def test_no_data_returns_neutral(self, estimator):
+        result = estimator._calculate_time_factor(
             category="calculus",
             sub_category="integration",
             skill_data=[],
         )
         assert result == 0.5
 
-    @pytest.mark.asyncio
-    async def test_recent_practice_high_score(self, estimator):
+    def test_recent_practice_high_score(self, estimator):
         """最近练习过 → 高分"""
         from datetime import datetime, timezone, timedelta
         recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
@@ -317,16 +306,14 @@ class TestTimeFactor:
                 "last_practiced": recent,
             }
         ]
-        result = await estimator._calculate_time_factor(
-            user_id="test",
+        result = estimator._calculate_time_factor(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,
         )
         assert result > 0.8  # 最近练习，遗忘因子高
 
-    @pytest.mark.asyncio
-    async def test_old_practice_low_score(self, estimator):
+    def test_old_practice_low_score(self, estimator):
         """很久没练习 → 低分"""
         from datetime import datetime, timezone, timedelta
         old = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
@@ -336,8 +323,7 @@ class TestTimeFactor:
                 "last_practiced": old,
             }
         ]
-        result = await estimator._calculate_time_factor(
-            user_id="test",
+        result = estimator._calculate_time_factor(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,
@@ -352,41 +338,36 @@ class TestCategoryMastery:
     def estimator(self):
         return DifficultyEstimator()
 
-    @pytest.mark.asyncio
-    async def test_no_sub_category_returns_default(self, estimator):
-        result = await estimator._get_category_mastery(
-            user_id="test",
+    def test_no_sub_category_returns_default(self, estimator):
+        result = estimator._get_category_mastery(
             category="calculus",
             sub_category="",
+            skill_data=[],
         )
         assert result == 0.5
 
-    @pytest.mark.asyncio
-    async def test_with_skill_data_finds_match(self, estimator):
+    def test_with_skill_data_finds_match(self, estimator):
         skill_data = [
             {
                 "skill_code": "calculus_integration",
                 "mastery_level": 0.75,
             }
         ]
-        result = await estimator._get_category_mastery(
-            user_id="test",
+        result = estimator._get_category_mastery(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,
         )
         assert result == 0.75
 
-    @pytest.mark.asyncio
-    async def test_with_skill_data_no_match(self, estimator):
+    def test_with_skill_data_no_match(self, estimator):
         skill_data = [
             {
                 "skill_code": "algebra_matrix",
                 "mastery_level": 0.9,
             }
         ]
-        result = await estimator._get_category_mastery(
-            user_id="test",
+        result = estimator._get_category_mastery(
             category="calculus",
             sub_category="integration",
             skill_data=skill_data,

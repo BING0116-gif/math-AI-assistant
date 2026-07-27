@@ -61,10 +61,11 @@ export function sendMultimodalRequest(message, imageData, sessionId, signal) {
   })
 }
 
-export function parseSSEStream(response, onData, onDone, onError) {
+export function parseSSEStream(response, onData, onDone, onError, onEvent) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let currentEvent = ''
 
   async function read() {
     try {
@@ -93,17 +94,35 @@ export function parseSSEStream(response, onData, onDone, onError) {
     }
   }
 
-  function processLine(line) {
-    const trimmed = line.trim()
-    if (!trimmed || !trimmed.startsWith('data: ')) return
+  function processLine(block) {
+    const trimmed = block.trim()
+    if (!trimmed) return
 
-    const data = trimmed.substring(6)
-    if (data === '[DONE]') {
+    // Reset event type for each block
+    let eventType = currentEvent || ''
+    currentEvent = ''
+
+    // Process each line in the block
+    const lines = trimmed.split('\n')
+    let dataLine = ''
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.substring(7).trim()
+      } else if (line.startsWith('data: ')) {
+        dataLine = line.substring(6)
+      }
+    }
+
+    if (!dataLine) return
+
+    if (dataLine === '[DONE]') {
       onDone()
       return
     }
+
     try {
-      const parsed = JSON.parse(data)
+      const parsed = JSON.parse(dataLine)
       if (parsed.type === 'done') {
         onDone()
         return
@@ -112,11 +131,15 @@ export function parseSSEStream(response, onData, onDone, onError) {
         onError(new Error(parsed.content || '服务器错误'))
         return
       }
+      if (eventType === 'follow_up' && typeof onEvent === 'function') {
+        onEvent(eventType, parsed)
+        return
+      }
       if (parsed.content !== undefined) {
         onData(parsed)
       }
     } catch (e) {
-      console.warn('SSE parse warning:', e.message, 'data:', data.substring(0, 100))
+      console.warn('SSE parse warning:', e.message, 'data:', dataLine.substring(0, 100))
     }
   }
 

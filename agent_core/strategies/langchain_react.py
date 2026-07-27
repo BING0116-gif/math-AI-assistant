@@ -145,10 +145,22 @@ class LangChainReActStrategy(AgentStrategy):
         session_id: str,
         context: Dict[str, Any],
     ) -> str:
+        start_time = time.time()
         chunks = []
         async for chunk in self.stream(user_input, session_id, context):
             chunks.append(chunk)
-        return "".join(chunks)
+        full_answer = "".join(chunks)
+
+        # [P0-01] 自动记忆提取与持久化
+        await self._auto_persist_memory(
+            context=context,
+            user_input=user_input,
+            full_answer=full_answer,
+            session_id=session_id,
+            execution_time=time.time() - start_time,
+        )
+
+        return full_answer
 
     async def stream(
         self,
@@ -230,6 +242,15 @@ class LangChainReActStrategy(AgentStrategy):
                 f"tokens={token_count}, yields={yield_count}"
             )
 
+            # [P0-01] 自动记忆提取与持久化（流式模式）
+            await self._auto_persist_memory(
+                context=context,
+                user_input=user_input,
+                full_answer=_complete,
+                session_id=session_id,
+                execution_time=0.0,  # 流式模式下不提供精确执行时间
+            )
+
         except asyncio.TimeoutError:
             logger.error(f"[STREAM] Agent执行超时 ({self._timeout_seconds}s)")
             yield "\n\n**【⏰ 执行超时】** 请简化问题后重试"
@@ -255,6 +276,52 @@ class LangChainReActStrategy(AgentStrategy):
                 messages.append(AIMessage(content=content))
 
         return messages
+
+    # ── P0-01: 自动记忆提取与持久化 ──
+
+    async def _auto_persist_memory(
+        self,
+        context: Dict[str, Any],
+        user_input: str,
+        full_answer: str,
+        session_id: str,
+        execution_time: float,
+    ) -> None:
+        """自动提取并持久化学习记忆（失败不影响主流程）。"""
+        try:
+            from agent_core.memory_extractor import get_memory_extractor
+            from agent_core.memory_persistence import MemoryPersistenceFacade
+
+            # 获取思维链记录
+            recorder = self._get_recorder(session_id)
+            thoughts = []
+            if recorder._history:
+                last_process = recorder._history[-1]
+                thoughts = [s.to_dict() for s in last_process.steps]
+
+            extractor = get_memory_extractor()
+            event = await extractor.extract_from_agent_result(
+                user_id=context.get("user_id", "anonymous"),
+                user_input=user_input,
+                agent_result={
+                    "answer": full_answer,
+                    "thoughts": thoughts,
+                    "metadata": context.get("metadata", {}),
+                },
+                execution_time=execution_time,
+            )
+            if event:
+                facade = MemoryPersistenceFacade()
+                await facade.record_event(
+                    user_id=context.get("user_id", "anonymous"),
+                    event_data=event.to_dict(),
+                )
+                logger.info(
+                    f"学习记忆自动持久化: user={context.get('user_id')} "
+                    f"category={event.category}"
+                )
+        except Exception as e:
+            logger.error(f"自动持久化异常（已忽略）: {e}")
 
     def get_thought_recorder(self, session_id: str) -> ThoughtRecordingCallbackHandler:
         return self._get_recorder(session_id)

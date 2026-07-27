@@ -276,14 +276,12 @@ class TestDifficultyEstimatorBatch:
 class TestDifficultyEstimatorRecentTrend:
     """测试近期趋势计算"""
 
-    @pytest.mark.asyncio
-    async def test_no_history_returns_neutral(self):
+    def test_no_history_returns_neutral(self):
         est = DifficultyEstimator()
-        score = await est._calculate_recent_trend("u1", "代数", "方程")
+        score = est._calculate_recent_trend("代数", "方程")
         assert score == 0.5
 
-    @pytest.mark.asyncio
-    async def test_insufficient_data_returns_neutral(self):
+    def test_insufficient_data_returns_neutral(self):
         est = DifficultyEstimator()
         skill_data = [{
             "skill_code": "代数_方程",
@@ -291,13 +289,12 @@ class TestDifficultyEstimatorRecentTrend:
                 {"mastery": 0.5, "date": "2026-01-01"},
             ],
         }]
-        score = await est._calculate_recent_trend(
-            "u1", "代数", "方程", skill_data=skill_data
+        score = est._calculate_recent_trend(
+            "代数", "方程", skill_data=skill_data
         )
         assert score == 0.5
 
-    @pytest.mark.asyncio
-    async def test_upward_trend_high_score(self):
+    def test_upward_trend_high_score(self):
         """上升趋势应接近 1.0"""
         est = DifficultyEstimator()
         skill_data = [{
@@ -309,13 +306,12 @@ class TestDifficultyEstimatorRecentTrend:
                 {"mastery": 0.9, "date": "2026-02-15"},
             ],
         }]
-        score = await est._calculate_recent_trend(
-            "u1", "代数", "方程", skill_data=skill_data
+        score = est._calculate_recent_trend(
+            "代数", "方程", skill_data=skill_data
         )
         assert score >= 0.5
 
-    @pytest.mark.asyncio
-    async def test_downward_trend_low_score(self):
+    def test_downward_trend_low_score(self):
         """下降趋势应接近 0.0"""
         est = DifficultyEstimator()
         skill_data = [{
@@ -327,8 +323,8 @@ class TestDifficultyEstimatorRecentTrend:
                 {"mastery": 0.2, "date": "2026-02-15"},
             ],
         }]
-        score = await est._calculate_recent_trend(
-            "u1", "代数", "方程", skill_data=skill_data
+        score = est._calculate_recent_trend(
+            "代数", "方程", skill_data=skill_data
         )
         assert score <= 0.5
 
@@ -336,14 +332,12 @@ class TestDifficultyEstimatorRecentTrend:
 class TestDifficultyEstimatorTimeFactor:
     """测试遗忘因子计算"""
 
-    @pytest.mark.asyncio
-    async def test_no_data_returns_neutral(self):
+    def test_no_data_returns_neutral(self):
         est = DifficultyEstimator()
-        factor = await est._calculate_time_factor("u1", "代数", "方程")
+        factor = est._calculate_time_factor("代数", "方程")
         assert factor == 0.5
 
-    @pytest.mark.asyncio
-    async def test_very_recent_high_factor(self):
+    def test_very_recent_high_factor(self):
         """最近练习过的应接近 1.0"""
         est = DifficultyEstimator()
         yesterday = datetime.now(timezone.utc) - timedelta(days=1)
@@ -351,13 +345,12 @@ class TestDifficultyEstimatorTimeFactor:
             "skill_code": "代数_方程",
             "last_practiced": yesterday.isoformat(),
         }]
-        factor = await est._calculate_time_factor(
-            "u1", "代数", "方程", skill_data=skill_data
+        factor = est._calculate_time_factor(
+            "代数", "方程", skill_data=skill_data
         )
         assert factor > 0.7
 
-    @pytest.mark.asyncio
-    async def test_long_ago_low_factor(self):
+    def test_long_ago_low_factor(self):
         """很久没练习的应接近 0.0"""
         est = DifficultyEstimator()
         long_ago = datetime.now(timezone.utc) - timedelta(days=90)
@@ -365,13 +358,12 @@ class TestDifficultyEstimatorTimeFactor:
             "skill_code": "代数_方程",
             "last_practiced": long_ago.isoformat(),
         }]
-        factor = await est._calculate_time_factor(
-            "u1", "代数", "方程", skill_data=skill_data
+        factor = est._calculate_time_factor(
+            "代数", "方程", skill_data=skill_data
         )
         assert factor < 0.5
 
-    @pytest.mark.asyncio
-    async def test_time_factor_exponential_decay(self):
+    def test_time_factor_exponential_decay(self):
         """验证指数衰减曲线"""
         est = DifficultyEstimator()
         for days in [1, 7, 14, 30, 60]:
@@ -380,11 +372,10 @@ class TestDifficultyEstimatorTimeFactor:
                 "skill_code": "代数_方程",
                 "last_practiced": then.isoformat(),
             }]
-            factor = await est._calculate_time_factor(
-                "u1", "代数", "方程", skill_data=skill_data
+            factor = est._calculate_time_factor(
+                "代数", "方程", skill_data=skill_data
             )
             assert 0.0 <= factor <= 1.0
-            # 更近的练习应产生更高的因子
             if days < 14:
                 assert factor > 0.3, f"days={days} factor={factor}"
 
@@ -411,10 +402,9 @@ class TestDifficultyEstimatorUpdateWeights:
 class TestDifficultyEstimatorDifficultyBonus:
     """测试难度奖励因子"""
 
-    @pytest.mark.asyncio
-    async def test_no_sub_category_returns_default(self):
+    def test_no_sub_category_returns_default(self):
         est = DifficultyEstimator(skill_aggregator=MagicMock())
-        bonus = await est._calculate_difficulty_bonus("u1", "代数", "")
+        bonus = est._calculate_difficulty_bonus("代数", "")
         assert bonus == 0.5
 
 

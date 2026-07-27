@@ -126,9 +126,16 @@ class MemoryPersistenceFacade:
         if RECALC_TRIGGER["flush_callback"]:
             self._event_buffer.on_flush(self._on_buffer_flush)
 
+        # ─ P0-02：批量写入队列 + 失败重试 ──
+        self._batch_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._batch_worker_task: Optional[asyncio.Task] = None
+        self._batch_size = 10  # 每10条刷新
+        self._flush_interval = 5.0  # 每5秒刷新
+        # 不在 __init__ 中启动 worker（可能无运行中的事件循环），改为懒加载
+
         logger.info(
             "MemoryPersistenceFacade 初始化完成 "
-            "(含 SkillAggregator + DifficultyEstimator + EventBuffer)"
+            "(含 SkillAggregator + DifficultyEstimator + EventBuffer + BatchWriter)"
         )
 
     LEARNING_RECORD_FIELDS = {
@@ -158,13 +165,21 @@ class MemoryPersistenceFacade:
             existing_meta.update(extra_fields)
             event_data["metadata_"] = existing_meta
 
-        result = await self._long_term.record_learning_event(event_data)
+        # [P0-02] 懒启动批量写入worker（首次调用时才启动，确保有事件循环）
+        self._ensure_batch_worker_started()
 
-        # ── P2：记录成功后，自动触发技能重计算检查 ──
-        if result and user_id:
-            await self._maybe_trigger_recalc(user_id)
-
-        return result
+        # [P0-02] 使用批量写入队列（非阻塞，加入队列即返回）
+        try:
+            await asyncio.wait_for(
+                self._batch_queue.put(event_data), timeout=1.0
+            )
+            # ── P2：记录加入队列后，自动触发技能重计算检查 ──
+            if user_id:
+                asyncio.ensure_future(self._maybe_trigger_recalc(user_id))
+            return True
+        except asyncio.TimeoutError:
+            logger.error("批量队列已满，事件丢弃")
+            return False
 
     async def retrieve_context(
         self,
@@ -279,6 +294,79 @@ class MemoryPersistenceFacade:
             sub_category=sub_category,
             context=context,
         )
+
+    # ── P0-02: 批量写入队列 + 失败重试 ──
+
+    def _ensure_batch_worker_started(self) -> None:
+        """懒启动批量写入worker（首次调用时启动，确保有事件循环）。"""
+        if self._batch_worker_task is None or self._batch_worker_task.done():
+            try:
+                self._batch_worker_task = asyncio.create_task(self._batch_worker())
+                logger.debug("批量写入worker已懒启动")
+            except RuntimeError:
+                # 无运行中的事件循环，跳过（非关键路径）
+                logger.debug("批量写入worker跳过启动（无事件循环）")
+
+    def _start_batch_worker(self) -> None:
+        """启动后台批量写入worker（供显式调用）。"""
+        self._ensure_batch_worker_started()
+
+    async def _batch_worker(self) -> None:
+        """后台worker：批量写入，每10条或5秒刷新一次。"""
+        batch = []
+        last_flush = time.time()
+        while True:
+            try:
+                try:
+                    event = await asyncio.wait_for(
+                        self._batch_queue.get(), timeout=1.0
+                    )
+                    batch.append(event)
+                except asyncio.TimeoutError:
+                    pass
+
+                now = time.time()
+                should_flush = (
+                    len(batch) >= self._batch_size
+                    or (batch and now - last_flush >= self._flush_interval)
+                )
+                if should_flush and batch:
+                    await self._flush_batch(batch)
+                    batch = []
+                    last_flush = now
+            except Exception as e:
+                logger.error(f"批量写入worker异常: {e}")
+                await asyncio.sleep(1.0)
+
+    async def _flush_batch(self, batch: List[Dict]) -> None:
+        """刷新批量数据到数据库。"""
+        from app.data.models import LearningRecord
+
+        try:
+            async with self._session_factory() as db:
+                for data in batch:
+                    record = LearningRecord(**{
+                        k: v for k, v in data.items()
+                        if k in LearningRecord.__table__.columns
+                    })
+                    db.add(record)
+                await db.commit()
+                logger.info(f"批量写入成功: {len(batch)}条")
+        except Exception as e:
+            logger.error(f"批量写入失败: {e}")
+            await self._retry_flush(batch)
+
+    async def _retry_flush(self, batch: List[Dict], max_retries: int = 3) -> None:
+        """指数退避重试。"""
+        for attempt in range(max_retries):
+            try:
+                await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
+                await self._flush_batch(batch)
+                logger.info(f"重试成功: attempt={attempt+1}")
+                return
+            except Exception:
+                logger.warning(f"重试失败: attempt={attempt+1}")
+        logger.error(f"批量写入最终失败（重试{max_retries}次），共{len(batch)}条事件丢弃")
 
     # ── P2: 自动技能重计算机制 ──
 

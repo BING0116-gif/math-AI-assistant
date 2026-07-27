@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/data", tags=["数据管理"])
 @router.get("/export")
 async def export_user_data(
     http_request: Request,
-    export_format: str = Query("json", regex="^(json|csv)$"),
+    export_format: str = Query("json", pattern="^(json|csv)$"),
 ):
     user_id = getattr(http_request.state, "user_id", None)
     if not user_id:

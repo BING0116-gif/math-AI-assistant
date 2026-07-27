@@ -1,35 +1,32 @@
 -- ============================================================
--- A03 用户技能熟练度表
--- 必须在启动任何 T1-T8 开发前执行
+-- A03 用户技能熟练度表 (SQLite 兼容版)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS user_skills (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id VARCHAR(36) NOT NULL,
     skill_code VARCHAR(50) NOT NULL,
 
     display_name VARCHAR(100),
     category_path VARCHAR(200),
 
-    mastery_level FLOAT NOT NULL DEFAULT 0.0
-        CHECK (mastery_level >= 0.0 AND mastery_level <= 1.0),
+    mastery_level REAL NOT NULL DEFAULT 0.0,
 
-    status VARCHAR(20) NOT NULL DEFAULT 'novice'
-        CHECK (status IN ('novice', 'learning', 'proficient', 'mastered')),
+    status VARCHAR(20) NOT NULL DEFAULT 'novice',
 
-    total_attempts INT NOT NULL DEFAULT 0,
-    correct_count INT NOT NULL DEFAULT 0,
-    recent_streak INT NOT NULL DEFAULT 0,
-    best_streak INT NOT NULL DEFAULT 0,
+    total_attempts INTEGER NOT NULL DEFAULT 0,
+    correct_count INTEGER NOT NULL DEFAULT 0,
+    recent_streak INTEGER NOT NULL DEFAULT 0,
+    best_streak INTEGER NOT NULL DEFAULT 0,
 
-    first_seen_at TIMESTAMPTZ,
-    last_practiced_at TIMESTAMPTZ,
-    mastered_at TIMESTAMPTZ,
+    first_seen_at DATETIME,
+    last_practiced_at DATETIME,
+    mastered_at DATETIME,
 
-    evolution_history JSONB NOT NULL DEFAULT '[]',
+    evolution_history TEXT NOT NULL DEFAULT '[]',
 
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at DATETIME DEFAULT (DATETIME('now')),
+    updated_at DATETIME DEFAULT (DATETIME('now')),
 
     UNIQUE (user_id, skill_code)
 );

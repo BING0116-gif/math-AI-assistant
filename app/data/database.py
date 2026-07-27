@@ -68,6 +68,7 @@ async def init_db() -> None:
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA foreign_keys=OFF")
             cursor.close()
 
     async_session_factory = async_sessionmaker(
@@ -79,23 +80,41 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    try:
-        import os as _os
-        migration_path = _os.path.join(
-            _os.path.dirname(__file__), "migrations", "003_add_user_skills.sql"
-        )
-        if _os.path.exists(migration_path):
-            with open(migration_path, "r", encoding="utf-8") as f:
-                migration_sql = f.read()
-            async with engine.begin() as conn:
-                await conn.run_sync(
-                    lambda sync_conn: sync_conn.execute(
-                        __import__("sqlalchemy").text(migration_sql)
+    # 顺序执行所有 SQL 迁移脚本
+    _migration_files = [
+        "003_add_user_skills.sql",
+        "004_add_migration_status.sql",
+        "005_create_memory_tables.sql",
+    ]
+    for mfile in _migration_files:
+        try:
+            import os as _os
+            migration_path = _os.path.join(
+                _os.path.dirname(__file__), "migrations", mfile
+            )
+            if _os.path.exists(migration_path):
+                with open(migration_path, "r", encoding="utf-8") as f:
+                    migration_sql = f.read()
+                # 使用 sqlite3 模块直接执行迁移 SQL
+                try:
+                    import sqlite3 as _sqlite3
+                    import os as _os2
+                    _db_path = _os2.path.abspath(
+                        _os2.path.join(
+                            _os2.path.dirname(__file__), "..", "..", "data", "math_ai.db"
+                        )
                     )
-                )
-        logger.info("A03 user_skills 表迁移检查完成")
-    except Exception as e:
-        logger.warning(f"A03 迁移执行异常（表可能已存在）: {e}")
+                    _sqlite_conn = _sqlite3.connect(_db_path)
+                    _sqlite_conn.executescript(migration_sql)
+                    _sqlite_conn.close()
+                    logger.info(f"  迁移 SQL 已执行至 {_db_path}")
+                except Exception as _stmt_err:
+                    logger.warning(f"  迁移失败: {_stmt_err}")
+                logger.info(f"迁移 {mfile} 执行完成")
+            else:
+                logger.warning(f"迁移文件 {mfile} 不存在，跳过")
+        except Exception as e:
+            logger.warning(f"迁移 {mfile} 执行异常（表可能已存在）: {e}")
 
     logger.info(f"数据库初始化完成: {db_url.split('@')[-1] if '@' in db_url else db_url}")
 

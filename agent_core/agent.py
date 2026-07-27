@@ -587,6 +587,123 @@ class MathAgent:
 
         return result
 
+    async def solve(
+        self,
+        input_text: str,
+        user_id: str = "anonymous",
+        session_id: str = "default",
+        images: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """执行解题并自动追加跟进推荐（P0-03）。
+
+        Args:
+            input_text: 用户输入文本
+            user_id: 用户ID
+            session_id: 会话ID
+            images: 图片路径列表（暂未使用）
+
+        Returns:
+            Dict: {
+                "answer": str,          # 最终答案
+                "thoughts": list,       # 思维链记录
+                "metadata": dict,       # 元数据
+                "execution_time": float,# 执行耗时（秒）
+                "follow_up": str,       # 跟进推荐内容（可选）
+            }
+        """
+        start_time = time.time()
+
+        # Step 1: 执行推理
+        sid = session_id or self._default_session_id
+        history = self._get_session_history(sid)
+        history.add_user_message(input_text)
+
+        context = await self._build_context(sid, user_input=input_text, user_id=user_id)
+        strategy = await self._select_strategy(input_text, sid)
+        result_text = await strategy.execute(input_text, sid, context)
+
+        history.add_ai_message(result_text)
+
+        # 获取思维链记录
+        thoughts = []
+        try:
+            recorder = strategy.get_thought_recorder(sid)
+            if recorder._history:
+                last_process = recorder._history[-1]
+                thoughts = [s.to_dict() for s in last_process.steps]
+        except Exception:
+            pass
+
+        # Step 2: 跟进推荐
+        follow_up_text = ""
+        if self._should_recommend(input_text, result_text):
+            follow_up_text = await self._generate_follow_up(
+                user_input=input_text, user_id=user_id,
+            )
+
+        # Step 3: 构建响应
+        response = {
+            "answer": result_text,
+            "thoughts": thoughts,
+            "metadata": {
+                "strategy": type(strategy).__name__,
+                "model": self._model,
+                "session_id": sid,
+                "user_id": user_id,
+            },
+            "execution_time": time.time() - start_time,
+        }
+        if follow_up_text:
+            response["follow_up"] = follow_up_text
+            response["answer"] += "\n" + follow_up_text
+
+        # 行为追踪
+        if self._persistence_facade:
+            effective_user_id = user_id or session_id or "anonymous"
+            try:
+                tracked = self._behavior_tracker.track(
+                    user_id=effective_user_id,
+                    raw_input=input_text,
+                    source="chat",
+                    metadata={
+                        "response_length": len(result_text),
+                        "strategy": type(strategy).__name__,
+                        "mode": "solve",
+                    },
+                )
+                await self._persistence_facade.record_event(
+                    user_id=effective_user_id, event_data=tracked
+                )
+            except Exception as e:
+                logger.warning(f"行为追踪记录失败（非致命）: {e}")
+
+        return response
+
+    def _should_recommend(self, input_text: str, result_text: str) -> bool:
+        """判断是否触发跟进推荐。"""
+        from app.services.follow_up_recommender import is_math_problem
+        if not is_math_problem(input_text):
+            return False
+        if not result_text or len(result_text.strip()) < 10:
+            return False
+        return True
+
+    async def _generate_follow_up(self, user_input: str, user_id: str) -> str:
+        """生成跟进推荐内容（失败返回空字符串）。"""
+        try:
+            from app.services.follow_up_recommender import (
+                get_follow_up_recommender, format_follow_up_text,
+            )
+            recommender = get_follow_up_recommender()
+            result = await recommender.recommend(
+                user_input=user_input, user_id=user_id,
+            )
+            if result.questions:
+                return format_follow_up_text(result)
+        except Exception as e:
+            logger.warning(f"跟进推荐失败（已忽略）: {e}")
+        return ""
+
     async def stream(
         self,
         user_input: str,
@@ -655,6 +772,9 @@ class MathAgent:
                 logger.info(f"[FOLLOW_UP] 非解题类问题，跳过推荐")
         except Exception as e:
             logger.warning(f"[FOLLOW_UP] 跟进推荐失败（非致命）: {e}")
+
+        # [P0-03] 存储跟进推荐文本，供 SSE follow_up 事件使用
+        self._follow_up_text = follow_up_text
 
         history.add_ai_message(full_response)
 

@@ -32,6 +32,11 @@ from app.api.recommendation_api import router as recommendation_router
 from app.api.chat_api import router as chat_router
 from app.api.error_api import router as error_router
 from app.api.agent_api import router as agent_router
+from app.api.memory_internal_api import router as memory_internal_router
+from app.api.events_api import router as events_router
+from app.api.dev_mock_api import router as dev_mock_router
+from app.api.admin_memory_api import router as admin_memory_router
+from app.api.memory_dashboard import router as dashboard_router
 
 # 核心组件
 from tools import get_registry
@@ -71,6 +76,11 @@ app.include_router(recommendation_router)
 app.include_router(chat_router)
 app.include_router(error_router)
 app.include_router(agent_router)
+app.include_router(memory_internal_router)
+app.include_router(events_router)
+app.include_router(dev_mock_router)
+app.include_router(admin_memory_router)
+app.include_router(dashboard_router)
 
 # ============================================================================
 # 核心组件初始化
@@ -107,6 +117,15 @@ agent = MathAgent(
 
 error_book_manager = ErrorBookManager()
 init_default_admin(settings.JWT_SECRET_KEY)
+
+# 启动记忆系统定时任务
+try:
+    from app.tasks.scheduled_tasks import get_scheduled_tasks
+    scheduled_tasks = get_scheduled_tasks()
+    scheduled_tasks.start_scheduler()
+    logger.info("[记忆系统] 定时任务已启动")
+except Exception as e:
+    logger.warning(f"[记忆系统] 定时任务启动失败（非关键错误）: {e}")
 
 # ============================================================================
 # 异常处理
@@ -181,6 +200,12 @@ if __name__ == "__main__":
     print("[安全] 速率限制: {}次/分钟".format(settings.RATE_LIMIT_PER_MINUTE))
     print("\n[扩展] 插件系统: 就绪")
     print("[扩展] 数据迁移工具: python -m app.data.migrations")
+    print("\n[记忆系统] 记忆存储层: 就绪")
+    print("[记忆系统] 记忆检索引擎: 就绪")
+    print("[记忆系统] 用户画像系统: 就绪")
+    print("[记忆系统] 定时任务: 已启动")
+    print("[记忆系统] Mock测试接口: 已启用")
+    print(f"[记忆系统] 出题系统适配模式: {settings.QUESTION_SYSTEM_MODE}")
 
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

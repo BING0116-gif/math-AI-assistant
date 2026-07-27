@@ -98,3 +98,31 @@ def verify_resource_ownership(
     user_id = getattr(user, "id", None) or getattr(user, "user_id", None)
     if not check_data_ownership(str(user_id), resource_owner_id):
         raise HTTPException(status_code=403, detail="无权访问该资源")
+
+
+def require_admin_role(request: Request) -> None:
+    """要求管理员角色，否则抛出 403。"""
+    user = getattr(request.state, "current_user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="未认证")
+    user_role = getattr(user, "role", "student")
+    if not is_admin(user_role):
+        raise HTTPException(status_code=403, detail="权限不足: 需要管理员角色")
+
+
+def require_internal_auth(request: Request) -> None:
+    """内部接口鉴权，验证内网密钥。
+
+    开发模式下跳过校验，生产环境必须配置 API Key。
+    """
+    from app.config.settings import settings
+
+    # 开发模式跳过校验
+    if settings.DEBUG:
+        return
+
+    # 检查 X-Internal-Key 头
+    internal_key = request.headers.get("X-Internal-Key", "")
+    expected_key = settings.QUESTION_SYSTEM_API_KEY or "math-ai-internal-key"
+    if internal_key != expected_key:
+        raise HTTPException(status_code=403, detail="内部接口鉴权失败")

@@ -37,6 +37,15 @@ async def stream_agent_response(
                 except (TypeError, ValueError) as json_error:
                     yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
 
+        # [P0-03] 流式推送 follow_up 事件（推荐内容）
+        follow_up = getattr(agent, '_follow_up_text', None)
+        if follow_up:
+            yield (
+                f"event: follow_up\ndata: "
+                f"{json.dumps({'type': 'recommendation', 'content': follow_up})}\n\n"
+            )
+            logger.info(f"[SSE] follow_up事件已推送 | session={session_id}")
+
         logger.info(f"[SSE] 流式响应完成: session={session_id}, total_chunks={chunk_idx}")
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
 

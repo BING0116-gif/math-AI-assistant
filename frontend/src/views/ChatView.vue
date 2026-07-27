@@ -24,6 +24,11 @@
             @skip-error-book="handleSkip"
           />
         </TransitionGroup>
+        <FollowUpRecommendation
+          v-if="followUpQuestions.length > 0"
+          :questions="followUpQuestions"
+          @select="handleFollowUpSelect"
+        />
         <div v-if="streaming && streamingCharCount === 0" class="loading-indicator">
           <span class="dot"></span><span class="dot"></span><span class="dot"></span>
           <span class="loading-text">思考中...</span>
@@ -85,6 +90,7 @@ import { ElMessage } from 'element-plus'
 import LayoutDefault from '@/components/layout/LayoutDefault.vue'
 import MessageItem from '@/components/chat/MessageItem.vue'
 import InputArea from '@/components/chat/InputArea.vue'
+import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { sendChatMessage, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
@@ -101,6 +107,7 @@ const streamingMessageId = ref(null)
 const streamingCharCount = ref(0)
 const abortController = ref(null)
 const reasonInput = ref(null)
+const followUpQuestions = ref([])
 
 const showErrorModal = ref(false)
 const errorForm = reactive({
@@ -164,7 +171,7 @@ function containsNewMathContent(text, fromIndex) {
 }
 
 function processTyping(msgId) {
-  const el = document.getElementById(`msg-${msgId}`)
+  const el = document.getElementById('msg-' + msgId)
   if (!el || typingBuffer.length === 0) {
     if (!streaming.value || typingBuffer.length === 0) {
       isTyping = false
@@ -192,8 +199,6 @@ function processTyping(msgId) {
       if (contentDiv) {
         const display = formatStreamText(rawContentBuffer)
         contentDiv.innerHTML = display
-        // 公式已由 markdown.js 中的 @mdit/plugin-katex 在 formatStreamText 中完成渲染
-        // 无需再调用 renderMathInElement
         lastRenderedLength = rawContentBuffer.length
       }
       renderRafId = null
@@ -210,8 +215,64 @@ function processTyping(msgId) {
   }
 }
 
+// SSE follow_up 事件处理
+function handleEvent(eventType, data) {
+  if (eventType === 'follow_up' && data.type === 'recommendation') {
+    const content = data.content || ''
+    const questions = parseFollowUpContent(content)
+    if (questions.length > 0) {
+      followUpQuestions.value = questions
+      nextTick(() => scrollToBottom())
+    }
+  }
+}
+
+function parseFollowUpContent(content) {
+  if (!content) return []
+  const questions = []
+  const parts = content.split(/###\s+\d+\.\s+/)
+  for (let i = 1; i < parts.length; i++) {
+    const part = parts[i].trim()
+    if (!part) continue
+
+    const titleMatch = part.match(/^(.+?)(?:\n|$)/)
+    const title = titleMatch ? titleMatch[1].trim() : ''
+
+    const diffMatch = title.match(/难度\s*(\d+)\/5/)
+    const difficulty = diffMatch ? parseInt(diffMatch[1]) : 3
+
+    const answerMatch = part.match(/\*\*答案\*\*[：:]?\s*([\s\S]*?)$/)
+    const answer = answerMatch ? answerMatch[1].trim() : ''
+
+    let contentText = part
+    if (titleMatch) {
+      contentText = contentText.substring(titleMatch[0].length).trim()
+    }
+    if (answerMatch) {
+      contentText = contentText.substring(0, contentText.lastIndexOf('**答案**')).trim()
+    }
+
+    questions.push({
+      id: 'follow-up-' + i,
+      content: contentText,
+      answer: answer,
+      difficulty: difficulty,
+    })
+  }
+  return questions
+}
+
+function handleFollowUpSelect(question) {
+  if (question && question.content) {
+    followUpQuestions.value = []
+    handleTextSend(question.content)
+  }
+}
+
 async function handleMultimodalSend(text, imageData) {
   if (streaming.value) return
+
+  followUpQuestions.value = []
 
   const chatId = store.currentChatId
 
@@ -246,7 +307,7 @@ async function handleMultimodalSend(text, imageData) {
   try {
     const response = await sendMultimodalRequest(userMessageContent, imageData, chatId, abortController.value.signal)
 
-    if (response.status < 200 || response.status >= 300) throw new Error(`多模态请求失败 (${response.status})`)
+    if (response.status < 200 || response.status >= 300) throw new Error('多模态请求失败 (' + response.status + ')')
 
     const handleData = (data) => {
       if (data.type === 'content' && data.content) {
@@ -270,7 +331,6 @@ async function handleMultimodalSend(text, imageData) {
       })
 
       nextTick(() => {
-        // 公式已由 formatStreamText / renderMarkdown 在渲染阶段完成
         scrollToBottom()
       })
     }
@@ -284,7 +344,7 @@ async function handleMultimodalSend(text, imageData) {
       })
     }
 
-    await parseSSEStream(response, handleData, handleDone, handleError)
+    await parseSSEStream(response, handleData, handleDone, handleError, handleEvent)
   } catch (err) {
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
@@ -299,6 +359,8 @@ async function handleMultimodalSend(text, imageData) {
 
 async function handleTextSend(text) {
   if (!text || streaming.value) return
+
+  followUpQuestions.value = []
 
   const chatId = store.currentChatId
   store.addMessage(chatId, { content: text, sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
@@ -326,7 +388,7 @@ async function handleTextSend(text) {
   try {
     const response = await sendChatMessage(text, chatId, abortController.value.signal)
 
-    if (response.status < 200 || response.status >= 300) throw new Error(`API请求失败 (${response.status})`)
+    if (response.status < 200 || response.status >= 300) throw new Error('API请求失败 (' + response.status + ')')
 
     const handleData = (data) => {
       if (data.type === 'content' && data.content) {
@@ -349,7 +411,6 @@ async function handleTextSend(text) {
       })
 
       nextTick(() => {
-        // 公式已由 formatStreamText / renderMarkdown 在渲染阶段完成
         scrollToBottom()
       })
     }
@@ -363,7 +424,7 @@ async function handleTextSend(text) {
       })
     }
 
-    await parseSSEStream(response, handleData, handleDone, handleError)
+    await parseSSEStream(response, handleData, handleDone, handleError, handleEvent)
   } catch (err) {
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
@@ -479,15 +540,15 @@ function handleImgError(e) {
   color: var(--text-primary);
 }
 
-.header-actions { 
-  display: flex; 
-  gap: 10px; 
+.header-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .btn-action {
   padding: 8px 18px;
   border: 1.5px solid var(--border-light);
-  border-radius: $radius-full;
+  border-radius: var(--radius-full);
   background: var(--bg-card);
   backdrop-filter: blur(8px);
   font-size: 13px;
@@ -504,17 +565,17 @@ function handleImgError(e) {
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
   }
-  
-  &:disabled { 
-    opacity: 0.5; 
-    cursor: not-allowed; 
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 
 .btn-stop {
   padding: 8px 18px;
   border: 1.5px solid rgba(239, 68, 68, 0.3);
-  border-radius: $radius-full;
+  border-radius: var(--radius-full);
   background: rgba(239, 68, 68, 0.08);
   backdrop-filter: blur(8px);
   color: var(--danger);
@@ -558,11 +619,11 @@ function handleImgError(e) {
 
   &::-webkit-scrollbar {
     width: 6px;
-    
+
     &-thumb {
       background: rgba(148, 163, 184, 0.3);
-      border-radius: $radius-full;
-      
+      border-radius: var(--radius-full);
+
       &:hover {
         background: rgba(148, 163, 184, 0.5);
       }
@@ -580,22 +641,24 @@ function handleImgError(e) {
   backdrop-filter: blur(10px);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-light);
+}
 
-  .dot {
-    width: 8px; height: 8px;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-    border-radius: 50%;
-    animation: bounce 1.4s infinite both;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
-    &:nth-child(1) { animation-delay: -0.32s; }
-    &:nth-child(2) { animation-delay: -0.16s; }
-  }
-  .loading-text { 
-    font-size: 13px; 
-    color: var(--primary); 
-    margin-left: 6px;
-    font-weight: 500;
-  }
+.loading-indicator .dot {
+  width: 8px; height: 8px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite both;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.loading-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
+.loading-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
+
+.loading-text {
+  font-size: 13px;
+  color: var(--primary);
+  margin-left: 6px;
+  font-weight: 500;
 }
 
 @keyframes bounce {
@@ -631,14 +694,9 @@ function handleImgError(e) {
   animation: fadeIn 0.35s ease;
 }
 
-@keyframes fadeIn { 
-  from { 
-    opacity: 0; 
-    backdrop-filter: blur(0);
-  } 
-  to { 
-    opacity: 1; 
-  } 
+@keyframes fadeIn {
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to { opacity: 1; }
 }
 
 .error-modal-dialog {
@@ -653,38 +711,33 @@ function handleImgError(e) {
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
   animation: modalIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 
-  h3 { 
-    font-size: 21px; 
-    margin-bottom: 24px; 
-    color: var(--primary);
-    font-weight: 700;
-  }
+.error-modal-dialog h3 {
+  font-size: 21px;
+  margin-bottom: 24px;
+  color: var(--primary);
+  font-weight: 700;
 }
 
 @keyframes modalIn {
-  from { 
-    opacity: 0; 
-    transform: scale(0.92) translateY(30px); 
-  }
-  to { 
-    opacity: 1; 
-    transform: scale(1) translateY(0); 
-  }
+  from { opacity: 0; transform: scale(0.92) translateY(30px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .form-group {
   margin-bottom: 20px;
-
-  label {
-    display: block;
-    font-size: 13.5px;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: var(--text-primary);
-  }
-  .required { color: var(--danger); }
 }
+
+.form-group label {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.form-group .required { color: var(--danger); }
 
 .form-group textarea {
   width: 100%;
@@ -698,47 +751,49 @@ function handleImgError(e) {
   transition: all 0.3s ease;
   background: var(--bg-card);
   color: var(--text-primary);
-
-  &:focus { 
-    border-color: var(--primary); 
-    box-shadow: 0 0 0 4px var(--primary-ghost); 
-    background: var(--bg-card);
-  }
-
-  &::placeholder {
-    color: var(--text-tertiary);
-  }
 }
 
-.preview-box { 
-  padding: 16px; 
-  background: var(--bg-card); 
-  border-radius: var(--radius-md); 
-  min-height: 50px; 
+.form-group textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-ghost);
+  background: var(--bg-card);
+}
+
+.form-group textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.preview-box {
+  padding: 16px;
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  min-height: 50px;
   border: 1.5px solid var(--border-light);
 }
-.preview-img { 
-  max-width: 100%; 
-  max-height: 180px; 
-  border-radius: $radius-sm; 
+
+.preview-img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
-.preview-text { 
-  font-size: 14px; 
-  color: var(--text-secondary); 
+
+.preview-text {
+  font-size: 14px;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
-.tag-grid { 
-  display: flex; 
-  flex-wrap: wrap; 
-  gap: 8px; 
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .tag-btn {
   padding: 8px 20px;
   border: 1.5px solid var(--border-light);
-  border-radius: $radius-full;
+  border-radius: var(--radius-full);
   background: var(--bg-card);
   backdrop-filter: blur(8px);
   font-size: 13px;
@@ -747,76 +802,76 @@ function handleImgError(e) {
   font-family: inherit;
   font-weight: 500;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-  &:hover { 
-    border-color: var(--primary); 
-    color: var(--primary);
-    background: var(--primary-ghost);
-    transform: translateY(-1px);
-  }
-  
-  &.selected {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); 
-    border-color: transparent; 
-    color: white;
-    box-shadow: var(--shadow-md);
-  }
+.tag-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-ghost);
+  transform: translateY(-1px);
+}
+
+.tag-btn.selected {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  border-color: transparent;
+  color: white;
+  box-shadow: var(--shadow-md);
 }
 
 .modal-buttons {
-  display: flex; 
-  gap: 12px; 
-  margin-top: 28px; 
+  display: flex;
+  gap: 12px;
+  margin-top: 28px;
   justify-content: flex-end;
+}
 
-  button {
-    padding: 11px 26px;
-    border-radius: $radius-full;
-    font-size: 14px;
-    font-family: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border: none;
-  }
+.modal-buttons button {
+  padding: 11px 26px;
+  border-radius: var(--radius-full);
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: none;
 }
 
 .btn-cancel {
-  background: var(--primary-ghost); 
+  background: var(--primary-ghost);
   color: var(--text-secondary);
-  
-  &:hover { 
-    background: var(--border-light);
-    transform: translateY(-1px);
-  }
+}
+
+.btn-cancel:hover {
+  background: var(--border-light);
+  transform: translateY(-1px);
 }
 
 .btn-confirm {
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); 
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
   color: white;
   box-shadow: var(--shadow-glow);
-  
-  &:hover { 
-    filter: brightness(1.1);
-    transform: translateY(-2px); 
-    box-shadow: var(--shadow-glow);
-  }
-  
-  &:active {
-    transform: translateY(0);
-  }
+}
+
+.btn-confirm:hover {
+  filter: brightness(1.1);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-confirm:active {
+  transform: translateY(0);
 }
 
 @media (max-width: 768px) {
   .chat-title {
     font-size: 15px;
   }
-  
+
   .messages-area {
     padding: 20px 16px;
     gap: 20px;
   }
-  
+
   .error-modal-dialog {
     padding: 24px;
     margin: 16px;

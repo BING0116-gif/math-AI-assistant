@@ -97,6 +97,25 @@ class Settings(BaseSettings):
     VECTOR_DB_PATH: str = Field(default="./data/chroma_db", alias="VECTOR_DB_PATH")
     VECTOR_EMBEDDING_MODEL: str = Field(default="all-MiniLM-L6-v2", alias="VECTOR_EMBEDDING_MODEL")
 
+    # ── 记忆系统配置 ──
+    MEMORY_ENABLED: bool = Field(default=True, alias="MEMORY_ENABLED")
+    MEMORY_SHORT_TERM_CAPACITY: int = Field(default=20, alias="MEMORY_SHORT_TERM_CAPACITY")
+    MEMORY_RETRIEVE_TOP_K: int = Field(default=7, alias="MEMORY_RETRIEVE_TOP_K")
+    MEMORY_RETRIEVE_MIN_SCORE: float = Field(default=0.3, alias="MEMORY_RETRIEVE_MIN_SCORE")
+    MEMORY_QDRANT_COLLECTION: str = Field(default="user_memories", alias="MEMORY_QDRANT_COLLECTION")
+    MEMORY_QDRANT_VECTOR_SIZE: int = Field(default=384, alias="MEMORY_QDRANT_VECTOR_SIZE")
+    MEMORY_EMBEDDING_MODEL: str = Field(default="bge-small-zh-v1.5", alias="MEMORY_EMBEDDING_MODEL")
+    MEMORY_DECAY_INTERVAL_MINUTES: int = Field(default=1440, alias="MEMORY_DECAY_INTERVAL_MINUTES")
+    MEMORY_PROFILE_CACHE_TTL: int = Field(default=86400, alias="MEMORY_PROFILE_CACHE_TTL")
+    MEMORY_EVENT_IDEMPOTENCY_TTL: int = Field(default=86400, alias="MEMORY_EVENT_IDEMPOTENCY_TTL")
+    MEMORY_BATCH_WRITE_SIZE: int = Field(default=10, alias="MEMORY_BATCH_WRITE_SIZE")
+    MEMORY_USER_RATE_LIMIT: int = Field(default=1, alias="MEMORY_USER_RATE_LIMIT")
+
+    # ── 出题系统适配器配置 ──
+    QUESTION_SYSTEM_MODE: str = Field(default="mock", alias="QUESTION_SYSTEM_MODE")
+    QUESTION_SYSTEM_API_KEY: str = Field(default="", alias="QUESTION_SYSTEM_API_KEY")
+    QUESTION_SYSTEM_BASE_URL: str = Field(default="", alias="QUESTION_SYSTEM_BASE_URL")
+
     # ── 推荐引擎配置 ──
     RAG_ENABLED: bool = Field(default=True, alias="RAG_ENABLED")
     RAG_ENABLE_AI_EXPLANATION: bool = Field(default=True, alias="RAG_ENABLE_AI_EXPLANATION")
