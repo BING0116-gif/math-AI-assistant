@@ -176,7 +176,7 @@ class TestTaskParamsMap:
         from prompts.dynamic_params import get_params_for_task, TaskType
 
         params = get_params_for_task(TaskType.PLANNED_SOLUTION)
-        assert params.max_tokens == 8192
+        assert params.max_tokens == 12288  # 复杂规划使用最大Token容量
 
     def test_default_fallback(self):
         """未知类型回退到默认配置。"""

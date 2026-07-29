@@ -3,6 +3,7 @@
 """
 import asyncio
 import json
+import pytest
 import os
 import sys
 import uuid
@@ -43,6 +44,7 @@ def _cleanup_test_dbs():
         _test_db_dir = None
 
 
+@pytest.mark.asyncio
 async def test_models_import():
     print("\n[测试] 数据模型导入...")
     from app.data.models import (
@@ -52,6 +54,7 @@ async def test_models_import():
     print("  ✅ 所有数据模型导入成功")
 
 
+@pytest.mark.asyncio
 async def test_database_init():
     print("\n[测试] 数据库初始化...")
     from app.data.database import init_db, close_db, get_db_session
@@ -94,6 +97,7 @@ async def test_database_init():
         print("  🧹 测试完成")
 
 
+@pytest.mark.asyncio
 async def test_repositories():
     print("\n[测试] 仓储层操作...")
     from app.data.database import init_db, close_db, get_db_session
@@ -170,6 +174,7 @@ async def test_repositories():
         print("  🧹 测试完成")
 
 
+@pytest.mark.asyncio
 async def test_memory_system():
     print("\n[测试] 记忆系统...")
     from app.services.memory import (
@@ -201,6 +206,7 @@ async def test_memory_system():
     print("  ✅ 记忆清空成功")
 
 
+@pytest.mark.asyncio
 async def test_security_modules():
     print("\n[测试] 安全模块...")
     from app.security.encryption import DataEncryption
@@ -264,6 +270,7 @@ async def test_security_modules():
     print("  ✅ 审计日志验证完成")
 
 
+@pytest.mark.asyncio
 async def test_cache_manager():
     print("\n[测试] 缓存管理器...")
     from app.services.cache import CacheManager
@@ -283,6 +290,7 @@ async def test_cache_manager():
     print(f"  ✅ 缓存统计: L1命中{mgr.l1_hits}, 未命中{mgr.misses}")
 
 
+@pytest.mark.asyncio
 async def test_profile_analyzer():
     print("\n[测试] 用户画像分析器...")
     from app.data.database import init_db, close_db, get_db_session
@@ -349,6 +357,7 @@ async def test_profile_analyzer():
     print("  ✅ 画像分析测试完成")
 
 
+@pytest.mark.asyncio
 async def test_data_migration():
     print("\n[测试] 数据迁移...")
     from app.data.migrations import DataMigrator

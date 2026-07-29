@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from app.config.settings import settings
 from app.data.database import init_db, close_db
 from app.services.cache import get_cache_manager
+from app.middleware.auth import init_default_admin
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ async def lifespan(app: FastAPI):
     logger.info("正在初始化数据库...")
     await init_db()
     logger.info("数据库初始化完成")
+
+    # 初始化默认管理员账号
+    await init_default_admin(settings.JWT_SECRET_KEY)
 
     # RAG 推荐系统初始化
     if settings.RAG_ENABLED:

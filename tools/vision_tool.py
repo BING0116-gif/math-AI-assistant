@@ -24,7 +24,6 @@ _DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 _VL_MODELS = [
     "qwen-vl-plus",           # 优先：数学理解强，支持流式
     "qwen-vl-max",            # 备选：更大规模
-    "qwen2-vl-72b-instruct",  # 最新一代（若账号支持）
 ]
 
 

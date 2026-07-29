@@ -223,6 +223,7 @@ class LLMComplexityClassifier:
                 self._stats["cache_hits"] += 1
                 self._cache[cache_key] = cached
                 cached.latency_ms = (time.perf_counter() - start_time) * 1000
+                cached.method = "cache"
                 logger.debug(
                     f"缓存命中: '{problem[:40]}...' → "
                     f"score={cached.score} ({cached.strategy})"

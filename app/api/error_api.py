@@ -6,7 +6,7 @@
 
 import logging
 import re as _re
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.config.settings import settings
@@ -58,21 +58,32 @@ def get_error_book_manager():
     return error_book_manager
 
 
+def _get_user_id(request: Request) -> str:
+    """从请求中获取用户 ID，未认证时使用默认值。"""
+    user_id = getattr(request.state, "user_id", None)
+    if user_id:
+        return user_id
+    # 向后兼容：未认证时使用默认用户 ID
+    return "default"
+
+
 @router.get("/api/error-book")
-def get_error_book():
+async def get_error_book(request: Request):
     try:
-        errors = get_error_book_manager().get_all()
+        user_id = _get_user_id(request)
+        errors = await get_error_book_manager().get_all(user_id)
         return [error.to_dict() for error in errors]
     except Exception as e:
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 
 @router.post("/api/error-book")
-def add_error(request: ErrorItemRequest):
+async def add_error(request: Request, body: ErrorItemRequest):
     from error_book import ErrorItem
 
     try:
-        raw_data = request.dict()
+        user_id = _get_user_id(request)
+        raw_data = body.dict()
         try:
             validated_data = validate_request_data(raw_data, max_length=settings.INPUT_MAX_LENGTH, skip_sql_check=True)
         except SecurityValidationError as e:
@@ -132,7 +143,7 @@ def add_error(request: ErrorItemRequest):
             is_mastered=formatted_data.get("is_mastered", False),
         )
 
-        error_id = get_error_book_manager().add(error_item)
+        error_id = await get_error_book_manager().add(user_id, error_item)
 
         return {
             "id": error_id,
@@ -154,8 +165,9 @@ def add_error(request: ErrorItemRequest):
 
 
 @router.put("/api/error-book/{error_id}")
-def update_error(error_id: str, request: ErrorUpdateRequest):
+async def update_error(error_id: str, request: Request, body: ErrorUpdateRequest):
     try:
+        user_id = _get_user_id(request)
         try:
             validated_id = validate_input(error_id, "error_id", max_length=64)
         except SecurityValidationError as e:
@@ -168,14 +180,14 @@ def update_error(error_id: str, request: ErrorUpdateRequest):
             "added_at", "mastery_level", "is_mastered",
         ]
         for field in fields:
-            value = getattr(request, field, None)
+            value = getattr(body, field, None)
             if value is not None:
                 try:
                     update_data[field] = validate_input(value, field, max_length=settings.INPUT_MAX_LENGTH)
                 except SecurityValidationError as e:
                     raise HTTPException(status_code=400, detail=str(e))
 
-        success = get_error_book_manager().update(validated_id, **update_data)
+        success = await get_error_book_manager().update(user_id, validated_id, **update_data)
         return {"success": success}
     except HTTPException as e:
         raise e
@@ -184,14 +196,15 @@ def update_error(error_id: str, request: ErrorUpdateRequest):
 
 
 @router.delete("/api/error-book/{error_id}")
-def delete_error(error_id: str):
+async def delete_error(error_id: str, request: Request):
     try:
         validated_id = validate_input(error_id, "error_id", max_length=64)
     except SecurityValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        success = get_error_book_manager().remove(validated_id)
+        user_id = _get_user_id(request)
+        success = await get_error_book_manager().remove(user_id, validated_id)
         return {"success": success}
     except Exception as e:
         raise HTTPException(status_code=500, detail="服务器内部错误")

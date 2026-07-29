@@ -18,11 +18,16 @@ from fastapi.testclient import TestClient
 @pytest.fixture(autouse=True)
 def mock_dependencies():
     """Mock 所有外部依赖，确保测试不依赖真实服务。"""
+    mock_eb = MagicMock()
+    mock_eb.get_all = AsyncMock(return_value=[])
+    mock_eb.add = AsyncMock(return_value="test_id")
+    mock_eb.remove = AsyncMock(return_value=True)
+    mock_eb.update = AsyncMock(return_value=True)
     with patch("app.dependencies._llm_service", Mock()), \
          patch("app.dependencies._vector_store", Mock()), \
          patch("main.agent", Mock()), \
          patch("main.registry", Mock()), \
-         patch("main.error_book_manager", Mock()):
+         patch("main.error_book_manager", mock_eb):
         yield
 
 
@@ -75,7 +80,7 @@ class TestErrorBookEndpoints:
 
     def test_list_error_books(self, client):
         mock_manager = MagicMock()
-        mock_manager.get_all.return_value = []
+        mock_manager.get_all = AsyncMock(return_value=[])
         with patch("main.error_book_manager", mock_manager):
             response = client.get("/api/error-book")
             assert response.status_code == 200
@@ -90,7 +95,7 @@ class TestErrorBookEndpoints:
     def test_add_error_book_valid(self, client):
         """测试添加有效错题"""
         mock_manager = MagicMock()
-        mock_manager.add.return_value = True
+        mock_manager.add = AsyncMock(return_value="test_id")
         with patch("main.error_book_manager", mock_manager):
             response = client.post("/api/error-book", json={
                 "question": "求极限 lim(x→0) sin(x)/x",
@@ -143,7 +148,7 @@ class TestRecommendationEndpoint:
             processing_time_ms=100.0,
         ))
 
-        with patch("app.api.recommendation_api.get_recommender", return_value=mock_recommender):
+        with patch("app.api.recommendation_api.get_rag_recommender", return_value=mock_recommender):
             response = client.post("/api/recommendation", json={
                 "user_id": "test_user",
                 "count": 3,

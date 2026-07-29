@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 import sys
 import os
 
@@ -27,17 +26,3 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as integration test"
     )
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-if HAS_PYTEST_ASYNCIO:
-    @pytest_asyncio.fixture(scope="session", autouse=True)
-    async def init_database():
-        from app.data.database import init_db
-        await init_db()

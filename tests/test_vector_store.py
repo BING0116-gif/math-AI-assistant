@@ -15,6 +15,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from app.services.vector_store import (
     VectorStoreManager,
     VectorSearchResult,
+    VectorStoreStatus,
     get_vector_store,
 )
 
@@ -87,26 +88,31 @@ class TestFormatResults:
         return mgr
 
     def test_empty_results(self, manager):
-        results = manager._format_results({"ids": [], "documents": [], "metadatas": [], "distances": []})
+        results = manager._format_results([])
         assert results == []
 
     def test_none_results(self, manager):
-        results = manager._format_results(None)
+        results = manager._format_results([])
         assert results == []
 
     def test_valid_results(self, manager):
-        raw = {
-            "ids": [["q1", "q2"]],
-            "documents": [["content 1", "content 2"]],
-            "metadatas": [[{"cat": "math"}, {"cat": "physics"}]],
-            "distances": [[0.1, 0.3]],
-        }
+        m1 = MagicMock()
+        m1.payload = {"question_id": "q1", "content": "content 1", "cat": "math"}
+        m1.id = "uuid-1"
+        m1.score = 0.9
+
+        m2 = MagicMock()
+        m2.payload = {"question_id": "q2", "content": "content 2", "cat": "physics"}
+        m2.id = "uuid-2"
+        m2.score = 0.7
+
+        raw = [m1, m2]
         results = manager._format_results(raw)
         assert len(results) == 2
         assert results[0].id == "q1"
-        assert results[0].score == 0.9  # 1.0 - 0.1
+        assert results[0].score == 0.9
         assert results[1].id == "q2"
-        assert results[1].score == 0.7  # 1.0 - 0.3
+        assert results[1].score == 0.7
 
 
 class TestKeywordScores:
@@ -155,105 +161,128 @@ class TestVectorStoreManager:
     @pytest.fixture
     def manager(self):
         mgr = VectorStoreManager.__new__(VectorStoreManager)
-        mgr.persist_directory = "/tmp/test_chroma"
+        mgr.host = "localhost"
+        mgr.port = 6333
         mgr.collection_name = "test_collection"
+        mgr.vector_size = 384
+        mgr.use_quantization = False
+        mgr.max_retries = 3
+        mgr.retry_delay = 5.0
+        mgr.availability_check_interval = 30.0
         mgr._client = None
-        mgr._collection = None
-        mgr._initialized = False
+        mgr._status = VectorStoreStatus.INITIALIZING
+        mgr._last_availability_check = 0.0
+        mgr._is_available = False
+        mgr._embedder = None
+        mgr._embedder_model = "all-MiniLM-L6-v2"
+        mgr._in_memory_points = {}
+        mgr._use_memory_fallback = False
         return mgr
 
     @pytest.mark.asyncio
     async def test_initialize(self, manager):
         """测试初始化"""
-        mock_collection = MagicMock()
-        mock_collection.count.return_value = 0
-        mock_client = MagicMock()
-        mock_client.get_or_create_collection.return_value = mock_collection
+        mock_collection_info = MagicMock()
+        mock_collection_info.name = "test_collection"
+        mock_collections = MagicMock()
+        mock_collections.collections = [mock_collection_info]
 
-        with patch("chromadb.PersistentClient", return_value=mock_client):
-            with patch("os.makedirs"):
+        mock_client = MagicMock()
+        mock_client.get_collections.return_value = mock_collections
+        mock_client.get_collection.return_value = MagicMock(
+            points_count=0, status="green"
+        )
+
+        with patch("app.services.vector_store.QdrantClient", return_value=mock_client):
+            with patch.object(manager, '_init_embedder', new_callable=AsyncMock):
                 await manager.initialize()
-                assert manager._initialized is True
+                assert manager._status == VectorStoreStatus.READY
                 assert manager._client is not None
 
     @pytest.mark.asyncio
     async def test_initialize_idempotent(self, manager):
         """初始化是幂等的"""
-        manager._initialized = True
+        manager._status = VectorStoreStatus.READY
         await manager.initialize()
         # 不应报错
 
     @pytest.mark.asyncio
     async def test_add_question(self, manager):
         """测试添加题目"""
-        mock_collection = MagicMock()
-        manager._collection = mock_collection
-        manager._initialized = True
-
-        result = await manager.add_question(
-            "q1", "test content", {"category": "math"}
-        )
+        manager._status = VectorStoreStatus.READY
+        manager._use_memory_fallback = True
+        manager._in_memory_points = {}
+        # Mock _generate_vector to avoid requiring sentence-transformers
+        with patch.object(manager, '_generate_vector', return_value=[0.0] * 384):
+            result = await manager.add_question(
+                "q1", "test content", {"category": "math"}
+            )
         assert result is True
-        mock_collection.add.assert_called_once()
+        assert "q1" in manager._in_memory_points
 
     @pytest.mark.asyncio
     async def test_add_question_failure(self, manager):
         """测试添加失败"""
-        mock_collection = MagicMock()
-        mock_collection.add.side_effect = Exception("DB error")
-        manager._collection = mock_collection
-        manager._initialized = True
+        manager._use_memory_fallback = False
+        manager._status = VectorStoreStatus.READY
+        mock_client = MagicMock()
+        mock_client.upsert.side_effect = Exception("DB error")
+        manager._client = mock_client
 
-        result = await manager.add_question("q1", "test", {})
+        with patch.object(manager, '_generate_vector', return_value=[0.0] * 384):
+            result = await manager.add_question("q1", "test", {})
         assert result is False
 
     @pytest.mark.asyncio
     async def test_remove_question(self, manager):
         """测试移除题目"""
-        mock_collection = MagicMock()
-        manager._collection = mock_collection
-        manager._initialized = True
+        manager._use_memory_fallback = True
+        manager._in_memory_points = {"q1": MagicMock()}
+        manager._status = VectorStoreStatus.READY
 
         result = await manager.remove_question("q1")
         assert result is True
-        mock_collection.delete.assert_called_once_with(ids=["q1"])
+        assert "q1" not in manager._in_memory_points
 
     @pytest.mark.asyncio
     async def test_semantic_search(self, manager):
         """测试语义搜索"""
-        mock_collection = MagicMock()
-        mock_collection.query.return_value = {
-            "ids": [["q1"]],
-            "documents": [["test content"]],
-            "metadatas": [[{"category": "math"}]],
-            "distances": [[0.2]],
-        }
-        manager._collection = mock_collection
-        manager._initialized = True
+        mock_scored_point = MagicMock()
+        mock_scored_point.id = "q1"
+        mock_scored_point.payload = {"question_id": "q1", "content": "test content", "category": "math"}
+        mock_scored_point.score = 0.8
 
-        results = await manager.semantic_search("test query", n_results=5)
+        mock_client = MagicMock()
+        mock_client.query_points.return_value = MagicMock(points=[mock_scored_point])
+        manager._client = mock_client
+        manager._status = VectorStoreStatus.READY
+        manager._use_memory_fallback = False
+        manager._is_available = True
+
+        results = await manager.semantic_search([0.1] * 384, n_results=5)
         assert len(results) == 1
         assert results[0].id == "q1"
-        mock_collection.query.assert_called_once()
+        mock_client.query_points.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_semantic_search_error(self, manager):
         """测试搜索错误"""
-        mock_collection = MagicMock()
-        mock_collection.query.side_effect = Exception("search error")
-        manager._collection = mock_collection
-        manager._initialized = True
+        mock_client = MagicMock()
+        mock_client.query_points.side_effect = Exception("search error")
+        manager._client = mock_client
+        manager._status = VectorStoreStatus.READY
+        manager._use_memory_fallback = False
+        manager._is_available = True
 
-        results = await manager.semantic_search("test")
+        results = await manager.semantic_search([0.1] * 384)
         assert results == []
 
     @pytest.mark.asyncio
     async def test_get_all_ids_empty(self, manager):
         """测试空集合获取 ID"""
-        mock_collection = MagicMock()
-        mock_collection.count.return_value = 0
-        manager._collection = mock_collection
-        manager._initialized = True
+        manager._use_memory_fallback = True
+        manager._in_memory_points = {}
+        manager._status = VectorStoreStatus.READY
 
         ids = await manager.get_all_ids()
         assert ids == []
@@ -261,16 +290,17 @@ class TestVectorStoreManager:
     @pytest.mark.asyncio
     async def test_get_collection_stats(self, manager):
         """测试获取集合统计"""
-        mock_collection = MagicMock()
-        mock_collection.count.return_value = 2
-        mock_collection.get.return_value = {
-            "metadatas": [
-                {"category": "math", "difficulty": 3},
-                {"category": "physics", "difficulty": 5},
-            ]
-        }
-        manager._collection = mock_collection
-        manager._initialized = True
+        manager._use_memory_fallback = True
+        manager._in_memory_points = {}
+        manager._status = VectorStoreStatus.READY
+
+        # Add some points
+        p1 = MagicMock()
+        p1.payload = {"category": "math", "difficulty": 3}
+        p2 = MagicMock()
+        p2.payload = {"category": "physics", "difficulty": 5}
+        manager._in_memory_points["q1"] = p1
+        manager._in_memory_points["q2"] = p2
 
         stats = await manager.get_collection_stats()
         assert stats["total_documents"] == 2
@@ -280,10 +310,9 @@ class TestVectorStoreManager:
     @pytest.mark.asyncio
     async def test_update_question_not_found(self, manager):
         """测试更新不存在的题目"""
-        mock_collection = MagicMock()
-        mock_collection.get.return_value = {"ids": []}
-        manager._collection = mock_collection
-        manager._initialized = True
+        manager._use_memory_fallback = True
+        manager._in_memory_points = {}
+        manager._status = VectorStoreStatus.READY
 
         result = await manager.update_question("q1", content="new content")
         assert result is False

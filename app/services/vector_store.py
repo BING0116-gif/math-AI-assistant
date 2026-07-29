@@ -260,9 +260,11 @@ class QdrantVectorStoreManager:
             except Exception as e:
                 logger.error(f"[向量库] 向量生成失败: {e}")
 
-        import random
-
-        return [random.random() for _ in range(self.vector_size)]
+        raise RuntimeError(
+            "向量模型不可用，无法生成向量。"
+            "请确保 sentence-transformers 已安装且模型加载成功。"
+            "可通过设置 HF_ENDPOINT 环境变量使用国内镜像源。"
+        )
 
     @property
     def status(self) -> VectorStoreStatus:

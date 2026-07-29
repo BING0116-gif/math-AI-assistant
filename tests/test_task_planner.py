@@ -808,7 +808,7 @@ class TestPlannerConfig:
         """默认配置。"""
         config = PlannerConfig()
         assert config.max_tasks_per_plan == 10
-        assert config.max_depth == 5
+        assert config.max_depth == 8
         assert config.enable_parallelism is True
         assert config.cache_enabled is True
 

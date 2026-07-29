@@ -38,6 +38,13 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # 在每次请求时读取 debug 配置，支持测试时动态切换
+        is_debug = self._debug
+        try:
+            is_debug = settings.DEBUG
+        except Exception:
+            pass
+
         async def send_wrapper(response):
             if response["type"] == "http.response.start":
                 headers = response.get("headers", [])
@@ -45,7 +52,7 @@ class SecurityHeadersMiddleware:
                 headers.append((b"X-Frame-Options", b"DENY"))
                 headers.append((b"X-XSS-Protection", b"1; mode=block"))
                 headers.append((b"Referrer-Policy", b"strict-origin-when-cross-origin"))
-                csp = _CSP_DEBUG if self._debug else _CSP_PRODUCTION
+                csp = _CSP_DEBUG if is_debug else _CSP_PRODUCTION
                 headers.append((b"Content-Security-Policy", csp.encode()))
                 headers.append((b"Permissions-Policy", b"camera=(), microphone=(), geolocation=()"))
                 response["headers"] = headers

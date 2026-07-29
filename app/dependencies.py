@@ -146,7 +146,7 @@ def get_registry():
 
 
 def get_error_book_manager():
-    """获取全局 ErrorBookManager 实例。"""
+    """获取全局 ErrorBookManager 实例（使用数据库存储）。"""
     from main import error_book_manager
     return error_book_manager
 

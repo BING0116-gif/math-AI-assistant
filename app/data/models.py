@@ -57,6 +57,9 @@ class User(Base):
     user_skills = relationship(
         "UserSkill", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
     )
+    error_items = relationship(
+        "ErrorItem", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
+    )
 
 
 class LearningRecord(Base):
@@ -303,4 +306,186 @@ class ExamSubmission(Base):
     submitted_at = Column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class RefreshToken(Base):
+    """刷新令牌表 - 替代内存字典存储"""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    jti = Column(String(64), unique=True, nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    token_type = Column(String(20), default="refresh")
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_revoked = Column(Boolean, default=False)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user = relationship("User")
+
+
+class ErrorItem(Base):
+    """错题本表 - 替代 JSON 文件存储"""
+    __tablename__ = "error_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(
+        String(36), ForeignKey("users.id"), nullable=False, index=True
+    )
+    item_id = Column(String(64), nullable=False, index=True, comment="原始错题 ID")
+    question = Column(Text, nullable=False)
+    question_type = Column(String(20), default="text")
+    image_path = Column(String(500))
+    error_reason = Column(Text, default="")
+    categories = Column(JSON, default=list)
+    original_answer = Column(Text, default="")
+    correct_answer = Column(Text, default="")
+    notes = Column(Text, default="")
+    added_at = Column(String(30), default="")
+    mastery_level = Column(Integer, default=3)
+    is_mastered = Column(Boolean, default=False)
+
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    user = relationship("User", back_populates="error_items")
+
+    __table_args__ = (
+        Index("idx_error_items_user", "user_id", "is_mastered"),
+        Index("idx_error_items_user_item", "user_id", "item_id", unique=True),
+    )
+
+
+class MigrationStatus(Base):
+    """迁移状态表"""
+    __tablename__ = "migration_status"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_system = Column(String(50), default="chromadb")
+    target_system = Column(String(50), default="qdrant")
+    status = Column(String(20), default="pending")
+    total_count = Column(Integer, default=0)
+    migrated_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    error_message = Column(Text)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class MigrationError(Base):
+    """迁移错误表"""
+    __tablename__ = "migration_errors"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    migration_id = Column(Integer, ForeignKey("migration_status.id"))
+    question_id = Column(String(100))
+    error_type = Column(String(50))
+    error_detail = Column(Text)
+    created_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Memory(Base):
+    """记忆主表"""
+    __tablename__ = "memories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    memory_type = Column(String(20), default="conversation")
+    high_category = Column(String(64), default="")
+    category = Column(String(64), default="")
+    content = Column(Text, nullable=False)
+    embedding_summary = Column(Text, nullable=False)
+    importance = Column(Float, default=0.5)
+    difficulty = Column(Integer, nullable=True)
+    status = Column(String(20), default="pending")
+    expire_at = Column(Integer, nullable=False)
+    memory_strength = Column(Float, default=0.5)
+    source_id = Column(String(64), nullable=True)
+    created_at = Column(Integer, nullable=False)
+    last_accessed = Column(Integer, nullable=True)
+    access_count = Column(Integer, default=0)
+    deleted_at = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("idx_mem_user_status", "user_id", "status"),
+        Index("idx_mem_user_type", "user_id", "memory_type", "status"),
+        Index("idx_mem_user_category", "user_id", "high_category", "category", "status"),
+        Index("idx_mem_expire_status", "expire_at", "status"),
+        Index("idx_mem_source_id", "source_id", "memory_type"),
+    )
+
+
+class MemoryTag(Base):
+    """记忆标签表"""
+    __tablename__ = "memory_tags"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    memory_id = Column(Integer, ForeignKey("memories.id"), nullable=False)
+    tag_name = Column(String(64), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("memory_id", "tag_name", name="uq_memory_tag"),
+        Index("idx_mtag_name", "tag_name"),
+    )
+
+
+class UserProfile(Base):
+    """用户画像表"""
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), unique=True, nullable=False)
+    summary_text = Column(Text, nullable=False)
+    full_profile_json = Column(Text, nullable=False)
+    version = Column(Integer, default=1)
+    updated_at = Column(Integer, nullable=False)
+    expire_at = Column(Integer, nullable=True)
+
+
+class MemoryAccessLog(Base):
+    """记忆访问日志表"""
+    __tablename__ = "memory_access_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    memory_id = Column(Integer, ForeignKey("memories.id"), nullable=False)
+    user_id = Column(String(64), nullable=False)
+    session_id = Column(String(128), nullable=False)
+    accessed_at = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_mal_memory_id", "memory_id"),
+        Index("idx_mal_user_time", "user_id", "accessed_at"),
+    )
+
+
+class EventIdempotency(Base):
+    """事件幂等性表"""
+    __tablename__ = "event_idempotency"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String(128), nullable=False, unique=True)
+    event_type = Column(String(64), nullable=False)
+    processed_at = Column(Integer, nullable=False)
+    status = Column(String(20), default="processed")
+
+    __table_args__ = (
+        Index("idx_ei_event_type", "event_type"),
     )

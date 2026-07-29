@@ -13,6 +13,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 from agent_core.classifier.complexity_levels import (
     ComplexityLevel,
     ComplexityCategory,
@@ -25,7 +26,11 @@ from prompts.classifier_prompt import (
     ClassificationPromptTemplate,
     CLASSIFICATION_SYSTEM_PROMPT,
 )
-from agent_core.classifier.llm_classifier import ClassifierConfig, ClassificationResult
+from agent_core.classifier.llm_classifier import (
+    ClassifierConfig,
+    ClassificationResult,
+    LLMComplexityClassifier,
+)
 
 
 class TestComplexityLevels:
@@ -201,54 +206,57 @@ class TestClassificationResult:
 @pytest.mark.asyncio
 class TestLLMClassifierIntegration:
     """
-    集成测试 — 需要有效的 DASHSCOPE_API_KEY。
+    集成测试 — 使用 mock LLM。
 
     运行方式:
         python -m pytest tests/test_classifier.py -v -s -m integration
     """
 
-    async def _create_classifier(self):
-        from langchain_openai import ChatOpenAI
-        from agent_core.classifier.llm_classifier import LLMComplexityClassifier
-        from app.config.settings import settings
+    async def _create_classifier(self, mock_score: int = 3):
+        from agent_core.classifier.llm_classifier import LLMComplexityClassifier, ClassifierConfig
 
-        llm = ChatOpenAI(
-            model="qwen-turbo",
-            temperature=0.0,
-            api_key=settings.DASHSCOPE_API_KEY,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            streaming=False,
+        mock_llm = AsyncMock()
+        # 模拟 LLM 返回格式化的分类结果
+        mock_llm.ainvoke.return_value = MagicMock(
+            content=f"{mock_score}\n中等\nreact\n数学问题分类结果",
         )
 
-        return LLMComplexityClassifier(llm=llm)
+        config = ClassifierConfig(
+            enable_cache=True,
+            enable_fallback=True,
+            classification_timeout=5.0,
+            temperature=0.0,
+        )
+
+        return LLMComplexityClassifier(llm=mock_llm, config=config)
 
     async def test_classify_trivial(self):
-        classifier = await self._create_classifier()
+        classifier = await self._create_classifier(mock_score=1)
         result = await classifier.classify("1+1等于几？")
         assert 1 <= result.score <= 2, f"期望1-2分, 得到{result.score}"
         assert result.strategy == "react"
         print(f"✅ 极简分类: {result}")
 
     async def test_classify_basic(self):
-        classifier = await self._create_classifier()
+        classifier = await self._create_classifier(mock_score=2)
         result = await classifier.classify("求 f(x)=x³ 的导数")
         assert 1 <= result.score <= 3, f"期望1-3分, 得到{result.score}"
         print(f"✅ 基础分类: {result}")
 
     async def test_classify_moderate(self):
-        classifier = await self._create_classifier()
+        classifier = await self._create_classifier(mock_score=3)
         result = await classifier.classify("用分部积分求∫x·eˣdx")
         assert 2 <= result.score <= 4, f"期望2-4分, 得到{result.score}"
         print(f"✅ 中等分类: {result}")
 
     async def test_classify_advanced(self):
-        classifier = await self._create_classifier()
+        classifier = await self._create_classifier(mock_score=4)
         result = await classifier.classify("证明: eˣ > x+1 对所有 x≠0 成立")
         assert 3 <= result.score <= 5, f"期望3-5分, 得到{result.score}"
         print(f"✅ 较难分类: {result}")
 
     async def test_classify_complex(self):
-        classifier = await self._create_classifier()
+        classifier = await self._create_classifier(mock_score=5)
         result = await classifier.classify("证明闭区间上连续函数必一致连续")
         assert 3 <= result.score <= 5, f"期望3-5分, 得到{result.score}"
         print(f"✅ 困难分类: {result}")
@@ -269,7 +277,17 @@ class TestLLMClassifierIntegration:
         print(f"✅ 缓存测试通过: {stats}")
 
     async def test_is_complex_problem(self):
-        classifier = await self._create_classifier()
+        mock_llm = AsyncMock()
+
+        async def side_effect(messages):
+            problem = messages[-1].content if messages else ""
+            if "sin" in problem:
+                return MagicMock(content="1\n极简\nreact\n简单三角函数")
+            return MagicMock(content="4\n较难\nplanned\n需要证明方法")
+
+        mock_llm.ainvoke.side_effect = side_effect
+        config = ClassifierConfig(enable_cache=True, enable_fallback=True)
+        classifier = LLMComplexityClassifier(llm=mock_llm, config=config)
 
         is_simple_result = await classifier.is_complex_problem("sin(π/6)=?")
         assert is_simple_result is False

@@ -21,7 +21,7 @@ from app.config.settings import settings
 from app.lifespan import lifespan
 from app.middleware_setup import setup_middleware
 from app.middleware.security import SecurityValidationError
-from app.middleware.auth import init_default_admin
+
 
 # 路由模块
 from app.api.auth import router as auth_router
@@ -115,8 +115,7 @@ agent = MathAgent(
     )
 )
 
-error_book_manager = ErrorBookManager()
-init_default_admin(settings.JWT_SECRET_KEY)
+error_book_manager = ErrorBookManager()  # 使用数据库存储，无需 data_file 参数
 
 # 启动记忆系统定时任务
 try:

@@ -71,7 +71,7 @@ def test_clean_metadata():
 
 
 def test_keyword_scores():
-    store = VectorStoreManager(persist_directory="./test_chroma")
+    store = VectorStoreManager()
     query = "导数 计算 f(x)"
     results = [
         VectorSearchResult("1", "求函数 f(x)=x² 的导数", {"category": "导数"}, 0.0, 0.0),
@@ -132,8 +132,14 @@ async def test_skill_profile_tool_registration():
 
 @pytest.mark.asyncio
 async def test_all_tools_registered():
-    from tools import get_registry
+    from tools import get_registry, _register_builtin_tools
+    from app.config.settings import settings
     registry = get_registry()
-    expected = ["vision_tool", "recommend_questions", "skill_profile", "explain_question", "search_questions", "error_book_analysis"]
+    # 如果注册表为空（其他测试可能通过 init_registry(None) 重置了它），重新注册工具
+    if registry.tool_count == 0:
+        _register_builtin_tools(registry)
+    expected = ["recommend_questions", "skill_profile", "explain_question", "search_questions", "error_book_analysis"]
+    if settings.DASHSCOPE_API_KEY:
+        expected.append("vision_tool")
     for name in expected:
         assert registry.has_tool(name), f"工具 {name} 未注册"

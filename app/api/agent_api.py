@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config.settings import settings
 from app.services.cache import get_cache_manager
-from app.data.database import check_database_health
+from app.data.database import check_database_health, engine
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,7 @@ async def health_check():
 async def detailed_health():
     checks = {
         "database": await check_database_health(),
+        "migration": await _check_migration_status(),
         "cache": _check_cache_health(),
         "disk_space": _check_disk_space(),
         "memory_usage": _check_memory_usage(),
@@ -100,6 +101,22 @@ async def detailed_health():
         "checks": checks,
         "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
     }
+
+
+async def _check_migration_status() -> dict:
+    """检查 Alembic 迁移状态。"""
+    try:
+        if engine is None:
+            return {"status": "degraded", "error": "数据库未初始化"}
+        from sqlalchemy import text as sa_text
+        async with engine.connect() as conn:
+            result = await conn.execute(sa_text("SELECT version_num FROM alembic_version"))
+            row = result.fetchone()
+            if row:
+                return {"status": "healthy", "version": row[0]}
+            return {"status": "degraded", "error": "未找到迁移版本"}
+    except Exception as e:
+        return {"status": "degraded", "error": str(e)}
 
 
 def _check_cache_health() -> dict:

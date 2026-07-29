@@ -22,6 +22,9 @@ psycopg2-binary>=2.9.0
 # Redis
 redis>=5.0.0
 
+# Database Migration
+alembic>=1.13.0
+
 # Encryption
 cryptography>=41.0.0
 

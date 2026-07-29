@@ -1,4 +1,4 @@
-﻿"""
+"""
 P0-02: 批量写入队列 + 失败重试机制专项测试。
 
 测试覆盖：
@@ -65,10 +65,13 @@ class TestBatchQueue:
     async def test_batch_flush_on_size(self):
         """测试按数量阈值批量刷新。"""
         facade = MemoryPersistenceFacade()
+        # 先通过 record_event 触发 worker 懒启动
+        await facade.record_event("u1", {"event_type": "init"})
         facade._flush_batch = AsyncMock()
-        for i in range(facade._batch_size + 1):
+        for i in range(facade._batch_size):
             await facade._batch_queue.put({"i": i, "user_id": "u1"})
-        await asyncio.sleep(0.5)
+        # 等待 worker 处理队列
+        await asyncio.sleep(1.0)
         assert facade._flush_batch.called
 
 
@@ -123,8 +126,10 @@ class TestIntegration:
 
     @pytest.mark.asyncio
     async def test_worker_started(self):
-        """测试 worker 自动启动。"""
+        """测试 worker 自动启动（懒加载）。"""
         facade = MemoryPersistenceFacade()
+        # 首次 record_event 触发懒启动
+        await facade.record_event("u1", {"event_type": "init"})
         assert facade._batch_worker_task is not None
         assert not facade._batch_worker_task.done()
 

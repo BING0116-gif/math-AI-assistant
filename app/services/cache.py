@@ -1,9 +1,33 @@
-import pickle
+import json
 import logging
+from datetime import datetime, date
 from typing import Optional, Any, Dict
 from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+
+class JSONEncoder(json.JSONEncoder):
+    """支持 datetime 等非 JSON 原生类型的 JSON 编码器。"""
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if hasattr(obj, '__dict__'):
+            return obj.__dict__
+        return super().default(obj)
+
+
+def _serialize(value: Any) -> str:
+    """安全地将值序列化为 JSON 字符串。"""
+    try:
+        return json.dumps(value, cls=JSONEncoder, ensure_ascii=False)
+    except (TypeError, ValueError) as e:
+        raise TypeError(f"无法序列化缓存值: {e}. 请确保值可被 JSON 序列化。")
+
+
+def _deserialize(value: str) -> Any:
+    """将 JSON 字符串反序列化为 Python 对象。"""
+    return json.loads(value)
 
 
 class CacheManager:
@@ -21,7 +45,7 @@ class CacheManager:
             import redis.asyncio as aioredis
 
             self.redis = aioredis.from_url(
-                self.redis_url, decode_responses=False
+                self.redis_url, decode_responses=True
             )
             await self.redis.ping()
             logger.info("Redis 连接成功")
@@ -42,7 +66,7 @@ class CacheManager:
                 cached = await self.redis.get(f"cache:{key}")
                 if cached:
                     self.l2_hits += 1
-                    value = pickle.loads(cached)
+                    value = _deserialize(cached)
                     self._set_l1(key, value)
                     return value
             except Exception as e:
@@ -64,7 +88,7 @@ class CacheManager:
 
         if use_l2 and self.redis:
             try:
-                serialized = pickle.dumps(value)
+                serialized = _serialize(value)
                 await self.redis.setex(f"cache:{key}", ttl, serialized)
             except Exception as e:
                 logger.debug(f"Redis 写入失败: {e}")

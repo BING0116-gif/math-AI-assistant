@@ -4,6 +4,7 @@
 完整验证从前端提取到后端存储的核心流程
 """
 
+import asyncio
 import unittest
 import json
 import sys
@@ -18,13 +19,37 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from error_book import ErrorItem, ErrorBookManager
 
 
+# 模块级数据库初始化
+def setUpModule():
+    """在所有测试前初始化数据库"""
+    import tempfile
+    test_dir = tempfile.mkdtemp()
+    os.environ["ASYNC_DATABASE_URL"] = f"sqlite+aiosqlite:///{test_dir}/test_error_book_e2e.db"
+    from app.data.database import init_db
+    asyncio.run(init_db())
+    # 创建测试用户，确保外键约束满足
+    from app.middleware.auth import register_user
+    user = asyncio.run(register_user("test_user", "test_password"))
+    # 保存用户 ID 供测试使用（register_user 返回的 user.id 是 UUID）
+    global _test_user_id
+    _test_user_id = user.id if user else "test_user"
+
+
+def get_test_user_id():
+    """获取测试用户 ID（UUID）。"""
+    try:
+        return _test_user_id
+    except NameError:
+        return "test_user"
+
+
 class TestCoreAnswerExtraction(unittest.TestCase):
     """核心答案提取和存储测试"""
 
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
         self.data_file = os.path.join(self.test_dir, "test_error_book.json")
-        self.manager = ErrorBookManager(data_file=self.data_file)
+        self.manager = ErrorBookManager()
 
     def tearDown(self):
         if os.path.exists(self.test_dir):
@@ -52,8 +77,8 @@ class TestCoreAnswerExtraction(unittest.TestCase):
             categories=["导数"],
         )
 
-        error_id = self.manager.add(item)
-        loaded = self.manager.get(error_id)
+        error_id = asyncio.run(self.manager.add(get_test_user_id(), item))
+        loaded = asyncio.run(self.manager.get(get_test_user_id(), error_id))
 
         self.assertIsNotNone(loaded)
         self.assertIn("详细解析", loaded.correct_answer)
@@ -96,20 +121,20 @@ class TestCoreAnswerExtraction(unittest.TestCase):
             correct_answer=original_answer,
             error_reason="计算错误",
         )
-        item_id = self.manager.add(item)
+        item_id = asyncio.run(self.manager.add(get_test_user_id(), item))
 
         # Read
-        loaded = self.manager.get(item_id)
+        loaded = asyncio.run(self.manager.get(get_test_user_id(), item_id))
         self.assertEqual(loaded.correct_answer, original_answer)
 
         # Update (should not affect correct_answer)
-        self.manager.update(item_id, error_reason="理解错误", mastery_level=4)
-        updated = self.manager.get(item_id)
+        asyncio.run(self.manager.update(get_test_user_id(), item_id, error_reason="理解错误", mastery_level=4))
+        updated = asyncio.run(self.manager.get(get_test_user_id(), item_id))
         self.assertEqual(updated.correct_answer, original_answer)
         self.assertEqual(updated.error_reason, "理解错误")
 
         # List all
-        all_items = self.manager.get_all()
+        all_items = asyncio.run(self.manager.get_all(get_test_user_id()))
         self.assertEqual(len(all_items), 1)
         self.assertEqual(all_items[0].correct_answer, original_answer)
 
@@ -189,8 +214,7 @@ $$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$
 
         test_dir = tempfile.mkdtemp()
         try:
-            data_file = os.path.join(test_dir, "special.json")
-            manager = ErrorBookManager(data_file=data_file)
+            manager = ErrorBookManager()
 
             item = ErrorItem(
                 id="special_test",
@@ -198,8 +222,8 @@ $$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$
                 question_type="text",
                 correct_answer=content_with_special_chars,
             )
-            item_id = manager.add(item)
-            loaded = manager.get(item_id)
+            item_id = asyncio.run(manager.add(get_test_user_id(), item))
+            loaded = asyncio.run(manager.get(get_test_user_id(), item_id))
 
             self.assertIn("$E = mc^2$", loaded.correct_answer)
             self.assertIn("**加粗**", loaded.correct_answer)
@@ -213,8 +237,7 @@ $$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$
 
         test_dir = tempfile.mkdtemp()
         try:
-            data_file = os.path.join(test_dir, "large.json")
-            manager = ErrorBookManager(data_file=data_file)
+            manager = ErrorBookManager()
 
             item = ErrorItem(
                 id="large_test",
@@ -222,8 +245,8 @@ $$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$
                 question_type="text",
                 correct_answer=large_content,
             )
-            item_id = manager.add(item)
-            loaded = manager.get(item_id)
+            item_id = asyncio.run(manager.add(get_test_user_id(), item))
+            loaded = asyncio.run(manager.get(get_test_user_id(), item_id))
 
             self.assertGreater(len(loaded.correct_answer), 3000)
             self.assertIn("详细解析内容", loaded.correct_answer)

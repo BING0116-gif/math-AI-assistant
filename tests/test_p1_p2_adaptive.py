@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch, ANY
 import pytest
 
+from app.data.database import init_db, close_db
 from app.services.difficulty_estimator import (
     DifficultyEstimator,
     DEFAULT_WEIGHTS,
@@ -25,6 +26,15 @@ from agent_core.memory_persistence import (
     UserProfile,
     RECALC_TRIGGER,
 )
+
+
+# 模块级初始化数据库
+@pytest.fixture(scope="module", autouse=True)
+def _setup_database():
+    """初始化数据库。"""
+    asyncio.run(init_db())
+    yield
+    asyncio.run(close_db())
 
 
 # ═══════════════════════════════════════════════════════════════════
