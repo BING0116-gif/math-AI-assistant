@@ -40,7 +40,7 @@ def _get_sync_database_url() -> str:
 
 async def _run_alembic_migration(db_url: str) -> None:
     """使用 Alembic 执行数据库迁移。"""
-    import subprocess
+    import asyncio
     import sys
 
     # 获取同步 URL（Alembic 使用同步引擎）
@@ -50,16 +50,23 @@ async def _run_alembic_migration(db_url: str) -> None:
     env["DATABASE_URL"] = sync_url
 
     alembic_cfg = os.path.join(os.path.dirname(__file__), "alembic.ini")
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", alembic_cfg, "upgrade", "head"],
-        cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    
+    # 使用异步子进程执行 Alembic 迁移，避免阻塞事件循环
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "alembic", "-c", alembic_cfg, "upgrade", "head",
+        cwd=project_root,
         env=env,
-        capture_output=True,
-        text=True,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    if result.returncode != 0:
-        logger.error(f"Alembic 迁移失败: {result.stderr}")
-        raise RuntimeError(f"数据库迁移失败: {result.stderr}")
+    
+    stdout, stderr = await process.communicate()
+    
+    if process.returncode != 0:
+        error_msg = stderr.decode("utf-8", errors="replace")
+        logger.error(f"Alembic 迁移失败: {error_msg}")
+        raise RuntimeError(f"数据库迁移失败: {error_msg}")
     logger.info("Alembic 迁移完成")
 
 

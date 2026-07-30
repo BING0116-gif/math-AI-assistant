@@ -311,7 +311,7 @@ class FollowUpRecommender:
     async def recommend(
         self,
         user_input: str,
-        user_id: str = "anonymous",
+        user_id: str,
     ) -> FollowUpResult:
         """
         主入口：为用户推荐 2 道难度递增的练习题。

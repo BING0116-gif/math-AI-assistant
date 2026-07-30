@@ -15,13 +15,13 @@ class DataEncryption:
         if encryption_key is None:
             key_str = os.environ.get("ENCRYPTION_KEY")
             if key_str:
-                encryption_key = base64.urlsafe_b64decode(key_str)
+                # Fernet keys are already URL-safe base64 encoded.
+                encryption_key = key_str.encode()
             else:
                 encryption_key = Fernet.generate_key()
-                encoded = base64.urlsafe_b64encode(encryption_key).decode()
                 logger.warning(
                     f"未设置 ENCRYPTION_KEY 环境变量，已生成临时密钥。"
-                    f"生产环境请设置该变量: {encoded}"
+                    f"生产环境请设置该变量: {encryption_key.decode()}"
                 )
 
         self.fernet = Fernet(encryption_key)

@@ -122,7 +122,12 @@ def require_internal_auth(request: Request) -> None:
         return
 
     # 检查 X-Internal-Key 头
-    internal_key = request.headers.get("X-Internal-Key", "")
-    expected_key = settings.QUESTION_SYSTEM_API_KEY or "math-ai-internal-key"
+    internal_key = (
+        request.headers.get("X-Internal-Key", "")
+        or request.headers.get("X-API-Key", "")
+    )
+    expected_key = settings.QUESTION_SYSTEM_API_KEY
+    if not expected_key:
+        raise HTTPException(status_code=503, detail="Internal API key is not configured")
     if internal_key != expected_key:
         raise HTTPException(status_code=403, detail="内部接口鉴权失败")

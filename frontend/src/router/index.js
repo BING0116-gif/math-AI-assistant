@@ -30,6 +30,12 @@ const routes = [
     name: 'ErrorDetail',
     component: () => import('@/views/ErrorBookView.vue'),
     meta: { title: '错题详情 - 数学AI助手', transition: 'slide-fade' }
+  },
+  {
+    path: '/knowledge',
+    name: 'KnowledgeCatalog',
+    component: () => import('@/views/KnowledgeCatalogView.vue'),
+    meta: { title: '课程知识目录 - 数学AI助手', transition: 'slide-fade' }
   }
 ]
 

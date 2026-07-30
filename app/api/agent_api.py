@@ -5,11 +5,11 @@ Agent 和工具相关 API 路由。
 """
 
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.config.settings import settings
 from app.services.cache import get_cache_manager
-from app.data.database import check_database_health, engine
+from app.data.database import check_database_health
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,16 @@ def get_registry():
 
 
 @router.get("/api/agent/thought/{session_id}")
-async def get_thought_history(session_id: str):
-    recorder = get_agent().get_thought_recorder()
-    processes = recorder.get_session_processes(session_id, limit=10)
+async def get_thought_history(session_id: str, request: Request):
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
+    agent = get_agent()
+    recorder = agent.get_thought_recorder()
+    session_key = agent.session_key(str(user_id), session_id)
+    processes = recorder.get_session_processes(session_key, limit=10)
+    if not processes:
+        raise HTTPException(status_code=404, detail="会话不存在")
     return {
         "session_id": session_id,
         "processes": [p.to_dict() for p in processes],
@@ -106,10 +113,11 @@ async def detailed_health():
 async def _check_migration_status() -> dict:
     """检查 Alembic 迁移状态。"""
     try:
-        if engine is None:
+        from app.data import database
+        if database.engine is None:
             return {"status": "degraded", "error": "数据库未初始化"}
         from sqlalchemy import text as sa_text
-        async with engine.connect() as conn:
+        async with database.engine.connect() as conn:
             result = await conn.execute(sa_text("SELECT version_num FROM alembic_version"))
             row = result.fetchone()
             if row:

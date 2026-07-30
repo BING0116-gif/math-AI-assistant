@@ -21,6 +21,93 @@ class Base(DeclarativeBase):
     pass
 
 
+class Course(Base):
+    """A subject-level course with one currently published knowledge version."""
+    __tablename__ = "courses"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code = Column(String(80), nullable=False, unique=True, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, default="")
+    subject = Column(String(80), nullable=False)
+    default_version_id = Column(String(36), nullable=True)
+    status = Column(String(20), nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    versions = relationship("KnowledgeGraphVersion", back_populates="course", cascade="all, delete-orphan")
+
+
+class KnowledgeGraphVersion(Base):
+    __tablename__ = "knowledge_graph_versions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    course_id = Column(String(36), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(String(40), nullable=False)
+    name = Column(String(200), nullable=False)
+    status = Column(String(20), nullable=False, default="draft")
+    based_on_version_id = Column(String(36), nullable=True)
+    created_by = Column(String(36), nullable=True)
+    published_by = Column(String(36), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    course = relationship("Course", back_populates="versions")
+    chapters = relationship("Chapter", back_populates="version", cascade="all, delete-orphan")
+    points = relationship("KnowledgePoint", back_populates="version", cascade="all, delete-orphan")
+    __table_args__ = (UniqueConstraint("course_id", "version", name="uq_course_graph_version"),)
+
+
+class Chapter(Base):
+    __tablename__ = "chapters"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    course_id = Column(String(36), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(String(36), ForeignKey("knowledge_graph_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    parent_id = Column(String(36), ForeignKey("chapters.id", ondelete="RESTRICT"), nullable=True, index=True)
+    code = Column(String(80), nullable=False)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, default="")
+    sort_order = Column(Integer, nullable=False, default=0)
+    level = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    version = relationship("KnowledgeGraphVersion", back_populates="chapters")
+    parent = relationship("Chapter", remote_side=[id], backref="children")
+    points = relationship("KnowledgePoint", back_populates="chapter")
+    __table_args__ = (UniqueConstraint("version_id", "code", name="uq_chapter_version_code"),)
+
+
+class KnowledgePoint(Base):
+    __tablename__ = "knowledge_points"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    course_id = Column(String(36), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_id = Column(String(36), ForeignKey("knowledge_graph_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    chapter_id = Column(String(36), ForeignKey("chapters.id", ondelete="RESTRICT"), nullable=False, index=True)
+    code = Column(String(100), nullable=False)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, default="")
+    aliases = Column(JSON, nullable=False, default=list)
+    learning_objectives = Column(JSON, nullable=False, default=list)
+    common_errors = Column(JSON, nullable=False, default=list)
+    difficulty = Column(Integer, nullable=False, default=1)
+    importance = Column(Float, nullable=False, default=0.5)
+    sort_order = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="active")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    version = relationship("KnowledgeGraphVersion", back_populates="points")
+    chapter = relationship("Chapter", back_populates="points")
+    __table_args__ = (
+        UniqueConstraint("version_id", "code", name="uq_point_version_code"),
+        Index("idx_point_version_chapter_order", "version_id", "chapter_id", "sort_order"),
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -407,7 +494,12 @@ class Memory(Base):
     __tablename__ = "memories"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(64), nullable=False, index=True)
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     memory_type = Column(String(20), default="conversation")
     high_category = Column(String(64), default="")
     category = Column(String(64), default="")
@@ -452,7 +544,12 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String(64), unique=True, nullable=False)
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        unique=True,
+        nullable=False,
+    )
     summary_text = Column(Text, nullable=False)
     full_profile_json = Column(Text, nullable=False)
     version = Column(Integer, default=1)

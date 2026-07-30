@@ -1,21 +1,20 @@
-version: '3.8'
-
 services:
   web:
     build: .
     ports:
       - "${PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/math_ai.db}
-      - ASYNC_DATABASE_URL=${ASYNC_DATABASE_URL:-sqlite+aiosqlite:///./data/math_ai.db}
+      - DATABASE_URL=postgresql://${DB_USER:-mathai}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-math_ai}
+      - ASYNC_DATABASE_URL=postgresql+asyncpg://${DB_USER:-mathai}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-math_ai}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RAG_ENABLED=${RAG_ENABLED:-true}
       - DB_USER=${DB_USER:-mathai}
-      - DB_PASSWORD=${DB_PASSWORD:-changeme}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - DB_NAME=${DB_NAME:-math_ai}
       - DB_HOST=${DB_HOST:-db}
       - DB_PORT=${DB_PORT:-5432}
@@ -61,7 +60,7 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: ${DB_USER:-mathai}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_DB: ${DB_NAME:-math_ai}
     volumes:
       - postgres_data:/var/lib/postgresql/data

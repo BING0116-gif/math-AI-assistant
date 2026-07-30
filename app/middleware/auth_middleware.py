@@ -6,34 +6,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.middleware.auth import verify_access_token
+from app.middleware.auth import get_user_by_id
 from app.middleware.path_matcher import PathMatcher
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_NO_AUTH_PATHS: Set[str] = {
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/api/recognize",
-    "/api/error-book",
-    "/api/tools",
-    "/api/tools/stats",
-    "/api/tools/search",
-    "/api/tools/",
-    "/api/agent/thought/",
-    "/api/agent/stats",
-    "/api/health",
-    "/api/health/detailed",
-    "/api/health/db",
-    "/api/health/cache",
-    "/api/recommend/health",
-    "/",
-    "/error_book",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-}
-
 
 class AuthenticationMiddleware:
     def __init__(
@@ -47,7 +23,7 @@ class AuthenticationMiddleware:
         self.app = app
         self._jwt_secret_key = jwt_secret_key
         self._jwt_algorithm = jwt_algorithm
-        self._no_auth_paths = no_auth_paths or _DEFAULT_NO_AUTH_PATHS
+        self._no_auth_paths = no_auth_paths if no_auth_paths is not None else set()
         self._path_matcher = path_matcher or PathMatcher()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
@@ -84,5 +60,25 @@ class AuthenticationMiddleware:
             await response(scope, receive, send)
             return
 
-        request.state.user_id = user_id
+        try:
+            current_user = await get_user_by_id(user_id)
+        except Exception:
+            logger.exception("认证用户查询失败")
+            response = JSONResponse(
+                status_code=503,
+                content={"detail": "认证服务暂时不可用"},
+            )
+            await response(scope, receive, send)
+            return
+
+        if current_user is None or not current_user.is_active:
+            response = JSONResponse(
+                status_code=401,
+                content={"detail": "用户不存在或已停用，请重新登录"},
+            )
+            await response(scope, receive, send)
+            return
+
+        request.state.user_id = str(current_user.id)
+        request.state.current_user = current_user
         await self.app(scope, receive, send)

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from typing import Optional
 
 from app.middleware.auth import (
     register_user,
@@ -97,10 +98,16 @@ async def refresh(request: RefreshRequest):
 
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(request: Request):
+async def logout(request: Request, body: Optional[RefreshRequest] = None):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
         await revoke_token(token, settings.JWT_SECRET_KEY, settings.JWT_ALGORITHM)
+    if body is not None:
+        await revoke_token(
+            body.refresh_token,
+            settings.JWT_SECRET_KEY,
+            settings.JWT_ALGORITHM,
+        )
 
     return MessageResponse(message="已成功退出登录")

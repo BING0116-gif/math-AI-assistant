@@ -155,7 +155,6 @@ class MathAgent:
         self._max_iterations = config.strategy.max_iterations
         self._stream_enabled = config.strategy.stream
         self._base_url = config.llm.base_url
-        self._default_session_id = "default"
         self._session_histories: Dict[str, InMemoryChatMessageHistory] = {}
         self._strategy: Optional[AgentStrategy] = None
 
@@ -172,9 +171,6 @@ class MathAgent:
         self._enable_dynamic_params = config.dynamic_params.enabled
         self._dynamic_llm_factory: Optional[DynamicLLMFactory] = None
         self._init_dynamic_llm_factory(config)
-
-        # 统一会话历史访问器（初始化默认 session）
-        self._get_session_history(self._default_session_id)
 
         # LLM复杂度分类器
         self._enable_classifier = config.classifier.enabled
@@ -333,15 +329,27 @@ class MathAgent:
             max_iterations=self._max_iterations,
         )
 
-    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
-        """获取指定会话的历史记录。"""
-        if session_id not in self._session_histories:
-            self._session_histories[session_id] = InMemoryChatMessageHistory()
-        return self._session_histories[session_id]
+    @staticmethod
+    def session_key(user_id: str, session_id: str) -> str:
+        """生成用户隔离的会话键。"""
+        if not user_id:
+            raise ValueError("user_id is required")
+        if not session_id:
+            raise ValueError("session_id is required")
+        return f"{user_id}:{session_id}"
 
-    def clear_session(self, session_id: str) -> None:
+    def _get_session_history(
+        self, user_id: str, session_id: str
+    ) -> BaseChatMessageHistory:
+        """获取指定会话的历史记录。"""
+        key = self.session_key(user_id, session_id)
+        if key not in self._session_histories:
+            self._session_histories[key] = InMemoryChatMessageHistory()
+        return self._session_histories[key]
+
+    def clear_session(self, user_id: str, session_id: str) -> None:
         """清除指定会话的历史记录。"""
-        hist = self._session_histories.pop(session_id, None)
+        hist = self._session_histories.pop(self.session_key(user_id, session_id), None)
         if hist:
             hist.clear()
 
@@ -362,7 +370,9 @@ class MathAgent:
         Returns:
             包含完整上下文信息的字典
         """
-        history = self._session_histories.get(session_id)
+        if not user_id:
+            raise ValueError("user_id is required")
+        history = self._session_histories.get(self.session_key(user_id, session_id))
 
         chat_history_dicts = []
         if history:
@@ -384,7 +394,7 @@ class MathAgent:
         context = {
             "chat_history": chat_history_dicts,
             "registry": self._registry,
-            "user_id": user_id or "anonymous",
+            "user_id": user_id,
         }
 
         # 注入用户技能画像到上下文
@@ -551,23 +561,26 @@ class MathAgent:
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> str:
-        sid = session_id or self._default_session_id
+        if not user_id:
+            raise ValueError("user_id is required")
+        sid = session_id or "default"
 
-        history = self._get_session_history(sid)
+        history = self._get_session_history(user_id, sid)
         history.add_user_message(user_input)
 
         context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
+        strategy_session = self.session_key(user_id, sid)
         if self._is_image_input(user_input):
-            return await self._process_image(user_input, sid, context)
+            return await self._process_image(user_input, strategy_session, context)
 
-        strategy = await self._select_strategy(user_input, sid)
-        result = await strategy.execute(user_input, sid, context)
+        strategy = await self._select_strategy(user_input, strategy_session)
+        result = await strategy.execute(user_input, strategy_session, context)
 
         history.add_ai_message(result)
 
         if self._persistence_facade:
-            effective_user_id = user_id or session_id or "anonymous"
+            effective_user_id = user_id
             try:
                 tracked = self._behavior_tracker.track(
                     user_id=effective_user_id,
@@ -590,7 +603,7 @@ class MathAgent:
     async def solve(
         self,
         input_text: str,
-        user_id: str = "anonymous",
+        user_id: str,
         session_id: str = "default",
         images: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
@@ -614,20 +627,23 @@ class MathAgent:
         start_time = time.time()
 
         # Step 1: 执行推理
-        sid = session_id or self._default_session_id
-        history = self._get_session_history(sid)
+        if not user_id:
+            raise ValueError("user_id is required")
+        sid = session_id or "default"
+        history = self._get_session_history(user_id, sid)
         history.add_user_message(input_text)
 
         context = await self._build_context(sid, user_input=input_text, user_id=user_id)
-        strategy = await self._select_strategy(input_text, sid)
-        result_text = await strategy.execute(input_text, sid, context)
+        strategy_session = self.session_key(user_id, sid)
+        strategy = await self._select_strategy(input_text, strategy_session)
+        result_text = await strategy.execute(input_text, strategy_session, context)
 
         history.add_ai_message(result_text)
 
         # 获取思维链记录
         thoughts = []
         try:
-            recorder = strategy.get_thought_recorder(sid)
+            recorder = strategy.get_thought_recorder(strategy_session)
             if recorder._history:
                 last_process = recorder._history[-1]
                 thoughts = [s.to_dict() for s in last_process.steps]
@@ -659,7 +675,7 @@ class MathAgent:
 
         # 行为追踪
         if self._persistence_facade:
-            effective_user_id = user_id or session_id or "anonymous"
+            effective_user_id = user_id
             try:
                 tracked = self._behavior_tracker.track(
                     user_id=effective_user_id,
@@ -710,24 +726,29 @@ class MathAgent:
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        sid = session_id or self._default_session_id
+        if not user_id:
+            raise ValueError("user_id is required")
+        sid = session_id or "default"
 
-        history = self._get_session_history(sid)
+        history = self._get_session_history(user_id, sid)
         history.add_user_message(user_input)
 
         context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
+        strategy_session = self.session_key(user_id, sid)
         if self._is_image_input(user_input):
-            async for chunk in self._stream_process_image(user_input, sid, context):
+            async for chunk in self._stream_process_image(
+                user_input, strategy_session, context
+            ):
                 yield chunk
             return
 
-        strategy = await self._select_strategy(user_input, sid)
+        strategy = await self._select_strategy(user_input, strategy_session)
 
         logger.info(f"[AGENT-STREAM] 策略选择完成，开始流式执行: input='{user_input[:30]}...'")
 
         chunks = []
-        async for chunk in strategy.stream(user_input, sid, context):
+        async for chunk in strategy.stream(user_input, strategy_session, context):
             if chunk:
                 yield chunk
                 chunks.append(chunk)
@@ -757,7 +778,7 @@ class MathAgent:
                 if _already_recommended:
                     logger.info(f"[FOLLOW_UP] 检测到已有推荐内容，跳过跟进推荐")
                 else:
-                    effective_user_id = user_id or session_id or "anonymous"
+                    effective_user_id = user_id
                     recommender = get_follow_up_recommender()
                     follow_up_result = await recommender.recommend(
                         user_input=user_input,
@@ -779,7 +800,7 @@ class MathAgent:
         history.add_ai_message(full_response)
 
         if self._persistence_facade:
-            effective_user_id = user_id or session_id or "anonymous"
+            effective_user_id = user_id
             try:
                 tracked = self._behavior_tracker.track(
                     user_id=effective_user_id,
@@ -856,8 +877,11 @@ class MathAgent:
 
         将图片识别结果与用户文字说明合并后一起发送给Agent处理。
         """
-        sid = session_id or self._default_session_id
-        context = await self._build_context(sid)
+        if not user_id:
+            raise ValueError("user_id is required")
+        sid = session_id or "default"
+        history = self._get_session_history(user_id, sid)
+        context = await self._build_context(sid, user_input=user_message, user_id=user_id)
 
         if not self._registry.has_tool("vision_tool"):
             yield "**【VisionTool 未注册，无法处理图片】**\n\n"
@@ -891,17 +915,22 @@ class MathAgent:
             yield "\n\n---\n\n**【开始解题】**\n\n"
             combined_input = recognized_text
 
+        history.add_user_message(combined_input)
+        chunks = []
         try:
-            strategy = await self._select_strategy(combined_input, sid)
+            strategy_session = self.session_key(user_id, sid)
+            strategy = await self._select_strategy(combined_input, strategy_session)
             logger.info(f"[多模态] 分类器路由完成，使用策略解题")
-            async for chunk in strategy.stream(combined_input, sid, context):
+            async for chunk in strategy.stream(combined_input, strategy_session, context):
                 yield chunk
+                chunks.append(chunk)
+            history.add_ai_message("".join(chunks))
         except Exception as e:
             logger.error(f"多模态解题过程出错: {e}")
             yield f"\n\n**【解题出错】**: {e}"
 
         if self._persistence_facade:
-            effective_user_id = user_id or session_id or "anonymous"
+            effective_user_id = user_id
             try:
                 tracked = self._behavior_tracker.track(
                     user_id=effective_user_id,
@@ -915,12 +944,20 @@ class MathAgent:
             except Exception as e:
                 logger.warning(f"多模态行为追踪记录失败（非致命）: {e}")
 
-    def clear_history(self, session_id: Optional[str] = None) -> None:
+    def clear_history(self, user_id: str, session_id: str = "default") -> None:
         """清空指定会话的对话记忆。"""
-        sid = session_id or self._default_session_id
-        hist = self._session_histories.get(sid)
+        hist = self._session_histories.get(self.session_key(user_id, session_id))
         if hist is not None:
             hist.clear()
+
+    def clear_user_data(self, user_id: str) -> None:
+        """Clear every in-memory conversation and thought owned by a user."""
+        prefix = f"{user_id}:"
+        for key in [key for key in self._session_histories if key.startswith(prefix)]:
+            history = self._session_histories.pop(key)
+            history.clear()
+        if hasattr(self._strategy, "clear_user_data"):
+            self._strategy.clear_user_data(user_id)
 
     def get_thought_recorder(self):
         """获取思维记录器。"""

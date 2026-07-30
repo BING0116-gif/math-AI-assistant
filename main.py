@@ -21,6 +21,7 @@ from app.config.settings import settings
 from app.lifespan import lifespan
 from app.middleware_setup import setup_middleware
 from app.middleware.security import SecurityValidationError
+from app.router_registration import register_debug_routes
 
 
 # 路由模块
@@ -37,6 +38,7 @@ from app.api.events_api import router as events_router
 from app.api.dev_mock_api import router as dev_mock_router
 from app.api.admin_memory_api import router as admin_memory_router
 from app.api.memory_dashboard import router as dashboard_router
+from app.api.knowledge_api import router as knowledge_router
 
 # 核心组件
 from tools import get_registry
@@ -78,9 +80,12 @@ app.include_router(error_router)
 app.include_router(agent_router)
 app.include_router(memory_internal_router)
 app.include_router(events_router)
-app.include_router(dev_mock_router)
+
+
+register_debug_routes(app, settings.DEBUG, dev_mock_router)
 app.include_router(admin_memory_router)
 app.include_router(dashboard_router)
+app.include_router(knowledge_router)
 
 # ============================================================================
 # 核心组件初始化
@@ -174,6 +179,7 @@ def error_book():
 @app.get("/chat/{full_path:path}")
 @app.get("/error-book")
 @app.get("/error-book/{full_path:path}")
+@app.get("/knowledge")
 async def spa_fallback(full_path: str = ""):
     return FileResponse("frontend/dist/index.html")
 

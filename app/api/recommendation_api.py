@@ -29,24 +29,15 @@ from app.services.rag_recommender import (
 from app.services.vector_store import get_vector_store
 from app.services.llm_service import get_llm_service
 from app.config.settings import settings
-from app.middleware.auth import verify_access_token
+from app.security.access_control import require_admin_role
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/recommend", tags=["智能推荐"])
 
 
 def _get_user_id(http_request: Request) -> Optional[str]:
-    """Extract user_id from request state or verify token directly."""
-    # Try from middleware state first
-    user_id = getattr(http_request.state, "user_id", None)
-    if user_id:
-        return user_id
-    # Fallback: verify token directly
-    auth_header = http_request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        return verify_access_token(token, settings.JWT_SECRET_KEY, settings.JWT_ALGORITHM)
-    return None
+    """Return the identity established by AuthenticationMiddleware."""
+    return getattr(http_request.state, "user_id", None)
 
 
 class RecommendQuestionsRequest(BaseModel):
@@ -158,6 +149,7 @@ async def ai_analyze_question(http_request: Request):
 @router.post("/questions/import")
 async def import_questions(request: ImportQuestionsRequest, http_request: Request):
     try:
+        require_admin_role(http_request)
         user_id = _get_user_id(http_request)
         if not user_id:
             raise HTTPException(status_code=401, detail="未认证")
@@ -166,6 +158,8 @@ async def import_questions(request: ImportQuestionsRequest, http_request: Reques
         importer = QuestionImporter(vector_store=vs)
         result = await importer.import_from_dict_list(request.questions)
         return {"success": True, "data": {"total": result.total, "success": result.success, "failed": result.failed, "imported_ids": result.imported_ids}, "errors": result.errors[:10] if result.errors else None}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -205,6 +199,7 @@ async def import_pdf_questions(
     返回解析预览和导入结果。
     """
     try:
+        require_admin_role(http_request)
         user_id = _get_user_id(http_request)
         if not user_id:
             raise HTTPException(status_code=401, detail="未认证")

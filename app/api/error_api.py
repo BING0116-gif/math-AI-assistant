@@ -59,12 +59,11 @@ def get_error_book_manager():
 
 
 def _get_user_id(request: Request) -> str:
-    """从请求中获取用户 ID，未认证时使用默认值。"""
+    """从认证上下文获取用户 ID。"""
     user_id = getattr(request.state, "user_id", None)
-    if user_id:
-        return user_id
-    # 向后兼容：未认证时使用默认用户 ID
-    return "default"
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
+    return str(user_id)
 
 
 @router.get("/api/error-book")
@@ -73,6 +72,8 @@ async def get_error_book(request: Request):
         user_id = _get_user_id(request)
         errors = await get_error_book_manager().get_all(user_id)
         return [error.to_dict() for error in errors]
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
@@ -206,5 +207,7 @@ async def delete_error(error_id: str, request: Request):
         user_id = _get_user_id(request)
         success = await get_error_book_manager().remove(user_id, validated_id)
         return {"success": success}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="服务器内部错误")

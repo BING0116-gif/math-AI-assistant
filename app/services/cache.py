@@ -120,6 +120,26 @@ class CacheManager:
             except Exception:
                 pass
 
+    async def invalidate_user(self, user_id: str):
+        """Remove every cache entry whose key contains this user id."""
+        keys_to_remove = [key for key in self.l1_cache if user_id in key]
+        for key in keys_to_remove:
+            del self.l1_cache[key]
+
+        if self.redis:
+            try:
+                cursor = 0
+                while True:
+                    cursor, keys = await self.redis.scan(
+                        cursor, match=f"cache:*{user_id}*", count=100
+                    )
+                    if keys:
+                        await self.redis.delete(*keys)
+                    if cursor == 0:
+                        break
+            except Exception:
+                logger.exception("Failed to invalidate Redis data for user %s", user_id)
+
     def _set_l1(self, key: str, value: Any):
         if len(self.l1_cache) >= self.l1_max_size:
             evict_key = next(iter(self.l1_cache))

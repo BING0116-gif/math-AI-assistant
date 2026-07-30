@@ -24,6 +24,8 @@ async def stream_agent_response(
     user_id: str = None,
 ) -> AsyncGenerator[str, None]:
     """通用的 Agent 流式响应生成器。"""
+    if not user_id:
+        raise ValueError("user_id is required")
     logger.info(f"[SSE] 开始流式响应: session={session_id}, label={context_label}, user={user_id}")
     try:
         chunk_idx = 0
@@ -59,8 +61,11 @@ async def stream_recognize_response(
     agent,
     image_data: str,
     session_id: str,
+    user_id: str,
 ) -> AsyncGenerator[str, None]:
     """图片识别流式响应生成器。"""
+    if not user_id:
+        raise ValueError("user_id is required")
     try:
         if image_data.startswith("data:image/"):
             image_data = image_data.split(",")[1]
@@ -75,7 +80,9 @@ async def stream_recognize_response(
             start_msg = "**【正在识别图片内容...】**\n\n"
             yield f"data: {json.dumps({'content': start_msg, 'type': 'status'})}\n\n"
 
-            async for chunk in agent.stream(temp_file_path, session_id=session_id):
+            async for chunk in agent.stream(
+                temp_file_path, session_id=session_id, user_id=user_id
+            ):
                 if chunk:
                     if not isinstance(chunk, str):
                         chunk = str(chunk)
@@ -100,6 +107,8 @@ async def stream_multimodal_response(
     user_id: str = None,
 ) -> AsyncGenerator[str, None]:
     """多模态（图片+文字）流式响应生成器。"""
+    if not user_id:
+        raise ValueError("user_id is required")
     try:
         if image_data:
             if image_data.startswith("data:image/"):
@@ -126,7 +135,9 @@ async def stream_multimodal_response(
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
         else:
-            async for chunk in agent.stream(message, session_id=session_id):
+            async for chunk in agent.stream(
+                message, session_id=session_id, user_id=user_id
+            ):
                 if chunk:
                     if not isinstance(chunk, str):
                         chunk = str(chunk)

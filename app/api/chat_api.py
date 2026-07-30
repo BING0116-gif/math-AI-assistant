@@ -110,7 +110,12 @@ async def recognize(request: RecognizeRequest, http_request: Request):
         raise HTTPException(status_code=400, detail="请提供图片数据")
 
     return StreamingResponse(
-        stream_recognize_response(get_agent(), request.image, validated_session),
+        stream_recognize_response(
+            get_agent(),
+            request.image,
+            validated_session,
+            user_id=str(http_request.state.user_id),
+        ),
         media_type="text/event-stream",
     )
 

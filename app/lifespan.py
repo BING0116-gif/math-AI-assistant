@@ -12,6 +12,8 @@ from app.config.settings import settings
 from app.data.database import init_db, close_db
 from app.services.cache import get_cache_manager
 from app.middleware.auth import init_default_admin
+from app.data.database import get_db_session
+from app.services.knowledge_seed import seed_phase_one_calculus
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,10 @@ async def lifespan(app: FastAPI):
     logger.info("正在初始化数据库...")
     await init_db()
     logger.info("数据库初始化完成")
+
+    async with get_db_session() as session:
+        await seed_phase_one_calculus(session)
+    logger.info("Phase 1 高等数学课程目录已就绪")
 
     # 初始化默认管理员账号
     await init_default_admin(settings.JWT_SECRET_KEY)

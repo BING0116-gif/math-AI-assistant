@@ -6,7 +6,7 @@ from typing import Optional
 
 import jwt
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.data.models import User as DBUser, RefreshToken as DBRefreshToken
 from app.data.database import get_db_session
@@ -65,7 +65,7 @@ async def authenticate_user(username: str, password: str) -> Optional[DBUser]:
     async with get_db_session() as session:
         result = await session.execute(select(DBUser).where(DBUser.username == username))
         user = result.scalar_one_or_none()
-        if user and _verify_password(password, user.password_hash):
+        if user and user.is_active and _verify_password(password, user.password_hash):
             return user
         return None
 
@@ -153,17 +153,24 @@ async def refresh_access_token(refresh_token_str: str, secret_key: str,
     user_id = payload.user_id
 
     async with get_db_session() as session:
-        result = await session.execute(
-            select(DBRefreshToken).where(
+        claim = await session.execute(
+            update(DBRefreshToken)
+            .where(
                 DBRefreshToken.jti == jti,
                 DBRefreshToken.is_revoked == False,
             )
+            .values(is_revoked=True)
         )
-        rt = result.scalar_one_or_none()
-        if rt is None:
+        if claim.rowcount != 1:
             return None
-
-        rt.is_revoked = True
+        user_result = await session.execute(
+            select(DBUser).where(
+                DBUser.id == user_id,
+                DBUser.is_active == True,
+            )
+        )
+        if user_result.scalar_one_or_none() is None:
+            return None
 
     return await create_token_pair(
         user_id, secret_key, algorithm,
@@ -209,7 +216,14 @@ async def init_default_admin(secret_key: str):
         return
 
     admin = await register_user(admin_user, admin_pass)
+    async with get_db_session() as session:
+        result = await session.execute(
+            select(DBUser).where(DBUser.username == admin_user)
+        )
+        stored_admin = result.scalar_one()
+        stored_admin.role = "admin"
+        stored_admin.is_active = True
     if admin:
-        print(f"[安全] 管理员账号已创建（用户名请通过 ADMIN_USERNAME 环境变量查看）")
+        print("[安全] 管理员账号已创建")
     else:
-        print(f"[安全] 管理员账号已存在，跳过创建")
+        print("[安全] 管理员账号已存在，已确认管理员角色")

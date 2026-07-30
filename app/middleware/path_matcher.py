@@ -28,17 +28,19 @@ class PathMatcher:
     def is_skip_path(self, path: str) -> bool:
         if self.is_static_path(path):
             return True
-        return any(path.startswith(p) for p in self._skip_paths)
+        return any(
+            path == configured
+            or (configured != "/" and configured.endswith("/") and path.startswith(configured))
+            for configured in self._skip_paths
+        )
 
     def should_skip_auth(self, request: Request) -> bool:
         path = request.url.path
         if self.is_skip_path(path):
             return True
-        if path.startswith("/api/auth"):
-            return True
         if request.method == "OPTIONS":
             return True
-        if path == "/" or self.is_static_file(path):
+        if path == "/":
             return True
         return False
 

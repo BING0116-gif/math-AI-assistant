@@ -775,6 +775,38 @@ class MemoryStore:
             logger.error(f"[记忆存储] 软删除记忆失败: {e}")
             return False
 
+    async def delete_user_vectors(self, user_id: str) -> bool:
+        """Permanently remove all memory vectors belonging to one user."""
+        if not self._QDRANT_AVAILABLE:
+            return True
+
+        client = await self._get_qdrant_client()
+        if client is None:
+            return False
+
+        try:
+            from qdrant_client.models import FilterSelector
+
+            user_filter = self._Filter(
+                must=[
+                    self._FieldCondition(
+                        key="user_id",
+                        match=self._MatchValue(value=user_id),
+                    )
+                ]
+            )
+            client.delete(
+                collection_name=settings.MEMORY_QDRANT_COLLECTION,
+                points_selector=FilterSelector(filter=user_filter),
+                wait=True,
+            )
+            return True
+        except Exception:
+            logger.exception(
+                "[memory-store] Failed to delete vectors for user %s", user_id
+            )
+            return False
+
     async def archive_by_source_id(self, source_id: str) -> int:
         """根据 source_id 归档关联记忆。"""
         try:

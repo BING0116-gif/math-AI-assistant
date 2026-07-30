@@ -301,7 +301,9 @@ async def track_learning_behavior(
     request: Request,
     body: dict,
 ):
-    user_id = getattr(request.state, "user_id", "anonymous")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
 
     try:
         from app.services.behavior_tracker import LearningBehaviorTracker

@@ -8,9 +8,11 @@ echo "========================================"
 echo "  数学 AI 助手 - Docker 启动"
 echo "========================================"
 
-# 确定数据库 URL（从环境变量或默认值）
-DB_URL="${DATABASE_URL:-${ASYNC_DATABASE_URL:-sqlite:///./data/math_ai.db}}"
-echo "[1/3] 数据库 URL: ${DB_URL}"
+# Compose/production must provide DATABASE_URL explicitly. Local SQLite
+# development runs outside this production entrypoint.
+: "${DATABASE_URL:?DATABASE_URL must be set}"
+DB_URL="${DATABASE_URL}"
+echo "[1/3] 数据库已配置（凭据已隐藏）"
 
 # 执行 Alembic 迁移
 echo "[2/3] 执行数据库迁移 (alembic upgrade head)..."

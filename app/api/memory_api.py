@@ -23,10 +23,24 @@ router = APIRouter(prefix="/api/memory", tags=["记忆系统"])
 _short_term_store: dict[str, ShortTermMemory] = {}
 
 
-def _get_or_create_short_term(session_id: str) -> ShortTermMemory:
-    if session_id not in _short_term_store:
-        _short_term_store[session_id] = ShortTermMemory()
-    return _short_term_store[session_id]
+def _short_term_key(user_id: str, session_id: str) -> str:
+    if not user_id:
+        raise ValueError("user_id is required")
+    return f"{user_id}:{session_id}"
+
+
+def _get_or_create_short_term(user_id: str, session_id: str) -> ShortTermMemory:
+    key = _short_term_key(user_id, session_id)
+    if key not in _short_term_store:
+        _short_term_store[key] = ShortTermMemory()
+    return _short_term_store[key]
+
+
+def clear_user_short_term_memory(user_id: str) -> None:
+    """Clear every process-local short-term memory owned by a user."""
+    prefix = f"{user_id}:"
+    for key in [key for key in _short_term_store if key.startswith(prefix)]:
+        del _short_term_store[key]
 
 
 class LearningEventRequest(BaseModel):
@@ -55,7 +69,9 @@ class MemoryRetrieveParams(BaseModel):
 
 @router.post("/events")
 async def record_learning_event(request: LearningEventRequest, http_request: Request):
-    user_id = getattr(http_request.state, "user_id", "anonymous")
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
 
     try:
         async with get_db_session() as db:
@@ -98,14 +114,16 @@ async def retrieve_memory(
     include_short_term: bool = Query(True),
     include_long_term: bool = Query(True),
 ):
-    user_id = getattr(http_request.state, "user_id", "anonymous")
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
     session_id = http_request.headers.get("X-Session-Id", "default")
 
     short_term_results = []
     long_term_results = []
 
     if include_short_term:
-        short_term = _get_or_create_short_term(session_id)
+        short_term = _get_or_create_short_term(str(user_id), session_id)
         short_term_results = short_term.retrieve(query, top_k=limit)
 
     if include_long_term:
@@ -177,8 +195,11 @@ async def retrieve_memory(
 
 @router.get("/stats")
 async def get_memory_stats(http_request: Request):
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
     session_id = http_request.headers.get("X-Session-Id", "default")
-    short_term = _get_or_create_short_term(session_id)
+    short_term = _get_or_create_short_term(str(user_id), session_id)
 
     return {
         "short_term": short_term.stats,
@@ -188,9 +209,13 @@ async def get_memory_stats(http_request: Request):
 
 @router.delete("/clear")
 async def clear_short_term_memory(http_request: Request):
+    user_id = getattr(http_request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
     session_id = http_request.headers.get("X-Session-Id", "default")
-    if session_id in _short_term_store:
-        _short_term_store[session_id].clear()
+    key = _short_term_key(str(user_id), session_id)
+    if key in _short_term_store:
+        _short_term_store[key].clear()
 
     return {
         "success": True,
@@ -204,7 +229,9 @@ async def sync_error_book_to_skills(
     request: Request,
     error_entry: Optional[dict] = Body(None),
 ):
-    user_id = getattr(request.state, "user_id", "anonymous")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
 
     from app.services.error_book_sync import ErrorBookSkillSyncService
     sync_service = ErrorBookSkillSyncService()
@@ -224,7 +251,9 @@ async def toggle_error_mastery(
     request: Request,
     body: dict,
 ):
-    user_id = getattr(request.state, "user_id", "anonymous")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
     error_id = body.get("error_id")
     is_mastered = body.get("is_mastered", False)
 
@@ -245,7 +274,9 @@ async def batch_sync_error_book(
     request: Request,
     entries: List[dict] = Body(...),
 ):
-    user_id = getattr(request.state, "user_id", "anonymous")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
 
     from app.services.error_book_sync import ErrorBookSkillSyncService
     sync_service = ErrorBookSkillSyncService()
@@ -256,7 +287,9 @@ async def batch_sync_error_book(
 
 @router.get("/skill-impact")
 async def get_skill_impact_summary(request: Request):
-    user_id = getattr(request.state, "user_id", "anonymous")
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
 
     from app.services.error_book_sync import ErrorBookSkillSyncService
     sync_service = ErrorBookSkillSyncService()

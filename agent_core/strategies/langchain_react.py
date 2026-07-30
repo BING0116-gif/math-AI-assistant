@@ -301,7 +301,7 @@ class LangChainReActStrategy(AgentStrategy):
 
             extractor = get_memory_extractor()
             event = await extractor.extract_from_agent_result(
-                user_id=context.get("user_id", "anonymous"),
+                user_id=context["user_id"],
                 user_input=user_input,
                 agent_result={
                     "answer": full_answer,
@@ -313,7 +313,7 @@ class LangChainReActStrategy(AgentStrategy):
             if event:
                 facade = MemoryPersistenceFacade()
                 await facade.record_event(
-                    user_id=context.get("user_id", "anonymous"),
+                    user_id=context["user_id"],
                     event_data=event.to_dict(),
                 )
                 logger.info(
@@ -341,3 +341,9 @@ class LangChainReActStrategy(AgentStrategy):
     @property
     def thought_recorder(self) -> ThoughtRecordingCallbackHandler:
         return self._get_recorder("default")
+
+    def clear_user_data(self, user_id: str) -> None:
+        """Drop all per-session thought recorders owned by one user."""
+        prefix = f"{user_id}:"
+        for key in [key for key in self._recorders if key.startswith(prefix)]:
+            del self._recorders[key]

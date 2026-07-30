@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse
 
 from app.services.memory_store import get_memory_store
 from app.services.profile_service import get_profile_service
+from app.security.access_control import require_admin_role
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/api/dashboard/memory", tags=["记忆系统-Dashboard
 @router.get("/stats", response_class=HTMLResponse)
 async def dashboard_stats(request: Request):
     """记忆系统统计概览（HTML 页面）。"""
+    require_admin_role(request)
     store = get_memory_store()
 
     # 获取统计
@@ -206,6 +208,7 @@ async def dashboard_stats(request: Request):
 @router.get("/user/{user_id}", response_class=HTMLResponse)
 async def dashboard_user(request: Request, user_id: str):
     """单个用户的记忆详情页面。"""
+    require_admin_role(request)
     store = get_memory_store()
     profile_service = get_profile_service()
 
@@ -318,6 +321,7 @@ async def dashboard_timeline(
     user_id: str = "",
     limit: int = 20,
 ):
+    require_admin_role(request)
     """记忆时间线（JSON API）。"""
     store = get_memory_store()
 

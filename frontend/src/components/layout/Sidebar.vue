@@ -61,6 +61,12 @@
       </div>
 
       <div class="sidebar-footer">
+        <router-link to="/knowledge" class="btn-error-book">
+          <span class="eb-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><path d="M9 8h7M9 12h7M9 16h5"/></svg>
+          </span>
+          课程目录
+        </router-link>
         <router-link to="/error-book" class="btn-error-book">
           <span class="eb-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
