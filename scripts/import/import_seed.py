@@ -1,7 +1,8 @@
 """Import seed questions from Excel to database and vector store."""
 import asyncio
+import os
 import sys
-sys.path.insert(0, '.')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.data.database import init_db, close_db
 from app.services.question_importer import QuestionImporter

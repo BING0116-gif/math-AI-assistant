@@ -1,8 +1,8 @@
-"""
+﻿"""
 错题本数据迁移脚本 - 将 JSON 文件存储的错题数据迁移到数据库。
 
 用法:
-    python -m app.data.migrate_error_book [--user-id <用户ID>] [--json-path <JSON文件路径>]
+    python scripts/migration/migrate_error_book.py [--user-id <用户ID>] [--json-path <JSON文件路径>]
 
 如果未指定 --user-id，将使用默认用户 "default"。
 如果未指定 --json-path，默认读取 data/error_book.json。

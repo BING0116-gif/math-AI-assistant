@@ -13,7 +13,7 @@
         <div class="card-meta">
           <span class="meta-date">{{ error.added_at }}</span>
           <span class="meta-stars">{{ '★'.repeat(error.mastery_level || 3) }}{{ '☆'.repeat(5 - (error.mastery_level || 3)) }}</span>
-          <span class="meta-status" :class="{ done: error.is_mastered }">{{ error.is_mastered ? '✅ 已掌握' : '⏳ 待复习' }}</span>
+          <span class="meta-status" :class="{ done: error.is_mastered }">{{ error.is_mastered ? '已掌握' : '待复习' }}</span>
         </div>
       </div>
 
@@ -23,17 +23,17 @@
     <div class="card-body">
       <div class="body-inner">
         <div v-if="error.error_reason" class="section reason-section">
-          <div class="section-label">❌ 错误原因</div>
+          <div class="section-label">错误原因</div>
           <div class="section-text">{{ error.error_reason }}</div>
         </div>
 
         <div class="section answer-section">
-          <div class="section-label">✅ 正确答案</div>
+          <div class="section-label">正确答案</div>
           <div class="section-text math-area" v-html="answerPreview" ref="answerRef"></div>
         </div>
 
         <div v-if="error.notes" class="section notes-section">
-          <div class="section-label">📝 学习笔记</div>
+          <div class="section-label">学习笔记</div>
           <div class="section-text">{{ error.notes }}</div>
         </div>
 
@@ -42,9 +42,9 @@
         </div>
 
         <div class="card-actions">
-          <button class="act-btn primary" @click.stop="$emit('viewDetail', index)">🔍 查看详情</button>
-          <button class="act-btn" @click.stop="$emit('toggleMastery')">{{ error.is_mastered ? '↩️ 取消掌握' : '✅ 标记掌握' }}</button>
-          <button class="act-btn danger" @click.stop="$emit('delete')">🗑️ 删除</button>
+          <button class="act-btn primary" @click.stop="$emit('viewDetail', index)">查看详情</button>
+          <button class="act-btn" @click.stop="$emit('toggleMastery')">{{ error.is_mastered ? '取消掌握' : '标记掌握' }}</button>
+          <button class="act-btn danger" @click.stop="$emit('delete')">删除</button>
         </div>
       </div>
     </div>

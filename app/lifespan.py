@@ -14,6 +14,7 @@ from app.services.cache import get_cache_manager
 from app.middleware.auth import init_default_admin
 from app.data.database import get_db_session
 from app.services.knowledge_seed import seed_phase_one_calculus
+from app.tasks.scheduled_tasks import get_scheduled_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +55,17 @@ async def lifespan(app: FastAPI):
     if redis_url:
         await cache_mgr.initialize()
 
+    scheduled_tasks = get_scheduled_tasks()
+    try:
+        scheduled_tasks.start_scheduler()
+    except Exception as exc:
+        logger.warning("定时任务启动失败（不影响 API 服务）: %s", exc)
+
     logger.info("应用启动完成")
     yield
 
     logger.info("正在关闭连接...")
+    get_scheduled_tasks().stop_scheduler()
     await cache_mgr.close()
     await close_db()
     logger.info("连接已关闭")

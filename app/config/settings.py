@@ -32,6 +32,8 @@ class Settings(BaseSettings):
         default=[
             "http://localhost:8000",
             "http://127.0.0.1:8000",
+            "http://localhost:9000",
+            "http://127.0.0.1:9000",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "http://localhost:5173",
@@ -94,7 +96,6 @@ class Settings(BaseSettings):
     LLM_STREAMING: bool = Field(default=True, alias="LLM_STREAMING")
 
     # ── 向量数据库配置 ──
-    VECTOR_DB_PATH: str = Field(default="./data/chroma_db", alias="VECTOR_DB_PATH")
     VECTOR_EMBEDDING_MODEL: str = Field(default="all-MiniLM-L6-v2", alias="VECTOR_EMBEDDING_MODEL")
 
     # ── 记忆系统配置 ──

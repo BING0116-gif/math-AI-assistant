@@ -34,4 +34,4 @@ echo "    │  API 文档: http://0.0.0.0:8000/docs │"
 echo "    └─────────────────────────────────────┘"
 echo ""
 
-exec python -m uvicorn main:app --host 0.0.0.0 --port 8000
+exec python -m uvicorn app.application:app --host 0.0.0.0 --port 8000

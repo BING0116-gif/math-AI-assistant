@@ -29,9 +29,7 @@ services:
       - ./tools:/app/tools
       - ./data_processing:/app/data_processing
       - ./frontend:/app/frontend
-      - ./static:/app/static
       - ./data:/app/data
-      - ./logs:/app/logs
     restart: unless-stopped
     deploy:
       resources:
@@ -102,9 +100,31 @@ services:
     networks:
       - mathai-network
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -f http://localhost:6333/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    networks:
+      - mathai-network
+
 volumes:
   postgres_data:
   redis_data:
+  qdrant_data:
 
 networks:
   mathai-network:

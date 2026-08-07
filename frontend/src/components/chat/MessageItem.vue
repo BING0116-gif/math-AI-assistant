@@ -19,11 +19,11 @@
           <button class="eb-btn added" disabled>✓ 已加入错题本</button>
         </template>
         <template v-else-if="message.errorBookStatus === 'skipped'">
-          <button class="eb-btn skipped" disabled>⏭️ 已跳过</button>
+          <button class="eb-btn skipped" disabled>已跳过</button>
         </template>
         <template v-else>
           <button class="eb-btn add" @click.stop="$emit('addToErrorBook', message.id)">
-            📚 加入错题本
+            加入错题本
           </button>
           <button class="eb-btn skip" @click.stop="$emit('skipErrorBook', message.id)">
             不加入

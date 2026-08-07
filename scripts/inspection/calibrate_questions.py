@@ -1,4 +1,4 @@
-"""
+﻿"""
 LLM 题目批量校准分类脚本
 
 对数据库中所有题目调用 LLM 进行智能分类校准，补全/修正以下字段:
@@ -9,12 +9,12 @@ LLM 题目批量校准分类脚本
   - estimated_time   预估答题时间(分钟)
 
 用法:
-  python calibrate_questions.py                    # 校准所有题目
-  python calibrate_questions.py --dry-run          # 仅预览不写入
-  python calibrate_questions.py --limit 5          # 只校准前5题(测试用)
-  python calibrate_questions.py --category 导数    # 只校准指定分类
-  python calibrate_questions.py --from-id Q0100    # 从指定ID开始(断点续传)
-  python calibrate_questions.py --skip-calibrated  # 跳过已有知识点的题目
+  python scripts/inspection/calibrate_questions.py                    # 校准所有题目
+  python scripts/inspection/calibrate_questions.py --dry-run          # 仅预览不写入
+  python scripts/inspection/calibrate_questions.py --limit 5          # 只校准前5题(测试用)
+  python scripts/inspection/calibrate_questions.py --category 导数    # 只校准指定分类
+  python scripts/inspection/calibrate_questions.py --from-id Q0100    # 从指定ID开始(断点续传)
+  python scripts/inspection/calibrate_questions.py --skip-calibrated  # 跳过已有知识点的题目
 """
 
 import argparse
@@ -24,7 +24,7 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import create_engine, select, func, update
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from app.data.models import Question
 from app.services.llm_service import LLMService
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "math_ai.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "math_ai.db")
 SYNC_URL = f"sqlite:///{DB_PATH}"
 
 DIFFICULTY_MAP = {1: "入门", 2: "基础", 3: "标准", 4: "进阶", 5: "挑战"}

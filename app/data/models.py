@@ -93,6 +93,9 @@ class KnowledgePoint(Base):
     aliases = Column(JSON, nullable=False, default=list)
     learning_objectives = Column(JSON, nullable=False, default=list)
     common_errors = Column(JSON, nullable=False, default=list)
+    key_concepts = Column(JSON, nullable=False, default=list)
+    key_formulas = Column(JSON, nullable=False, default=list)
+    exam_focuses = Column(JSON, nullable=False, default=list)
     difficulty = Column(Integer, nullable=False, default=1)
     importance = Column(Float, nullable=False, default=0.5)
     sort_order = Column(Integer, nullable=False, default=0)
@@ -102,9 +105,37 @@ class KnowledgePoint(Base):
 
     version = relationship("KnowledgeGraphVersion", back_populates="points")
     chapter = relationship("Chapter", back_populates="points")
+    resources = relationship("KnowledgePointResource", back_populates="knowledge_point", cascade="all, delete-orphan")
     __table_args__ = (
         UniqueConstraint("version_id", "code", name="uq_point_version_code"),
         Index("idx_point_version_chapter_order", "version_id", "chapter_id", "sort_order"),
+    )
+
+
+class KnowledgePointResource(Base):
+    """A versioned learning asset attached to one knowledge point.
+
+    The resource table keeps lessons, formulas, worked examples and exercises
+    independent so later authoring/import and question-bank phases need not
+    change the knowledge graph schema.
+    """
+    __tablename__ = "knowledge_point_resources"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    knowledge_point_id = Column(String(36), ForeignKey("knowledge_points.id", ondelete="CASCADE"), nullable=False, index=True)
+    resource_type = Column(String(30), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False, default="")
+    metadata_ = Column("metadata", JSON, nullable=False, default=dict)
+    sort_order = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="published")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    knowledge_point = relationship("KnowledgePoint", back_populates="resources")
+    __table_args__ = (
+        UniqueConstraint("knowledge_point_id", "resource_type", "title", name="uq_point_resource_type_title"),
+        Index("idx_point_resource_order", "knowledge_point_id", "resource_type", "sort_order"),
     )
 
 

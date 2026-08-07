@@ -19,7 +19,7 @@ import sys
 import os
 
 # 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # 设置环境变量为 Mock 模式
 os.environ["QUESTION_SYSTEM_MODE"] = "mock"

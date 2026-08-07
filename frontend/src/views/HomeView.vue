@@ -1,5 +1,5 @@
 <template>
-  <LayoutDefault>
+  <AppShell>
     <div class="home-view">
       <div class="home-scroll-area">
         <WelcomeHero />
@@ -14,13 +14,13 @@
         <FeatureCards />
       </div>
     </div>
-  </LayoutDefault>
+  </AppShell>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import LayoutDefault from '@/components/layout/LayoutDefault.vue'
+import AppShell from '@/components/layout/AppShell.vue'
 import WelcomeHero from '@/components/home/WelcomeHero.vue'
 import FeatureCards from '@/components/home/FeatureCards.vue'
 import ChatInput from '@/components/home/ChatInput.vue'

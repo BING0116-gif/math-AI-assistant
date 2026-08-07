@@ -1,8 +1,8 @@
 <template>
-  <LayoutDefault>
+  <AppShell>
     <template #header>
       <div class="eb-header-content">
-        <h2 class="eb-title">📚 错题本</h2>
+        <h2 class="eb-title">错题本</h2>
         <router-link to="/" class="back-link">← 返回对话</router-link>
       </div>
     </template>
@@ -34,7 +34,7 @@
           />
         </TransitionGroup>
         <div v-if="store.filteredErrors.length === 0 && !store.loading" class="empty-state">
-          <div class="empty-icon">📭</div>
+          <div class="empty-icon" aria-hidden="true">—</div>
           <div class="empty-text">{{ store.totalErrors === 0 ? '暂无错题记录' : '没有匹配的错题' }}</div>
           <div class="empty-hint">{{ store.totalErrors === 0 ? '在对话中点击"加入错题本"来添加第一道错题吧！' : '尝试调整筛选条件' }}</div>
         </div>
@@ -54,14 +54,14 @@
         @delete="handleDeleteFromDetail"
       />
     </Teleport>
-  </LayoutDefault>
+  </AppShell>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import LayoutDefault from '@/components/layout/LayoutDefault.vue'
+import AppShell from '@/components/layout/AppShell.vue'
 import ErrorStats from '@/components/errorBook/ErrorStats.vue'
 import ErrorFilter from '@/components/errorBook/ErrorFilter.vue'
 import ErrorCard from '@/components/errorBook/ErrorCard.vue'

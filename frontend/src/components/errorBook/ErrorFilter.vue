@@ -1,6 +1,6 @@
 <template>
   <div class="filter-panel">
-    <div class="filter-title">🔍 筛选</div>
+    <div class="filter-title">筛选</div>
     <div class="filter-grid">
       <div class="filter-field">
         <label>搜索</label>

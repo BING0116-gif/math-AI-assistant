@@ -2,7 +2,7 @@
   <div class="detail-overlay" @click.self="$emit('close')">
     <div class="detail-container">
       <div class="detail-header">
-        <h2>📋 错题详情</h2>
+        <h2>错题详情</h2>
         <button class="close-btn" @click="$emit('close')">✕</button>
       </div>
 
@@ -14,7 +14,7 @@
 
       <div class="detail-body">
         <section class="d-section">
-          <h3>📝 题目</h3>
+          <h3>题目</h3>
           <div class="d-content">
             <template v-if="isImage">
               <img :src="error.question" class="d-image" @click="viewerOpen = true" />
@@ -25,31 +25,31 @@
         </section>
 
         <section v-if="error.error_reason" class="d-section">
-          <h3>❌ 错误原因</h3>
+          <h3>错误原因</h3>
           <div class="d-content reason-box">
             <p>{{ error.error_reason }}</p>
           </div>
         </section>
 
         <section class="d-section">
-          <h3>✅ 正确解答</h3>
+          <h3>正确解答</h3>
           <div class="d-content answer-box math-area" ref="answerBox" v-html="answerHtml"></div>
         </section>
 
         <section v-if="error.notes" class="d-section">
-          <h3>📝 学习笔记</h3>
+          <h3>学习笔记</h3>
           <div class="d-content notes-box"><p>{{ error.notes }}</p></div>
         </section>
 
         <section v-if="error.categories?.length" class="d-section">
-          <h3>🏷️ 分类标签</h3>
+          <h3>分类标签</h3>
           <div class="tag-row">
             <span v-for="cat in error.categories" :key="cat" class="tag">{{ cat }}</span>
           </div>
         </section>
 
         <section class="d-section">
-          <h3>📊 元信息</h3>
+          <h3>元信息</h3>
           <div class="meta-grid">
             <div class="meta-cell"><strong>添加时间：</strong>{{ error.added_at || '-' }}</div>
             <div class="meta-cell">
@@ -58,7 +58,7 @@
               ({{ error.mastery_level || 3 }}/5)
             </div>
             <div class="meta-cell" :class="{ mastered: error.is_mastered }">
-              <strong>状态：</strong>{{ error.is_mastered ? '✅ 已掌握' : '⏳ 待复习' }}
+              <strong>状态：</strong>{{ error.is_mastered ? '已掌握' : '待复习' }}
             </div>
           </div>
         </section>
@@ -66,7 +66,7 @@
 
       <div class="detail-footer">
         <button class="ft-btn primary" @click="$emit('toggleMastery')">✓ {{ error.is_mastered ? '取消掌握' : '标记为已掌握' }}</button>
-        <button class="ft-btn danger" @click="$emit('delete')">🗑️ 删除此错题</button>
+        <button class="ft-btn danger" @click="$emit('delete')">删除此错题</button>
       </div>
     </div>
 

@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+﻿import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
@@ -36,6 +36,12 @@ const routes = [
     name: 'KnowledgeCatalog',
     component: () => import('@/views/KnowledgeCatalogView.vue'),
     meta: { title: '课程知识目录 - 数学AI助手', transition: 'slide-fade' }
+  },
+  {
+    path: '/knowledge/points/:pointId/learn',
+    name: 'KnowledgeLearning',
+    component: () => import('@/views/KnowledgeLearningView.vue'),
+    meta: { title: '知识点学习 - 数学AI助手', transition: 'slide-fade' }
   }
 ]
 

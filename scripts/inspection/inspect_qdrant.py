@@ -1,7 +1,7 @@
 """检查 Qdrant 向量库中实际存储了什么数据"""
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from qdrant_client import QdrantClient
 
@@ -77,7 +77,7 @@ for diff, count in sorted(diffs.items()):
 # 检查哪些 question_id 在 SQLite 中不存在
 print("\n\n=== 检查 SQLite 同步情况 ===")
 import sqlite3
-conn = sqlite3.connect("data/math_ai.db")
+conn = sqlite3.connect(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "math_ai.db"))
 cur = conn.cursor()
 cur.execute("SELECT id FROM questions")
 db_ids = set(row[0] for row in cur.fetchall())

@@ -27,7 +27,7 @@ import sys
 if sys.platform == 'win32':
     os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.data.database import init_db, close_db, get_db_session
 from app.data.models import Question

@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 QDRANT_DATA_DIR = PROJECT_ROOT / "qdrant_storage"
 DOCKER_COMPOSE_FILE = PROJECT_ROOT / "docker-compose.yml"
 

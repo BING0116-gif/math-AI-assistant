@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.data.models import Chapter, Course, KnowledgeGraphVersion, KnowledgePoint
+from app.data.models import Chapter, Course, KnowledgeGraphVersion, KnowledgePoint, KnowledgePointResource
 
 
 async def get_published_course_tree(session: AsyncSession, course_id: str) -> dict | None:
@@ -48,8 +48,21 @@ async def get_published_point(session: AsyncSession, point_id: str) -> dict | No
     if course is None or version is None:
         return None
     result = _point_summary(point)
-    result.update({"course": _course_summary(course), "version": _version_summary(version), "aliases": point.aliases, "learning_objectives": point.learning_objectives, "common_errors": point.common_errors})
+    result.update({"course": _course_summary(course), "version": _version_summary(version), "aliases": point.aliases, "learning_objectives": point.learning_objectives, "common_errors": point.common_errors, "key_concepts": point.key_concepts, "key_formulas": point.key_formulas, "exam_focuses": point.exam_focuses})
     return result
+
+
+async def get_published_learning_content(session: AsyncSession, point_id: str) -> dict | None:
+    point = await get_published_point(session, point_id)
+    if point is None:
+        return None
+    resources = list((await session.execute(
+        select(KnowledgePointResource)
+        .where(KnowledgePointResource.knowledge_point_id == point_id, KnowledgePointResource.status == "published")
+        .order_by(KnowledgePointResource.resource_type, KnowledgePointResource.sort_order)
+    )).scalars())
+    point["resources"] = [{"id": resource.id, "type": resource.resource_type, "title": resource.title, "body": resource.body, "metadata": resource.metadata_} for resource in resources]
+    return point
 
 
 def _course_summary(course: Course) -> dict:

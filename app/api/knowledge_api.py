@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.data.database import get_db_session
-from app.services.knowledge_catalog import get_published_course_tree, get_published_point, list_published_courses
+from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point, list_published_courses
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["知识目录"])
@@ -29,3 +29,12 @@ async def get_point(point_id: str):
     if point is None:
         raise HTTPException(status_code=404, detail="未找到已发布知识点")
     return point
+
+
+@router.get("/points/{point_id}/learning")
+async def get_learning_content(point_id: str):
+    async with get_db_session() as session:
+        content = await get_published_learning_content(session, point_id)
+    if content is None:
+        raise HTTPException(status_code=404, detail="未找到已发布知识点")
+    return content

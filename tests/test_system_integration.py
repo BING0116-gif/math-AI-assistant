@@ -360,7 +360,7 @@ async def test_profile_analyzer():
 @pytest.mark.asyncio
 async def test_data_migration():
     print("\n[测试] 数据迁移...")
-    from app.data.migrations import DataMigrator
+    from app.data.legacy_migrations import DataMigrator
 
     os.environ["ASYNC_DATABASE_URL"] = _make_test_db_path("migration")
 

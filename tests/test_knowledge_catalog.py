@@ -3,7 +3,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.data.models import Base
-from app.services.knowledge_catalog import get_published_course_tree, get_published_point
+from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point
 from app.services.knowledge_seed import seed_phase_one_calculus
 
 
@@ -30,4 +30,8 @@ async def test_phase_one_seed_is_idempotent_and_exposes_sorted_tree():
         assert len(points) == 10
         detail = await get_published_point(session, points[0]["id"])
         assert detail["learning_objectives"]
+        assert detail["key_concepts"]
+        assert detail["exam_focuses"]
+        learning = await get_published_learning_content(session, points[0]["id"])
+        assert {resource["type"] for resource in learning["resources"]} == {"concept", "formula", "exam_focus", "example", "exercise"}
     await engine.dispose()

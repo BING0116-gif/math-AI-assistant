@@ -1,5 +1,5 @@
 <template>
-  <LayoutDefault>
+  <AppShell>
     <template #header>
       <div class="chat-header-content">
         <h2 class="chat-title">{{ store.currentChat?.title || '新对话' }}</h2>
@@ -44,7 +44,7 @@
     <Teleport to="body">
       <div v-if="showErrorModal" class="modal-backdrop" @click.self="closeErrorModal">
         <div class="error-modal-dialog">
-          <h3>📚 添加到错题本</h3>
+          <h3>添加到错题本</h3>
 
           <div class="form-group">
             <label>题目预览</label>
@@ -75,19 +75,19 @@
 
           <div class="modal-buttons">
             <button class="btn-cancel" @click="closeErrorModal">取消</button>
-            <button class="btn-confirm" @click="confirmAddError">✅ 确认添加</button>
+            <button class="btn-confirm" @click="confirmAddError">确认添加</button>
           </div>
         </div>
       </div>
     </Teleport>
-  </LayoutDefault>
+  </AppShell>
 </template>
 
 <script setup>
 import { ref, reactive, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import LayoutDefault from '@/components/layout/LayoutDefault.vue'
+import AppShell from '@/components/layout/AppShell.vue'
 import MessageItem from '@/components/chat/MessageItem.vue'
 import InputArea from '@/components/chat/InputArea.vue'
 import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
@@ -134,6 +134,18 @@ onMounted(() => {
   if (chatId) {
     const exists = store.chats.find(c => c.id === chatId)
     if (exists) store.switchChat(chatId)
+  }
+  const practiceRaw = sessionStorage.getItem('practice_knowledge_point')
+  if (practiceRaw) {
+    sessionStorage.removeItem('practice_knowledge_point')
+    try {
+      const practice = JSON.parse(practiceRaw)
+      if (practice?.prompt) {
+        nextTick(() => handleTextSend(practice.prompt))
+      }
+    } catch {
+      // Ignore malformed one-time navigation data.
+    }
   }
   nextTick(() => scrollToBottom())
 })

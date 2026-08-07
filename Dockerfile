@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua
 COPY . .
 
 # 创建必要的目录
-RUN mkdir -p data logs static frontend/dist/assets
+RUN mkdir -p data logs
 
 # 复制并设置入口脚本
 COPY scripts/entrypoint.sh /entrypoint.sh

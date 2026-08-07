@@ -481,7 +481,7 @@ async def _render_user_profiles() -> str:
         return "".join(html_parts)
     except Exception as e:
         # 表不存在时返回提示
-        return f'<div class="empty">画像表尚未创建，请先执行数据库迁移。<br><code>python -m app.data.migrations</code></div>'
+        return f'<div class="empty">画像表尚未创建，请先执行 Alembic 迁移。<br><code>alembic -c app/data/alembic.ini upgrade head</code></div>'
 
 
 def _render_user_memories(memories: List[Dict]) -> str:

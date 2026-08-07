@@ -1,13 +1,13 @@
-"""
+﻿"""
 查看数据库中题目的脚本
 用法:
-  python view_questions.py                    # 查看所有题目（分页）
-  python view_questions.py --category 函数     # 按分类筛选
-  python view_questions.py --difficulty 3      # 按难度筛选 (1-5)
-  python view_questions.py --type 选择题       # 按题型筛选
-  python view_questions.py --id Q001           # 按 ID 精确查找
-  python view_questions.py --detail            # 显示完整详情（含解析）
-  python view_questions.py --stats             # 显示统计信息
+  python scripts/inspection/view_questions.py                    # 查看所有题目（分页）
+  python scripts/inspection/view_questions.py --category 函数     # 按分类筛选
+  python scripts/inspection/view_questions.py --difficulty 3      # 按难度筛选 (1-5)
+  python scripts/inspection/view_questions.py --type 选择题       # 按题型筛选
+  python scripts/inspection/view_questions.py --id Q001           # 按 ID 精确查找
+  python scripts/inspection/view_questions.py --detail            # 显示完整详情（含解析）
+  python scripts/inspection/view_questions.py --stats             # 显示统计信息
 """
 
 import argparse
@@ -17,13 +17,13 @@ import sys
 import textwrap
 
 # 将项目根目录加入路径，确保能导入 app 模块
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import create_engine, select, func, text
 from sqlalchemy.orm import Session
 from app.data.models import Question
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "math_ai.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "math_ai.db")
 SYNC_URL = f"sqlite:///{DB_PATH}"
 
 DIFFICULTY_MAP = {1: "入门", 2: "基础", 3: "标准", 4: "进阶", 5: "挑战"}

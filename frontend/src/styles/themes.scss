@@ -1,80 +1,137 @@
-// ========================================
-// 数学AI助手 - 主题 CSS 自定义属性定义
-// 亮色/暗色双主题完整令牌
-// ========================================
-
-// 亮色主题（默认）
+// Runtime semantic design tokens. This is the single theme authority for the app.
 :root,
 [data-theme='light'] {
-  --primary: #FF6B6B;
-  --primary-hover: #F87171;
-  --primary-active: #DC2626;
-  --primary-ghost: rgba(245, 158, 11, 0.08);
+  color-scheme: light;
 
-  --accent: #4F46E5;
-  --accent-ghost: rgba(79, 70, 229, 0.10);
+  --color-canvas: #f4f2ec;
+  --color-surface: #fbfaf6;
+  --color-surface-raised: #ffffff;
+  --color-surface-muted: #eeece4;
+  --color-text: #20231f;
+  --color-text-muted: #666b63;
+  --color-text-subtle: #858a80;
+  --color-text-inverse: #fbfaf6;
+  --color-border: #dcdcd2;
+  --color-border-subtle: #e9e8df;
+  --color-focus: #2d6b5f;
 
-  --success: #10B981;
-  --warning: #F59E0B;
-  --danger: #EF4444;
-  --info: #3B82F6;
+  --color-action: #20231f;
+  --color-action-hover: #394039;
+  --color-action-soft: #e4ebe7;
+  --color-agent: #2d6b5f;
+  --color-agent-soft: #dfece7;
+  --color-knowledge: #6e63a6;
+  --color-knowledge-soft: #e9e5f5;
+  --color-review: #b8743b;
+  --color-review-soft: #f5e7d8;
+  --color-success: #287653;
+  --color-success-soft: #dceee4;
+  --color-warning: #99601e;
+  --color-warning-soft: #f7ead5;
+  --color-danger: #a63f3d;
+  --color-danger-soft: #f7e1df;
+  --color-info: #356b9a;
+  --color-info-soft: #deebf5;
+  --color-graph: #0b1110;
+  --color-graph-surface: #141d1a;
 
-  --bg-main: #F3F6FA;
-  --bg-card: #FFFFFF;
-  --bg-sidebar: #F8FAFC;
-  --bg-topbar: #FFFFFF;
-  --bg-overlay: rgba(15, 23, 42, 0.3);
+  --shadow-sm: 0 1px 2px rgba(32, 35, 31, 0.06);
+  --shadow-md: 0 8px 24px rgba(32, 35, 31, 0.10);
+  --shadow-lg: 0 18px 48px rgba(32, 35, 31, 0.14);
+  --shadow-focus: 0 0 0 3px rgba(45, 107, 95, 0.22);
 
-  --text-primary: #1E293B;
-  --text-secondary: #64748B;
-  --text-tertiary: #94A3B8;
-
-  --border-default: #CBD5E1;
-  --border-light: #E2E8F0;
-  --border-subtle: #F1F5F9;
-
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
-  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
-
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
+  // Legacy aliases retained while existing page internals migrate incrementally.
+  --primary: var(--color-agent);
+  --primary-hover: #24584e;
+  --primary-active: #1e4a42;
+  --primary-ghost: var(--color-agent-soft);
+  --accent: var(--color-knowledge);
+  --accent-ghost: var(--color-knowledge-soft);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+  --info: var(--color-info);
+  --bg-main: var(--color-canvas);
+  --bg-card: var(--color-surface-raised);
+  --bg-sidebar: var(--color-surface);
+  --bg-topbar: rgba(251, 250, 246, 0.94);
+  --bg-overlay: rgba(11, 17, 16, 0.48);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-muted);
+  --text-tertiary: var(--color-text-subtle);
+  --border-default: var(--color-border);
+  --border-light: var(--color-border-subtle);
+  --border-subtle: var(--color-border-subtle);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
   --radius-xl: 20px;
   --radius-full: 9999px;
-
-  --transition-theme: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-// 暗色主题
 [data-theme='dark'] {
-  --primary: #F59E0B;
-  --primary-hover: #D97706;
-  --primary-active: #B45309;
-  --primary-ghost: rgba(245, 158, 11, 0.15);
+  color-scheme: dark;
 
-  --accent: #F59E0B;
-  --accent-ghost: rgba(245, 158, 11, 0.20);
+  --color-canvas: #111715;
+  --color-surface: #18211e;
+  --color-surface-raised: #202b27;
+  --color-surface-muted: #25332e;
+  --color-text: #f2f3ed;
+  --color-text-muted: #b7c0b8;
+  --color-text-subtle: #8e9a91;
+  --color-text-inverse: #111715;
+  --color-border: #3b4a43;
+  --color-border-subtle: #2c3933;
+  --color-focus: #72b8a5;
+  --color-action: #f2f3ed;
+  --color-action-hover: #ffffff;
+  --color-action-soft: #2b3933;
+  --color-agent: #72b8a5;
+  --color-agent-soft: #254039;
+  --color-knowledge: #b5a9e7;
+  --color-knowledge-soft: #342f50;
+  --color-review: #e0a76f;
+  --color-review-soft: #4a3525;
+  --color-success: #80cba4;
+  --color-success-soft: #254436;
+  --color-warning: #e8ba78;
+  --color-warning-soft: #493a25;
+  --color-danger: #ef928e;
+  --color-danger-soft: #4b2928;
+  --color-info: #8fc0e6;
+  --color-info-soft: #283f51;
+  --color-graph: #0b1110;
+  --color-graph-surface: #141d1a;
 
-  --bg-main: #0f172a;
-  --bg-card: rgba(30, 41, 59, 0.95);
-  --bg-sidebar: rgba(30, 41, 59, 0.95);
-  --bg-topbar: rgba(51, 65, 85, 0.9);
-  --bg-overlay: rgba(15, 23, 42, 0.7);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.40);
+  --shadow-focus: 0 0 0 3px rgba(114, 184, 165, 0.28);
 
-  --text-primary: #FFFFFF;
-  --text-secondary: rgba(255, 255, 255, 0.70);
-  --text-tertiary: rgba(255, 255, 255, 0.45);
-
-  --border-default: rgba(255, 255, 255, 0.25);
-  --border-light: rgba(255, 255, 255, 0.15);
-  --border-subtle: rgba(255, 255, 255, 0.10);
-
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
-  --shadow-glow: 0 0 30px rgba(245, 158, 11, 0.25);
+  --primary: var(--color-agent);
+  --primary-hover: #8cc8b7;
+  --primary-active: #5da693;
+  --primary-ghost: var(--color-agent-soft);
+  --accent: var(--color-knowledge);
+  --accent-ghost: var(--color-knowledge-soft);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+  --info: var(--color-info);
+  --bg-main: var(--color-canvas);
+  --bg-card: var(--color-surface-raised);
+  --bg-sidebar: var(--color-surface);
+  --bg-topbar: rgba(24, 33, 30, 0.94);
+  --bg-overlay: rgba(0, 0, 0, 0.66);
+  --text-primary: var(--color-text);
+  --text-secondary: var(--color-text-muted);
+  --text-tertiary: var(--color-text-subtle);
+  --border-default: var(--color-border);
+  --border-light: var(--color-border-subtle);
+  --border-subtle: var(--color-border-subtle);
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
 }

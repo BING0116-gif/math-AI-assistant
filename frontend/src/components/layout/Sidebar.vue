@@ -87,10 +87,10 @@
         role="menu"
       >
         <div class="ctx-item" @click.stop="handleRename" role="menuitem">
-          <span>✏️</span> 重命名
+          <span class="ctx-glyph" aria-hidden="true">Aa</span> 重命名
         </div>
         <div class="ctx-item danger" @click.stop="handleDelete" role="menuitem">
-          <span>🗑️</span> 删除对话
+          <span class="ctx-glyph" aria-hidden="true">×</span> 删除对话
         </div>
       </div>
     </Teleport>
@@ -101,6 +101,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
+import { ElMessageBox } from 'element-plus'
 
 const props = defineProps({ collapsed: Boolean })
 const emit = defineEmits(['toggle'])
@@ -132,18 +133,18 @@ function hideContextMenu() {
 
 function handleRename() {
   hideContextMenu()
-  const title = prompt('请输入新的对话名称:')
-  if (title?.trim()) {
-    store.renameChat(contextMenu.chatId, title.trim())
-  }
+  ElMessageBox.prompt('请输入新的对话名称。', '重命名对话', { confirmButtonText: '保存', cancelButtonText: '取消', inputPattern: /\S+/, inputErrorMessage: '名称不能为空。' })
+    .then(({ value }) => store.renameChat(contextMenu.chatId, value.trim()))
+    .catch(() => {})
 }
 
 function handleDelete() {
   hideContextMenu()
   const chat = store.chats.find(c => c.id === contextMenu.chatId)
-  if (chat && confirm(`确定要删除对话「${chat.title}」吗？此操作不可恢复。`)) {
-    store.deleteChat(contextMenu.chatId)
-  }
+  if (!chat) return
+  ElMessageBox.confirm(`确定要删除对话「${chat.title}」吗？此操作不可恢复。`, '删除对话', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
+    .then(() => store.deleteChat(contextMenu.chatId))
+    .catch(() => {})
 }
 
 function handleNewChat() {
