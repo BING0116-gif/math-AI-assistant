@@ -8,11 +8,11 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import { useThemeStore } from '@/stores/themeStore'
+import { useUiStore } from '@/stores/uiStore'
 
-const themeStore = useThemeStore()
+const ui = useUiStore()
 
 onMounted(() => {
-  themeStore.init()
+  ui.init()
 })
 </script>

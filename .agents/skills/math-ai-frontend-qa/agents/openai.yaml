@@ -1,0 +1,4 @@
+interface:
+  display_name: "Math AI Frontend QA"
+  short_description: "Verify Vue student flows and dashboard UX"
+  default_prompt: "Use $math-ai-frontend-qa to verify this frontend change."

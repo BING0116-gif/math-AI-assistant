@@ -1,6 +1,6 @@
 <template>
   <AppShell>
-    <template #header>
+    <template #page-header>
       <div class="eb-header-content">
         <h2 class="eb-title">错题本</h2>
         <router-link to="/" class="back-link">← 返回对话</router-link>
@@ -61,7 +61,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import AppShell from '@/components/layout/AppShell.vue'
+import AppShell from '@/components/shell/AppShell.vue'
 import ErrorStats from '@/components/errorBook/ErrorStats.vue'
 import ErrorFilter from '@/components/errorBook/ErrorFilter.vue'
 import ErrorCard from '@/components/errorBook/ErrorCard.vue'

@@ -36,7 +36,7 @@ tests/                    自动化测试
 启动后端：
 
 ```powershell
-.\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8000 --reload
+.\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8100 --reload
 ```
 
 启动前端：
@@ -48,9 +48,9 @@ npm run dev
 
 访问学生端：`http://127.0.0.1:5173`
 
-API 地址：`http://127.0.0.1:8000`
+API 地址：`http://127.0.0.1:8100`
 
-当 `.env` 中 `DEBUG=true` 时，API 文档地址为 `http://127.0.0.1:8000/docs`。
+当 `.env` 中 `DEBUG=true` 时，API 文档地址为 `http://127.0.0.1:8100/docs`。
 
 Windows 下也可以运行根目录的 `start.bat`，它只启动后端；前端需要在另一个终端运行 `npm run dev`。
 

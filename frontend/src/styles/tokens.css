@@ -1,0 +1,246 @@
+/* ============================================================
+   知微 Math AI — Design System Tokens (V2.2)
+   Spec: §7.2 浅色主题 Token, §7.3 深色主题 Token, §7.4 排版, §7.5 空间与形态
+   ============================================================ */
+
+/* ---- 浅色主题 ---- */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* 背景层级 */
+  --canvas: #F7F7F4;
+  --surface: #FFFFFF;
+  --surface-muted: #F1F1ED;
+  --surface-hover: #ECECE7;
+
+  /* 文字层级 */
+  --text-primary: #1D1D1B;
+  --text-secondary: #666660;
+  --text-tertiary: #92928B;
+
+  /* 边框 */
+  --border-subtle: #E6E6E0;
+  --border-strong: #D5D5CE;
+
+  /* 语义色 */
+  --accent: #456F65;
+  --accent-hover: #365B53;
+  --knowledge: #6E67A3;
+  --mastered: #5F947C;
+  --learning: #B08A47;
+  --weak: #C46F5D;
+  --danger: #B84E4E;
+
+  /* 状态色 */
+  --info: #5B8BA8;
+  --success: #5F947C;
+  --warning: #B08A47;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(29, 29, 27, 0.06);
+  --shadow-md: 0 8px 24px rgba(29, 29, 27, 0.10);
+  --shadow-lg: 0 18px 48px rgba(29, 29, 27, 0.14);
+  --shadow-focus: 0 0 0 3px rgba(69, 111, 101, 0.22);
+
+  /* 圆角 — 4px 基础网格 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  /* 排版 */
+  --font-sans: 'Inter', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'DM Mono', 'Consolas', 'Monaco', monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 28px;
+  --line-height-base: 1.7;
+  --line-height-tight: 1.4;
+
+  /* 间距 — 4px 基础网格 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* 动效 */
+  --transition-fast: 140ms ease-out;
+  --transition-base: 200ms ease-out;
+  --transition-slow: 320ms ease-out;
+
+  /* 布局 */
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 68px;
+  --topbar-height: 56px;
+  --content-max-width: 820px;
+  --inspector-width: 360px;
+
+  /* 元素 Plus 兼容 */
+  --el-color-primary: var(--accent);
+  --el-color-danger: var(--danger);
+  --el-bg-color: var(--surface);
+  --el-text-color-primary: var(--text-primary);
+  --el-border-color: var(--border-subtle);
+  --el-border-radius-base: var(--radius-sm);
+  --el-border-radius-medium: var(--radius-md);
+}
+
+/* ---- 深色主题 ---- */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --canvas: #181817;
+  --surface: #20201E;
+  --surface-muted: #282826;
+  --surface-hover: #30302D;
+
+  --text-primary: #F0F0EC;
+  --text-secondary: #B2B2AA;
+  --text-tertiary: #85857E;
+
+  --border-subtle: #32322F;
+  --border-strong: #42423E;
+
+  --accent: #78A99B;
+  --accent-hover: #8DBFB1;
+  --knowledge: #9B94CC;
+  --mastered: #7DB89C;
+  --learning: #C9A86A;
+  --weak: #D48A78;
+  --danger: #D47A7A;
+
+  --info: #7BAEC9;
+  --success: #7DB89C;
+  --warning: #C9A86A;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.40);
+  --shadow-focus: 0 0 0 3px rgba(120, 169, 155, 0.28);
+}
+
+/* ---- 全局重置 ---- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background: var(--canvas);
+}
+
+#app {
+  height: 100%;
+}
+
+/* ---- 滚动条 ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(146, 146, 139, 0.3);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(146, 146, 139, 0.5);
+}
+
+/* ---- 焦点 ---- */
+:focus-visible {
+  outline: 2.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- 无障碍辅助 ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- 动效减敏 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- 排版 ---- */
+h1, h2, h3, h4, h5, h6 {
+  line-height: var(--line-height-tight);
+  font-weight: 600;
+}
+
+.page-title {
+  font-size: var(--font-size-2xl);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+}
+
+.section-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+}
+
+/* ---- 链接 ---- */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* ---- 按钮重置 ---- */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* ---- 输入重置 ---- */
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+}

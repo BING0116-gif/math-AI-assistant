@@ -1,12 +1,12 @@
 <template>
   <button
     class="theme-toggle"
-    @click="themeStore.toggleTheme()"
-    :title="themeStore.theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'"
-    :aria-label="themeStore.theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'"
-    :aria-pressed="themeStore.theme === 'dark'"
+    @click="ui.toggleTheme()"
+    :title="ui.theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'"
+    :aria-label="ui.theme === 'light' ? '切换至暗色模式' : '切换至亮色模式'"
+    :aria-pressed="ui.theme === 'dark'"
   >
-    <svg v-if="themeStore.theme === 'light'" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <svg v-if="ui.theme === 'light'" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
       <circle cx="12" cy="12" r="5"/>
       <line x1="12" y1="1" x2="12" y2="3"/>
       <line x1="12" y1="21" x2="12" y2="23"/>
@@ -24,9 +24,9 @@
 </template>
 
 <script setup>
-import { useThemeStore } from '@/stores/themeStore'
+import { useUiStore } from '@/stores/uiStore'
 
-const themeStore = useThemeStore()
+const ui = useUiStore()
 </script>
 
 <style lang="scss" scoped>

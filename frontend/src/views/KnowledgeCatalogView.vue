@@ -1,6 +1,6 @@
 <template>
   <AppShell>
-    <template #header>
+    <template #page-header>
       <div class="catalog-header"><div><p class="eyebrow">课程地图</p><h1>高等数学思维导图</h1></div><span v-if="tree" class="version-badge">{{ tree.version.name }}</span></div>
     </template>
 
@@ -45,7 +45,7 @@
 import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import AppShell from '@/components/layout/AppShell.vue'
+import AppShell from '@/components/shell/AppShell.vue'
 import KnowledgeGalaxy from '@/components/knowledge/KnowledgeGalaxy.vue'
 import { getCourseTree, getKnowledgePoint, listCourses } from '@/api/knowledge'
 import api from '@/api'

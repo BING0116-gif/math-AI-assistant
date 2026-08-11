@@ -9,7 +9,7 @@
 Windows：
 
 ```powershell
-.\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8000 --reload
+.\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8100 --reload
 ```
 
 也可以双击根目录的 `start.bat`，但它默认不开启热重载。
@@ -21,7 +21,8 @@ cd frontend
 npm run dev
 ```
 
-浏览器访问 `http://127.0.0.1:5173`。Vite 会把 `/api` 请求代理到 `http://localhost:8000`。
+浏览器访问 `http://127.0.0.1:5173`。Vite 会把 `/api` 请求代理到 `http://127.0.0.1:8100`。
+如需使用其他本地后端端口，可设置 `BACKEND_PORT`，并将前端的 `VITE_API_TARGET` 设置为对应地址。
 
 ### 3. 只验证后端
 
