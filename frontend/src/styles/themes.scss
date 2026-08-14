@@ -1,137 +1,104 @@
-// Runtime semantic design tokens. This is the single theme authority for the app.
+/* ============================================================
+   知微 Math AI — Legacy Theme Aliases (V3.0)
+   本文件为旧组件提供向后兼容的 --color-* 和 legacy alias 变量。
+   新组件应直接使用 tokens.css 中的 --canvas, --accent 等 V3 token。
+   ============================================================ */
+
 :root,
 [data-theme='light'] {
   color-scheme: light;
 
-  --color-canvas: #f4f2ec;
-  --color-surface: #fbfaf6;
-  --color-surface-raised: #ffffff;
-  --color-surface-muted: #eeece4;
-  --color-text: #20231f;
-  --color-text-muted: #666b63;
-  --color-text-subtle: #858a80;
-  --color-text-inverse: #fbfaf6;
-  --color-border: #dcdcd2;
-  --color-border-subtle: #e9e8df;
-  --color-focus: #2d6b5f;
+  /* 背景层级（legacy --color-* 命名） */
+  --color-canvas: #F7F6F1;
+  --color-surface: #FCFBF8;
+  --color-surface-raised: #FFFFFF;
+  --color-surface-muted: #F1F2EC;
+  --color-text: #20231F;
+  --color-text-muted: #72766F;
+  --color-text-subtle: #9A9D96;
+  --color-text-inverse: #FCFBF8;
+  --color-border: #E6E3DA;
+  --color-border-subtle: #E6E3DA;
+  --color-focus: #416B56;
 
-  --color-action: #20231f;
-  --color-action-hover: #394039;
-  --color-action-soft: #e4ebe7;
-  --color-agent: #2d6b5f;
-  --color-agent-soft: #dfece7;
-  --color-knowledge: #6e63a6;
-  --color-knowledge-soft: #e9e5f5;
-  --color-review: #b8743b;
-  --color-review-soft: #f5e7d8;
-  --color-success: #287653;
-  --color-success-soft: #dceee4;
-  --color-warning: #99601e;
-  --color-warning-soft: #f7ead5;
-  --color-danger: #a63f3d;
-  --color-danger-soft: #f7e1df;
-  --color-info: #356b9a;
-  --color-info-soft: #deebf5;
-  --color-graph: #0b1110;
-  --color-graph-surface: #141d1a;
+  /* 语义色（legacy --color-* 命名） */
+  --color-action: #20231F;
+  --color-action-hover: #3A3D38;
+  --color-action-soft: #E8EFE9;
+  --color-agent: #416B56;
+  --color-agent-soft: #E8EFE9;
+  --color-knowledge: #417E7A;
+  --color-knowledge-soft: #E3EEE9;
+  --color-review: #C8913D;
+  --color-review-soft: #F3EADB;
+  --color-success: #5F947C;
+  --color-success-soft: #E3EFE6;
+  --color-warning: #C8913D;
+  --color-warning-soft: #F3EADB;
+  --color-danger: #C9674C;
+  --color-danger-soft: #F5E5DF;
+  --color-info: #417E7A;
+  --color-info-soft: #E3EEE9;
+  --color-graph: #14171A;
+  --color-graph-surface: #1C2024;
 
-  --shadow-sm: 0 1px 2px rgba(32, 35, 31, 0.06);
-  --shadow-md: 0 8px 24px rgba(32, 35, 31, 0.10);
-  --shadow-lg: 0 18px 48px rgba(32, 35, 31, 0.14);
-  --shadow-focus: 0 0 0 3px rgba(45, 107, 95, 0.22);
-
-  // Legacy aliases retained while existing page internals migrate incrementally.
+  /* Legacy aliases — 仅定义 tokens.css 中不存在的旧变量名。
+     所有与 tokens.css 同名的变量（--accent, --radius-*, --shadow-*,
+     --text-*, --border-* 等）已由 tokens.css 统一管理，此处不再重复定义，
+     避免因加载顺序后置而覆盖 tokens.css 的值。 */
   --primary: var(--color-agent);
-  --primary-hover: #24584e;
-  --primary-active: #1e4a42;
+  --primary-hover: #355B49;
+  --primary-active: #2A4A3C;
   --primary-ghost: var(--color-agent-soft);
-  --accent: var(--color-knowledge);
   --accent-ghost: var(--color-knowledge-soft);
-  --success: var(--color-success);
-  --warning: var(--color-warning);
-  --danger: var(--color-danger);
-  --info: var(--color-info);
-  --bg-main: var(--color-canvas);
   --bg-card: var(--color-surface-raised);
   --bg-sidebar: var(--color-surface);
-  --bg-topbar: rgba(251, 250, 246, 0.94);
-  --bg-overlay: rgba(11, 17, 16, 0.48);
-  --text-primary: var(--color-text);
-  --text-secondary: var(--color-text-muted);
-  --text-tertiary: var(--color-text-subtle);
-  --border-default: var(--color-border);
-  --border-light: var(--color-border-subtle);
-  --border-subtle: var(--color-border-subtle);
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 20px;
-  --radius-full: 9999px;
+  --bg-topbar: rgba(252, 251, 248, 0.94);
+  --bg-overlay: rgba(20, 23, 26, 0.44);
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --color-canvas: #111715;
-  --color-surface: #18211e;
-  --color-surface-raised: #202b27;
-  --color-surface-muted: #25332e;
-  --color-text: #f2f3ed;
-  --color-text-muted: #b7c0b8;
-  --color-text-subtle: #8e9a91;
-  --color-text-inverse: #111715;
-  --color-border: #3b4a43;
-  --color-border-subtle: #2c3933;
-  --color-focus: #72b8a5;
-  --color-action: #f2f3ed;
-  --color-action-hover: #ffffff;
-  --color-action-soft: #2b3933;
-  --color-agent: #72b8a5;
-  --color-agent-soft: #254039;
-  --color-knowledge: #b5a9e7;
-  --color-knowledge-soft: #342f50;
-  --color-review: #e0a76f;
-  --color-review-soft: #4a3525;
-  --color-success: #80cba4;
-  --color-success-soft: #254436;
-  --color-warning: #e8ba78;
-  --color-warning-soft: #493a25;
-  --color-danger: #ef928e;
-  --color-danger-soft: #4b2928;
-  --color-info: #8fc0e6;
-  --color-info-soft: #283f51;
-  --color-graph: #0b1110;
-  --color-graph-surface: #141d1a;
+  --color-canvas: #14171A;
+  --color-surface: #1C2024;
+  --color-surface-raised: #24282D;
+  --color-surface-muted: #24282D;
+  --color-text: #EDEBE4;
+  --color-text-muted: #A8ABA3;
+  --color-text-subtle: #787C75;
+  --color-text-inverse: #14171A;
+  --color-border: #33383E;
+  --color-border-subtle: #33383E;
+  --color-focus: #7DA58E;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.40);
-  --shadow-focus: 0 0 0 3px rgba(114, 184, 165, 0.28);
+  --color-action: #EDEBE4;
+  --color-action-hover: #FFFFFF;
+  --color-action-soft: #2C3137;
+  --color-agent: #7DA58E;
+  --color-agent-soft: #263830;
+  --color-knowledge: #7DA59E;
+  --color-knowledge-soft: #233331;
+  --color-review: #C9A86A;
+  --color-review-soft: #3A2F20;
+  --color-success: #7DB89C;
+  --color-success-soft: #26382E;
+  --color-warning: #C9A86A;
+  --color-warning-soft: #3A2F20;
+  --color-danger: #D48A78;
+  --color-danger-soft: #3A2622;
+  --color-info: #7DA59E;
+  --color-info-soft: #233331;
+  --color-graph: #0F1214;
+  --color-graph-surface: #1A1E21;
 
   --primary: var(--color-agent);
-  --primary-hover: #8cc8b7;
-  --primary-active: #5da693;
+  --primary-hover: #92B8A2;
+  --primary-active: #6C947A;
   --primary-ghost: var(--color-agent-soft);
-  --accent: var(--color-knowledge);
   --accent-ghost: var(--color-knowledge-soft);
-  --success: var(--color-success);
-  --warning: var(--color-warning);
-  --danger: var(--color-danger);
-  --info: var(--color-info);
-  --bg-main: var(--color-canvas);
   --bg-card: var(--color-surface-raised);
   --bg-sidebar: var(--color-surface);
-  --bg-topbar: rgba(24, 33, 30, 0.94);
-  --bg-overlay: rgba(0, 0, 0, 0.66);
-  --text-primary: var(--color-text);
-  --text-secondary: var(--color-text-muted);
-  --text-tertiary: var(--color-text-subtle);
-  --border-default: var(--color-border);
-  --border-light: var(--color-border-subtle);
-  --border-subtle: var(--color-border-subtle);
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 20px;
-  --radius-full: 9999px;
+  --bg-topbar: rgba(28, 32, 36, 0.94);
+  --bg-overlay: rgba(0, 0, 0, 0.60);
 }

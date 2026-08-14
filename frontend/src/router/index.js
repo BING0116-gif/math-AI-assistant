@@ -1,4 +1,4 @@
-﻿import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
@@ -42,6 +42,18 @@ const routes = [
     name: 'KnowledgeLearning',
     component: () => import('@/views/KnowledgeLearningView.vue'),
     meta: { title: '知识点学习 - 数学AI助手', transition: 'slide-fade' }
+  },
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('@/views/DashboardView.vue'),
+    meta: { title: '学习看板 - 数学AI助手', transition: 'slide-fade' }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/ProfileView.vue'),
+    meta: { title: '记忆画像 - 数学AI助手', transition: 'slide-fade' }
   }
 ]
 

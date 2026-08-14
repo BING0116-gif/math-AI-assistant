@@ -1,6 +1,7 @@
 /* ============================================================
-   知微 Math AI — Design System Tokens (V2.2)
-   Spec: §7.2 浅色主题 Token, §7.3 深色主题 Token, §7.4 排版, §7.5 空间与形态
+   知微 Math AI — Design System Tokens (V3.0)
+   视觉方向：高级 · 克制 · 学术 · 温和
+   色彩体系：暖米白 × 墨色文字 × 松绿主色 × 青绿/琥珀状态色
    ============================================================ */
 
 /* ---- 浅色主题 ---- */
@@ -8,50 +9,56 @@
 [data-theme='light'] {
   color-scheme: light;
 
-  /* 背景层级 */
-  --canvas: #F7F7F4;
-  --surface: #FFFFFF;
-  --surface-muted: #F1F1ED;
-  --surface-hover: #ECECE7;
+  /* 背景层级 — 暖米白系 */
+  --canvas: #F7F6F1;
+  --surface: #FCFBF8;
+  --surface-muted: #F1F2EC;
+  --surface-hover: #ECEAE0;
 
-  /* 文字层级 */
-  --text-primary: #1D1D1B;
-  --text-secondary: #666660;
-  --text-tertiary: #92928B;
+  /* 文字层级 — 墨色系，避免纯黑 */
+  --text-primary: #20231F;
+  --text-secondary: #72766F;
+  --text-tertiary: #9A9D96;
 
-  /* 边框 */
-  --border-subtle: #E6E6E0;
-  --border-strong: #D5D5CE;
+  /* 边框 — 统一 token，1px */
+  --border-subtle: #E6E3DA;
+  --border-strong: #D3CFC4;
 
-  /* 语义色 */
-  --accent: #456F65;
-  --accent-hover: #365B53;
-  --knowledge: #6E67A3;
+  /* 语义色 — 松绿主色 */
+  --accent: #416B56;
+  --accent-hover: #355B49;
+  --accent-soft: #E8EFE9;
+
+  /* 知识/教育域 — 青绿 */
+  --knowledge: #417E7A;
+  --knowledge-soft: #E3EEE9;
+
+  /* 学习状态 */
   --mastered: #5F947C;
-  --learning: #B08A47;
-  --weak: #C46F5D;
-  --danger: #B84E4E;
+  --learning: #C8913D;
+  --weak: #C9674C;
 
   /* 状态色 */
-  --info: #5B8BA8;
+  --info: #417E7A;
   --success: #5F947C;
-  --warning: #B08A47;
+  --warning: #C8913D;
+  --danger: #C9674C;
 
-  /* 阴影 */
-  --shadow-sm: 0 1px 2px rgba(29, 29, 27, 0.06);
-  --shadow-md: 0 8px 24px rgba(29, 29, 27, 0.10);
-  --shadow-lg: 0 18px 48px rgba(29, 29, 27, 0.14);
-  --shadow-focus: 0 0 0 3px rgba(69, 111, 101, 0.22);
+  /* 阴影 — 非常克制 */
+  --shadow-sm: 0 1px 2px rgba(32, 35, 31, 0.04);
+  --shadow-md: 0 2px 8px rgba(32, 35, 31, 0.06);
+  --shadow-lg: 0 4px 16px rgba(32, 35, 31, 0.08);
+  --shadow-focus: 0 0 0 3px rgba(65, 107, 86, 0.18);
 
-  /* 圆角 — 4px 基础网格 */
+  /* 圆角 — 4px 基础网格，按语义分级 */
   --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-sm: 10px;   /* 按钮 */
+  --radius-md: 12px;   /* 输入框 */
+  --radius-lg: 16px;   /* 卡片 */
   --radius-pill: 9999px;
 
   /* 排版 */
-  --font-sans: 'Inter', 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-sans: 'Inter', 'Noto Sans SC', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'DM Mono', 'Consolas', 'Monaco', monospace;
   --font-size-xs: 12px;
   --font-size-sm: 13px;
@@ -79,54 +86,77 @@
   --transition-slow: 320ms ease-out;
 
   /* 布局 */
-  --sidebar-width: 260px;
-  --sidebar-collapsed: 68px;
+  --sidebar-width: 250px;
+  --sidebar-collapsed: 56px;
   --topbar-height: 56px;
   --content-max-width: 820px;
+  --content-padding: 32px;
   --inspector-width: 360px;
 
-  /* 元素 Plus 兼容 */
+  /* Element Plus 兼容 */
   --el-color-primary: var(--accent);
   --el-color-danger: var(--danger);
+  --el-color-warning: var(--warning);
+  --el-color-success: var(--success);
   --el-bg-color: var(--surface);
   --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
   --el-border-color: var(--border-subtle);
   --el-border-radius-base: var(--radius-sm);
   --el-border-radius-medium: var(--radius-md);
+  --el-fill-color-light: var(--surface-muted);
+  --el-fill-color-blank: var(--surface);
 }
 
 /* ---- 深色主题 ---- */
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --canvas: #181817;
-  --surface: #20201E;
-  --surface-muted: #282826;
-  --surface-hover: #30302D;
+  --canvas: #14171A;
+  --surface: #1C2024;
+  --surface-muted: #24282D;
+  --surface-hover: #2C3137;
 
-  --text-primary: #F0F0EC;
-  --text-secondary: #B2B2AA;
-  --text-tertiary: #85857E;
+  --text-primary: #EDEBE4;
+  --text-secondary: #A8ABA3;
+  --text-tertiary: #787C75;
 
-  --border-subtle: #32322F;
-  --border-strong: #42423E;
+  --border-subtle: #33383E;
+  --border-strong: #454B52;
 
-  --accent: #78A99B;
-  --accent-hover: #8DBFB1;
-  --knowledge: #9B94CC;
+  --accent: #7DA58E;
+  --accent-hover: #92B8A2;
+  --accent-soft: #263830;
+
+  --knowledge: #7DA59E;
+  --knowledge-soft: #233331;
+
   --mastered: #7DB89C;
   --learning: #C9A86A;
   --weak: #D48A78;
-  --danger: #D47A7A;
 
-  --info: #7BAEC9;
+  --info: #7DA59E;
   --success: #7DB89C;
   --warning: #C9A86A;
+  --danger: #D48A78;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.30);
-  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.40);
-  --shadow-focus: 0 0 0 3px rgba(120, 169, 155, 0.28);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.50);
+  --shadow-focus: 0 0 0 3px rgba(125, 165, 142, 0.30);
+
+  --el-color-primary: var(--accent);
+  --el-color-danger: var(--danger);
+  --el-color-warning: var(--warning);
+  --el-color-success: var(--success);
+  --el-bg-color: var(--surface);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-border-color: var(--border-subtle);
+  --el-fill-color-light: var(--surface-muted);
+  --el-fill-color-blank: var(--surface);
 }
 
 /* ---- 全局重置 ---- */
@@ -167,17 +197,18 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(146, 146, 139, 0.3);
+  background: rgba(114, 118, 111, 0.28);
   border-radius: var(--radius-pill);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(146, 146, 139, 0.5);
+  background: rgba(114, 118, 111, 0.44);
 }
 
 /* ---- 焦点 ---- */
 :focus-visible {
-  outline: 2.5px solid var(--accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* ---- 无障碍辅助 ---- */

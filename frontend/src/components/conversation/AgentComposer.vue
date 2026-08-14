@@ -15,11 +15,11 @@ const emit = defineEmits<{
 const text = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const imagePreview = ref<string | null>(null)
-const isComposing = ref(false) // IME 输入法状态
+const isComposing = ref(false)
 
 const placeholder = computed(() => {
   if (imagePreview.value) return '添加文字说明...'
-  return '输入问题，或拖入一道题目……'
+  return '输入问题，或粘贴一道题目……'
 })
 
 function autoResize() {
@@ -133,6 +133,7 @@ onUnmounted(() => {
   >
     <div
       class="agent-composer__box"
+      :class="{ 'agent-composer__box--with-image': imagePreview }"
       @drop.prevent="handleDrop"
       @dragover.prevent
     >
@@ -144,7 +145,7 @@ onUnmounted(() => {
           aria-label="移除图片"
           @click="removeImage"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
       </div>
 
@@ -165,22 +166,31 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- 工具栏：参考豆包 Chat Composer 的底部操作条布局 -->
+      <!-- 工具栏 -->
       <div class="agent-composer__tools">
-        <button
-          class="agent-composer__tool-btn agent-composer__tool-btn--round"
-          aria-label="上传图片"
-          title="上传图片"
-          @click="handleFileSelect"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
-        </button>
-
-        <span class="agent-composer__spacer" />
+        <div class="agent-composer__tools-left">
+          <button
+            class="agent-composer__tool-btn agent-composer__tool-btn--icon"
+            aria-label="添加图片"
+            title="添加图片"
+            @click="handleFileSelect"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+          <button
+            class="agent-composer__tool-btn agent-composer__tool-btn--text"
+            aria-label="拍照或上传题目"
+            @click="handleFileSelect"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="15" rx="2"/>
+              <circle cx="12" cy="12" r="3.5"/>
+            </svg>
+            <span>拍照 / 上传题目</span>
+          </button>
+        </div>
 
         <button
           class="agent-composer__send-btn"
@@ -188,37 +198,30 @@ onUnmounted(() => {
           aria-label="发送"
           @click="handleSend"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M5 12h14M12 5l7 7-7 7"/>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <path d="M12 19V5M5 12l7-7 7 7"/>
           </svg>
         </button>
       </div>
-    </div>
-
-    <!-- 提示行 -->
-    <div class="agent-composer__hint">
-      <span>Enter 发送 · Shift+Enter 换行 · 可粘贴或拖入图片</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 外层包装，保持与外部布局约束（max-width、width）兼容 */
 .agent-composer {
   display: flex;
   flex-direction: column;
   width: 100%;
 }
 
-/* 参考豆包 Chat Composer：大圆角、轻边框、内部 padding 上松下紧 */
 .agent-composer__box {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-strong);
-  border-radius: 22px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
-  padding: 14px 16px 12px;
+  padding: 12px 14px 10px;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -227,17 +230,17 @@ onUnmounted(() => {
   box-shadow: var(--shadow-sm), var(--shadow-focus);
 }
 
-/* 大模式 — 首页用，更突出 */
 .agent-composer--large .agent-composer__box {
-  border-radius: 24px;
-  padding: 18px 20px 14px;
+  border-radius: var(--radius-lg);
+  padding: 16px 18px 12px;
 }
 
+/* 图片预览 */
 .agent-composer__preview {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
   max-width: 100%;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
 }
 
 .agent-composer__preview-img {
@@ -250,14 +253,14 @@ onUnmounted(() => {
 
 .agent-composer__preview-remove {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 26px;
-  height: 26px;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.55);
   color: #fff;
   cursor: pointer;
   border: none;
@@ -268,6 +271,7 @@ onUnmounted(() => {
   background: var(--danger);
 }
 
+/* 输入区 */
 .agent-composer__input-row {
   display: flex;
   align-items: flex-end;
@@ -282,8 +286,8 @@ onUnmounted(() => {
   resize: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
   min-height: 28px;
   max-height: 160px;
   font-family: inherit;
@@ -293,57 +297,77 @@ onUnmounted(() => {
 .agent-composer--large .agent-composer__textarea {
   font-size: 16px;
   line-height: 1.6;
-  min-height: 48px;
-  max-height: 192px;
+  min-height: 44px;
+  max-height: 200px;
 }
 
 .agent-composer__textarea::placeholder {
   color: var(--text-tertiary);
 }
 
-/* 底部工具栏：左上传、右发送，中间 spacer 顶开 */
+/* 工具栏 */
 .agent-composer__tools {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 12px;
-  flex-wrap: wrap;
+  margin-top: 8px;
 }
 
-.agent-composer__spacer {
-  flex: 1;
-  min-width: 8px;
+.agent-composer__tools-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .agent-composer__tool-btn {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-radius: var(--radius-sm);
   color: var(--text-tertiary);
   background: none;
   border: none;
   cursor: pointer;
   transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-.agent-composer__tool-btn--round {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: transparent;
+  font-family: inherit;
 }
 
 .agent-composer__tool-btn:hover {
-  color: var(--accent);
-  background: var(--surface-muted);
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 
 .agent-composer__tool-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
+.agent-composer__tool-btn--icon {
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.agent-composer__tool-btn--icon:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.agent-composer__tool-btn--text {
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.agent-composer__tool-btn--text:hover {
+  color: var(--accent);
+}
+
+/* 发送按钮 */
 .agent-composer__send-btn {
   width: 36px;
   height: 36px;
@@ -351,24 +375,11 @@ onUnmounted(() => {
   place-items: center;
   border-radius: 50%;
   background: var(--accent);
-  color: var(--color-text-inverse, #fff);
+  color: #fff;
   border: none;
   cursor: pointer;
   transition: background var(--transition-fast), transform var(--transition-fast);
-}
-
-.agent-composer__send-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
-  transform: scale(1.05);
-}
-
-.agent-composer__send-btn:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.agent-composer__send-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+  flex-shrink: 0;
 }
 
 .agent-composer__send-btn svg {
@@ -376,28 +387,46 @@ onUnmounted(() => {
   height: 18px;
 }
 
-.agent-composer__hint {
-  margin-top: 8px;
-  padding: 0 12px;
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  text-align: center;
-  line-height: 1.4;
+.agent-composer__send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.agent-composer__send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.agent-composer__send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
   .agent-composer__box {
-    padding: 12px 14px 10px;
-    border-radius: 20px;
+    padding: 10px 12px 8px;
+    border-radius: var(--radius-md);
   }
 
   .agent-composer--large .agent-composer__box {
-    padding: 14px 16px 12px;
-    border-radius: 22px;
+    padding: 12px 14px 10px;
+    border-radius: var(--radius-md);
   }
 
   .agent-composer__textarea {
-    font-size: 16px; /* 防止 iOS 缩放 */
+    font-size: 16px;
+  }
+
+  .agent-composer__tool-btn--text {
+    font-size: var(--font-size-xs);
+    padding: 6px 8px;
+  }
+
+  .agent-composer__tool-btn--text span {
+    display: none;
+  }
+
+  .agent-composer__send-btn {
+    width: 34px;
+    height: 34px;
   }
 }
 </style>

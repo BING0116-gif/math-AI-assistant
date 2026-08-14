@@ -72,7 +72,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
 
       <!-- 新对话按钮 -->
       <button class="sidebar__new-chat" @click="startNewChat">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
           <path d="M12 5v14M5 12h14"/>
         </svg>
         <span v-if="!ui.sidebarCollapsed">新对话</span>
@@ -118,7 +118,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
         </div>
       </div>
 
-      <!-- 主导航 -->
+      <!-- 主导航（底部） -->
       <nav class="sidebar__nav" aria-label="页面导航">
         <RouterLink
           v-for="item in navItems"
@@ -136,25 +136,21 @@ function deleteChat(e: MouseEvent, chatId: string) {
             stroke-width="1.8"
             aria-hidden="true"
           >
-            <!-- grid -->
             <template v-if="item.icon === 'grid'">
               <rect x="3" y="3" width="7" height="7" rx="1"/>
               <rect x="14" y="3" width="7" height="7" rx="1"/>
               <rect x="3" y="14" width="7" height="7" rx="1"/>
               <rect x="14" y="14" width="7" height="7" rx="1"/>
             </template>
-            <!-- user -->
             <template v-if="item.icon === 'user'">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </template>
-            <!-- book -->
             <template v-if="item.icon === 'book'">
               <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
               <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
               <path d="M8 7h8M8 11h5"/>
             </template>
-            <!-- alert-circle -->
             <template v-if="item.icon === 'alert-circle'">
               <circle cx="12" cy="12" r="10"/>
               <line x1="12" y1="8" x2="12" y2="12"/>
@@ -165,7 +161,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
         </RouterLink>
       </nav>
 
-      <!-- 底部 -->
+      <!-- 底部辅助入口 -->
       <div class="sidebar__footer">
         <button
           class="sidebar__footer-btn"
@@ -295,15 +291,14 @@ function deleteChat(e: MouseEvent, chatId: string) {
   transform: translateY(0);
 }
 
-/* ---- 侧栏 ---- */
+/* ============ 侧栏 ============ */
 .sidebar {
   width: var(--sidebar-width);
   flex: 0 0 var(--sidebar-width);
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-3) var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3);
   background: var(--surface);
   border-right: 1px solid var(--border-subtle);
   transition: width var(--transition-base), flex-basis var(--transition-base), padding var(--transition-base);
@@ -315,97 +310,103 @@ function deleteChat(e: MouseEvent, chatId: string) {
   padding-inline: var(--space-2);
 }
 
+/* ---- Logo ---- */
 .sidebar__brand {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-1);
-  min-height: 44px;
+  padding: 2px 4px;
+  min-height: 40px;
+  margin-bottom: var(--space-2);
 }
 .sidebar__logo {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
   flex-shrink: 0;
 }
-.sidebar__logo svg { width: 20px; }
+.sidebar__logo svg { width: 18px; }
 .sidebar__brand-name {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   letter-spacing: 0.02em;
+  color: var(--text-primary);
 }
 
+/* ---- 新对话按钮 ---- */
 .sidebar__new-chat {
-  min-height: 44px;
+  min-height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   padding: 0 var(--space-3);
-  border: 1.5px solid var(--accent);
-  border-radius: var(--radius-sm);
+  border: none;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: #fff;
   font-weight: 600;
   font-size: var(--font-size-sm);
   cursor: pointer;
   transition: background var(--transition-fast);
+  margin-bottom: var(--space-2);
 }
 .sidebar__new-chat:hover {
   background: var(--accent-hover);
 }
-.sidebar__new-chat svg { width: 18px; }
+.sidebar__new-chat svg { width: 16px; }
 
+/* ---- 搜索 ---- */
 .sidebar__search {
   position: relative;
+  margin-bottom: var(--space-2);
 }
 .sidebar__search-icon {
   position: absolute;
   left: 10px;
   top: 50%;
   transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   color: var(--text-tertiary);
 }
 .sidebar__search-input {
   width: 100%;
-  height: 36px;
-  padding: 0 10px 0 32px;
-  border: 1.5px solid var(--border-subtle);
+  height: 34px;
+  padding: 0 10px 0 30px;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: var(--surface-muted);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 .sidebar__search-input:focus {
   border-color: var(--accent);
+  background: var(--surface);
 }
 .sidebar__search-input::placeholder {
   color: var(--text-tertiary);
 }
 
+/* ---- 对话历史 ---- */
 .sidebar__history {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-2);
   overflow: hidden;
 }
 .sidebar__section-label {
-  font-size: var(--font-size-xs);
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   padding: 0 var(--space-1);
   margin-bottom: var(--space-1);
 }
@@ -414,14 +415,14 @@ function deleteChat(e: MouseEvent, chatId: string) {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 .sidebar__chat-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   text-align: left;
   width: 100%;
@@ -429,15 +430,17 @@ function deleteChat(e: MouseEvent, chatId: string) {
   border: none;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
   gap: var(--space-1);
 }
 .sidebar__chat-item:hover {
   background: var(--surface-hover);
+  color: var(--text-primary);
 }
 .sidebar__chat-item--active {
-  background: var(--surface-muted);
+  background: var(--accent-soft);
   color: var(--text-primary);
+  font-weight: 500;
 }
 .sidebar__chat-title {
   overflow: hidden;
@@ -447,8 +450,8 @@ function deleteChat(e: MouseEvent, chatId: string) {
 }
 .sidebar__chat-delete {
   opacity: 0;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   border-radius: var(--radius-xs);
@@ -466,64 +469,69 @@ function deleteChat(e: MouseEvent, chatId: string) {
   background: var(--danger);
   color: #fff;
 }
-.sidebar__chat-delete svg { width: 14px; }
+.sidebar__chat-delete svg { width: 12px; }
 .sidebar__empty {
   color: var(--text-tertiary);
   font-size: var(--font-size-xs);
   padding: var(--space-2) var(--space-1);
 }
 
+/* ---- 主导航（底部区域） ---- */
 .sidebar__nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--space-2);
+  margin-top: var(--space-2);
 }
 .sidebar__nav-item {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   font-weight: 500;
   text-decoration: none;
   transition: color var(--transition-fast), background var(--transition-fast);
-  min-height: 40px;
+  min-height: 36px;
 }
 .sidebar__nav-item:hover {
   color: var(--text-primary);
   background: var(--surface-hover);
 }
 .sidebar__nav-item--active {
-  color: var(--accent);
-  background: var(--surface-muted);
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  font-weight: 600;
 }
 .sidebar__nav-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
+/* ---- 底部辅助入口 ---- */
 .sidebar__footer {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--space-2);
+  margin-top: var(--space-2);
 }
 .sidebar__footer-btn {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  color: var(--text-tertiary);
   font-size: var(--font-size-sm);
   transition: color var(--transition-fast), background var(--transition-fast);
-  min-height: 40px;
+  min-height: 34px;
   background: none;
   border: none;
   cursor: pointer;
@@ -534,15 +542,16 @@ function deleteChat(e: MouseEvent, chatId: string) {
   color: var(--text-primary);
   background: var(--surface-hover);
 }
-.sidebar__footer-btn svg { width: 20px; height: 20px; }
+.sidebar__footer-btn svg { width: 18px; height: 18px; }
 
-/* ---- 主工作区 ---- */
+/* ============ 主工作区 ============ */
 .shell-main {
   min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
+  background: var(--canvas);
 }
 
 .shell-topbar {
@@ -550,14 +559,14 @@ function deleteChat(e: MouseEvent, chatId: string) {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 0 var(--space-6);
+  padding: 0 var(--content-padding);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface);
 }
 .shell-menu-btn {
   display: none;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   place-items: center;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -565,7 +574,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
   cursor: pointer;
   color: var(--text-primary);
 }
-.shell-menu-btn svg { width: 20px; }
+.shell-menu-btn svg { width: 18px; }
 .shell-topbar__title {
   flex: 1;
   font-size: var(--font-size-sm);
@@ -580,7 +589,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
 }
 
 .shell-page-header {
-  padding: var(--space-4) var(--space-6);
+  padding: var(--space-4) var(--content-padding);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface);
 }
@@ -591,9 +600,10 @@ function deleteChat(e: MouseEvent, chatId: string) {
   outline: none;
   display: flex;
   flex-direction: column;
+  background: var(--canvas);
 }
 
-/* ---- 检查器 ---- */
+/* ============ 检查器 ============ */
 .shell-inspector {
   width: var(--inspector-width);
   flex: 0 0 var(--inspector-width);
@@ -629,7 +639,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
   background: var(--surface-hover);
 }
 
-/* ---- 移动端抽屉 ---- */
+/* ============ 移动端抽屉 ============ */
 .mobile-drawer-backdrop {
   display: none;
   position: fixed;
@@ -684,7 +694,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
   background: var(--surface-hover);
 }
 
-/* ---- 响应式 ---- */
+/* ============ 响应式 ============ */
 @media (max-width: 1279px) and (min-width: 769px) {
   .sidebar {
     width: var(--sidebar-collapsed);
