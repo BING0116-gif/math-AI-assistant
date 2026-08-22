@@ -32,117 +32,22 @@ class SkillAggregator:
     async def get_all_skills(
         self, user_id: str, max_skills: int = 50
     ) -> List[Dict[str, Any]]:
-        from sqlalchemy import select
-        from app.data.models import UserSkill
-
-        async with self._session_factory() as db:
-            result = await db.execute(
-                select(UserSkill)
-                .where(UserSkill.user_id == user_id)
-                .order_by(UserSkill.mastery_level.desc())
-                .limit(max_skills)
-            )
-            skills = result.scalars().all()
-
-            if skills:
-                return [
-                    {
-                        "skill_code": s.skill_code,
-                        "display_name": s.display_name,
-                        "category_path": s.category_path,
-                        "mastery_level": s.mastery_level,
-                        "status": s.status,
-                        "total_attempts": s.total_attempts,
-                        "correct_count": s.correct_count,
-                        "recent_streak": s.recent_streak,
-                        "best_streak": s.best_streak,
-                        "last_practiced": (
-                            s.last_practiced_at.isoformat()
-                            if s.last_practiced_at else None
-                        ),
-                        "first_seen": (
-                            s.first_seen_at.isoformat()
-                            if s.first_seen_at else None
-                        ),
-                        "mastered_at": (
-                            s.mastered_at.isoformat()
-                            if s.mastered_at else None
-                        ),
-                        "evolution_history": s.evolution_history or [],
-                    }
-                    for s in skills
-                ]
-
-            return await self._compute_skills(user_id, max_skills)
+        # UserKnowledgeState 是学习画像的事实源。UserSkill 仅保留为旧调用方
+        # 的兼容投影，运行时读取不能因投影延迟而返回陈旧画像。
+        return await self._compute_skills(user_id, max_skills)
 
     async def recalculate_skills(
         self, user_id: str, skill_codes: Optional[List[str]] = None
     ) -> int:
+        """Compatibility command: canonical states are already materialized.
+
+        Kept as an API-level no-op/query during rollout so old callers do not
+        break after the redundant user_skills table is retired.
+        """
         skills = await self._compute_skills(user_id)
-
-        filtered = skills
         if skill_codes:
-            filtered = [s for s in skills if s["skill_code"] in skill_codes]
-
-        from sqlalchemy import select
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from app.data.models import UserSkill
-
-        async with self._session_factory() as db:
-            dialect = db.bind.dialect.name if db.bind else "sqlite"
-            for skill in filtered:
-                values = {
-                    "user_id": user_id,
-                    "skill_code": skill["skill_code"],
-                    "display_name": skill["display_name"],
-                    "category_path": skill.get("category_path", ""),
-                    "mastery_level": skill["mastery_level"],
-                    "status": skill["status"],
-                    "total_attempts": skill["total_attempts"],
-                    "correct_count": skill["correct_count"],
-                    "recent_streak": skill["recent_streak"],
-                    "best_streak": skill["best_streak"],
-                    "first_seen_at": self._parse_datetime(skill.get("first_seen")),
-                    "last_practiced_at": self._parse_datetime(skill.get("last_practiced")),
-                    "mastered_at": self._parse_datetime(skill.get("mastered_at")),
-                    "evolution_history": skill.get("evolution_history", []),
-                }
-
-                if dialect == "postgresql":
-                    stmt = pg_insert(UserSkill).values(**values)
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["user_id", "skill_code"],
-                        set_={
-                            "display_name": stmt.excluded.display_name,
-                            "category_path": stmt.excluded.category_path,
-                            "mastery_level": stmt.excluded.mastery_level,
-                            "status": stmt.excluded.status,
-                            "total_attempts": stmt.excluded.total_attempts,
-                            "correct_count": stmt.excluded.correct_count,
-                            "recent_streak": stmt.excluded.recent_streak,
-                            "best_streak": stmt.excluded.best_streak,
-                            "last_practiced_at": stmt.excluded.last_practiced_at,
-                            "evolution_history": stmt.excluded.evolution_history,
-                            "updated_at": stmt.excluded.updated_at,
-                        },
-                    )
-                    await db.execute(stmt)
-                else:
-                    # SQLite / 其他方言：读-改-写（低频率写，非关键路径）
-                    existing = await db.execute(
-                        select(UserSkill).where(
-                            UserSkill.user_id == user_id,
-                            UserSkill.skill_code == skill["skill_code"],
-                        )
-                    )
-                    row = existing.scalar_one_or_none()
-                    if row is not None:
-                        for k, v in values.items():
-                            setattr(row, k, v)
-                    else:
-                        db.add(UserSkill(**values))
-            await db.commit()
-        return len(filtered)
+            skills = [s for s in skills if s["skill_code"] in skill_codes]
+        return len(skills)
 
     async def get_error_patterns(
         self, user_id: str
@@ -256,107 +161,55 @@ class SkillAggregator:
     async def _compute_skills(
         self, user_id: str, limit: int = 50
     ) -> List[Dict[str, Any]]:
-        from sqlalchemy import text
+        from sqlalchemy import select
+        from app.data.models import KnowledgePoint, UserKnowledgeState
 
         async with self._session_factory() as db:
-            # 查询1: 有sub_categories的记录（精确匹配）
-            result = await db.execute(
-                text(
-                    "SELECT DISTINCT sub_categories, category "
-                    "FROM learning_records "
-                    "WHERE user_id = :uid AND sub_categories IS NOT NULL "
-                    "AND sub_categories != ''"
-                ),
-                {"uid": user_id},
-            )
-            precise_rows = result.fetchall()
-
-            # 查询2: 只有category没有sub_category的记录（兜底，避免浪费数据）
-            result2 = await db.execute(
-                text(
-                    "SELECT DISTINCT NULL as sub_categories, category "
-                    "FROM learning_records "
-                    "WHERE user_id = :uid AND (sub_categories IS NULL OR sub_categories = '')"
-                    " AND category IS NOT NULL AND category != ''"
-                    " AND category NOT IN ("
-                    "   SELECT DISTINCT category FROM learning_records "
-                    "   WHERE user_id = :uid AND sub_categories IS NOT NULL AND sub_categories != ''"
-                    " )"
-                ),
-                {"uid": user_id},
-            )
-            fallback_rows = result2.fetchall()
-
-            skill_rows = list(precise_rows) + list(fallback_rows)
-
+            states = list((await db.execute(
+                select(UserKnowledgeState)
+                .where(UserKnowledgeState.user_id == user_id)
+                .order_by(UserKnowledgeState.mastery.desc(), UserKnowledgeState.knowledge_point_code)
+                .limit(limit)
+            )).scalars())
+            codes = [state.knowledge_point_code for state in states]
+            points = list((await db.execute(
+                select(KnowledgePoint).where(KnowledgePoint.code.in_(codes or ["__none__"]))
+            )).scalars())
+            names = {point.code: point.name for point in points}
             skills = []
-            now = datetime.now(timezone.utc)
-
-            for row in skill_rows:
-                sub_cat = row[0]
-                category = row[1]
-
-                # 处理sub_category为空的情况（category级别兜底）
-                if not sub_cat or str(sub_cat).strip() == '':
-                    sub_cat_display = f"{category}(综合)"
-                    skill_code = self._derive_skill_code(category, "general")
-                    cat_path = category
-                    # 查询时只按category匹配
-                    query_sc = ""
-                else:
-                    sub_cat_display = sub_cat
-                    skill_code = self._derive_skill_code(category, sub_cat)
-                    cat_path = f"{category} > {sub_cat}"
-                    query_sc = sub_cat
-
-                records_result = await db.execute(
-                    text(
-                        "SELECT is_correct, difficulty, time_spent, "
-                        "created_at "
-                        "FROM learning_records "
-                        "WHERE user_id = :uid "
-                        "AND ("
-                        "  (:sc != '' AND sub_categories = :sc)"
-                        "  OR (:sc = '' AND (sub_categories IS NULL OR sub_categories = '') AND category = :cat)"
-                        ") "
-                        "ORDER BY created_at DESC"
-                    ),
-                    {"uid": user_id, "sc": query_sc or "", "cat": category},
-                )
-                records = records_result.fetchall()
-
-                if not records:
-                    continue
-
-                mastery, status, streak, best_streak, history = (
-                    self._calculate_mastery(records, now)
-                )
-
-                types = [r[0] for r in records]
-                skills.append(
-                    {
-                        "skill_code": skill_code,
-                        "display_name": sub_cat_display,
-                        "category_path": cat_path,
-                        "mastery_level": round(mastery, 3),
-                        "status": status,
-                        "total_attempts": len(records),
-                        "correct_count": sum(1 for t in types if t),
-                        "recent_streak": streak,
-                        "best_streak": best_streak,
-                        "first_seen": str(records[-1][3]) if records[-1][3] else None,
-                        "last_practiced": str(records[0][3]) if records[0][3] else None,
-                        "mastered_at": (
-                            history[-1]["date"]
-                            if history and status == "mastered"
-                            else None
-                        ),
-                        "evolution_history": history,
-                    }
-                )
-
-            skills.sort(key=lambda s: s["mastery_level"], reverse=True)
-            return skills[:limit]
+            for state in states:
+                history = state.evolution_history or []
+                streak = 0
+                for event in reversed(history):
+                    if not event.get("correct"):
+                        break
+                    streak += 1
+                best = current = 0
+                for event in history:
+                    current = current + 1 if event.get("correct") else 0
+                    best = max(best, current)
+                status = self._determine_status(state.mastery)
+                if status == "mastered":
+                    kinds = {event.get("kind") for event in history if event.get("correct")}
+                    if state.confidence < 0.7 or not {"variant", "spaced_review"}.issubset(kinds):
+                        status = "proficient"
+                skills.append({
+                    "skill_code": state.knowledge_point_code,
+                    "display_name": names.get(state.knowledge_point_code, state.knowledge_point_code),
+                    "category_path": state.knowledge_point_code,
+                    "mastery_level": state.mastery,
+                    "memory_strength": state.memory_strength,
+                    "confidence": state.confidence,
+                    "status": status,
+                    "total_attempts": state.attempts_count,
+                    "correct_count": state.correct_count,
+                    "recent_streak": streak, "best_streak": best,
+                    "first_seen": history[0].get("at") if history else None,
+                    "last_practiced": state.last_practiced_at.isoformat() if state.last_practiced_at else None,
+                    "mastered_at": history[-1].get("at") if history and status == "mastered" else None,
+                    "evolution_history": history,
+                })
+            return skills
 
     def _calculate_mastery(
         self,

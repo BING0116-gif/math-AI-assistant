@@ -8,7 +8,7 @@ Step 0.5-B：ProfileSnapshot 统一画像入口专项测试。
 3. Profile rebuild：删除 user_profiles 快照 + 清缓存后重新 get，业务画像一致
 4. Redis down 降级：Redis 不可用时 Snapshot / Agent / Recommendation 均正常
 5. User isolation：user_A / user_B 在 DB / cache / snapshot / skill / event 全部隔离
-6. SkillAggregator 幂等：recalculate_skills × 2 结果一致，不产生重复 user_skills
+6. SkillAggregator 幂等：重复读取 canonical UserKnowledgeState 结果一致
 7. Event 幂等：相同 event_id 重复投递 → 事实记录只写入 1 次
 8. PostgreSQL compatibility：源码中不再存在 MySQL/SQLite 专用 SQL（静态断言）
 
@@ -79,8 +79,8 @@ class ProfileTestBase:
         from app.data.database import get_db_session
         from app.data.models import (
             LearningRecord,
-            UserSkill,
             UserProfile,
+            UserKnowledgeState,
             Memory,
             MemoryTag,
             EventIdempotency,
@@ -102,7 +102,7 @@ class ProfileTestBase:
                 )
             )
             await db.execute(
-                delete(UserSkill).where(UserSkill.user_id == user_id)
+                delete(UserKnowledgeState).where(UserKnowledgeState.user_id == user_id)
             )
             await db.execute(
                 delete(UserProfile).where(UserProfile.user_id == user_id)
@@ -149,20 +149,6 @@ class ProfileTestBase:
             )
             return result.scalar() or 0
 
-    async def _count_skills(self, user_id: str) -> int:
-        from app.data.database import get_db_session
-        from app.data.models import UserSkill
-        from sqlalchemy import select, func
-
-        async with get_db_session() as db:
-            result = await db.execute(
-                select(func.count(UserSkill.id)).where(
-                    UserSkill.user_id == user_id
-                )
-            )
-            return result.scalar() or 0
-
-
 class TestProfileSnapshotBasics(ProfileTestBase):
     """get / refresh / invalidate 三个核心接口。"""
 
@@ -207,7 +193,7 @@ class TestProfileSnapshotBasics(ProfileTestBase):
             assert row.version == snapshot.version
 
     @pytest.mark.asyncio
-    async def test_invalidate_clears_cache_only(self):
+    async def test_invalidate_expires_cache_and_persisted_snapshot(self):
         from agent_core.memory_persistence import MemoryPersistenceFacade
         from app.services.cache import get_cache_manager
 
@@ -223,6 +209,9 @@ class TestProfileSnapshotBasics(ProfileTestBase):
 
         await facade.invalidate_profile_snapshot(user_id)
         assert key not in cache.l1_cache
+        from app.services.profile_application import ProfileSnapshotRepository
+        repo = ProfileSnapshotRepository(facade._session_factory)
+        assert await repo.get(user_id) is None
         # invalidate 不抛异常（Redis down 也可忽略）
         await facade.invalidate_profile_snapshot(user_id)
 
@@ -479,43 +468,31 @@ class TestUserIsolation(ProfileTestBase):
 
     @pytest.mark.asyncio
     async def test_skill_isolation(self):
-        from agent_core.memory_persistence import MemoryPersistenceFacade
         from app.services.skill_aggregator import SkillAggregator
         from app.data.database import get_db_session
-        from app.data.models import UserSkill
-        from sqlalchemy import select
+        from app.data.models import UserKnowledgeState
 
         user_a, user_b = "psn_skill_a", "psn_skill_b"
         await self._ensure_users([user_a, user_b])
         await self._cleanup(user_a)
         await self._cleanup(user_b)
 
-        facade = MemoryPersistenceFacade()
-        for uid, cat in [(user_a, "极限"), (user_b, "导数")]:
-            base = {
-                "event_type": "answer_correct",
-                "question_content": f"{cat} 题目",
-                "category": cat,
-                "is_correct": True,
-                "difficulty": 3,
-            }
-            await self._enqueue(facade, uid, base, event_id=f"{uid}:sk-e1")
-        await facade._flush_batch(_drain_queue(facade))
+        async with get_db_session() as db:
+            db.add_all([
+                UserKnowledgeState(user_id=user_a, knowledge_point_code="limit", attempts_count=2, correct_count=1, mastery=0.45, confidence=0.3),
+                UserKnowledgeState(user_id=user_b, knowledge_point_code="derivative", attempts_count=2, correct_count=1, mastery=0.5, confidence=0.3),
+            ])
+            await db.commit()
 
         agg = SkillAggregator()
-        await agg.recalculate_skills(user_a)
-        await agg.recalculate_skills(user_b)
-
-        async with get_db_session() as db:
-            rows = (
-                await db.execute(select(UserSkill).where(UserSkill.user_id.in_([user_a, user_b])))
-            ).scalars().all()
-            owners = {r.user_id for r in rows}
-            assert owners == {user_a, user_b}
+        skills_a = await agg.get_all_skills(user_a)
+        skills_b = await agg.get_all_skills(user_b)
+        assert {item["skill_code"] for item in skills_a} == {"limit"}
+        assert {item["skill_code"] for item in skills_b} == {"derivative"}
 
 
 class TestSkillAggregatorIdempotency(ProfileTestBase):
-    """recalculate_skills × 2 → 结果一致，不产生重复 user_skills。"""
+    """Compatibility command and canonical reads remain deterministic."""
 
     @pytest.mark.asyncio
     async def test_recalculate_twice_identical_and_no_duplicates(self):
@@ -543,15 +520,12 @@ class TestSkillAggregatorIdempotency(ProfileTestBase):
         agg = SkillAggregator()
         n1 = await agg.recalculate_skills(user_id)
         skills1 = await agg.get_all_skills(user_id)
-        count1 = await self._count_skills(user_id)
 
         n2 = await agg.recalculate_skills(user_id)
         skills2 = await agg.get_all_skills(user_id)
-        count2 = await self._count_skills(user_id)
 
         assert n1 == n2
         assert skills1 == skills2  # 同一批事实结果完全一致
-        assert count1 == count2  # 不产生重复 user_skills
         # (user_id, skill_code) 唯一
         codes = [s["skill_code"] for s in skills1]
         assert len(codes) == len(set(codes))

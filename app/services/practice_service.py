@@ -22,6 +22,8 @@ from app.data.models import (
     PracticeSession, PracticeSessionQuestion, Question, QuestionKnowledgePoint,
 )
 from app.services.paper_generator import _grade_one
+from app.services.error_classification import classify_error
+from app.services.error_review import capture_wrong_attempt
 
 SUPPORTED_TYPES = {"choice", "judge", "numeric_fill", "expression_fill"}
 
@@ -37,6 +39,7 @@ def _question_snapshot(question: Question, kp_codes: list[str]) -> dict[str, Any
         "question_id": question.id, "content": question.content,
         "question_type": question.question_type, "options": question.options,
         "answer_spec": question.answer_spec, "analysis": question.analysis,
+        "common_mistakes": question.common_mistakes,
         "difficulty": question.difficulty, "estimated_time": question.estimated_time,
         "knowledge_point_codes": kp_codes,
     }
@@ -213,7 +216,7 @@ async def start_session(user_id: str, session_id: str) -> dict[str, Any]:
         return _session_payload(session)
 
 
-async def submit_attempt(user_id: str, session_id: str, question_id: str, answer: Any, key: str) -> dict[str, Any]:
+async def submit_attempt(user_id: str, session_id: str, question_id: str, answer: Any, key: str, learning_signals: dict[str, Any] | None = None) -> dict[str, Any]:
     committed_result = None
     category = ""
     async with get_db_session() as db:
@@ -227,8 +230,24 @@ async def submit_attempt(user_id: str, session_id: str, question_id: str, answer
             if attempt.idempotency_key != key: raise PracticeError("ANSWER_ALREADY_COMMITTED", "该题已提交")
             return attempt.grading_snapshot
         graded = _grade_one(row.snapshot or {}, answer)
-        result = {"question_id": question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": graded["correct"], "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": None if graded["correct"] else ("unanswered" if answer in (None, "") else "answer_mismatch")}
-        db.add(PracticeAttempt(user_id=user_id, session_id=session.id, session_question_id=row.id, question_id=question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=result, idempotency_key=key))
+        classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
+        session_context = session.config_snapshot or {}
+        attempt_kind = {
+            "original_correct": "original_retry", "variant_correct": "variant",
+            "spaced_correct": "spaced_review",
+        }.get(session_context.get("review_kind"), "regular")
+        signals = dict(learning_signals or {})
+        signals["attempt_kind"] = attempt_kind
+        if session_context.get("review_interval_days") is not None:
+            signals["review_interval_days"] = session_context["review_interval_days"]
+        result = {"question_id": question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": graded["correct"], "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals}
+        practice_attempt = PracticeAttempt(user_id=user_id, session_id=session.id, session_question_id=row.id, question_id=question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=result, idempotency_key=key)
+        db.add(practice_attempt)
+        if not graded["correct"]:
+            await capture_wrong_attempt(
+                db, attempt=practice_attempt, question_snapshot=row.snapshot or {},
+                classification=classification,
+            )
         db.add(LearningRecord(
             user_id=user_id, question_id=question_id, event_type="practice_answer",
             question_content=(row.snapshot or {}).get("content") or "",
@@ -272,7 +291,11 @@ async def _result_for(session: PracticeSession) -> dict[str, Any]:
     breakdown: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "correct": 0})
     for row in session.questions:
         attempt = attempts.get(row.id)
-        item = attempt.grading_snapshot if attempt else {"question_id": row.question_id, "correct": False, "your_answer": "（未作答）", "correct_answer": (row.snapshot or {}).get("answer_spec", {}).get("correct"), "analysis": (row.snapshot or {}).get("analysis") or "", "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or []}
+        if attempt:
+            item = attempt.grading_snapshot
+        else:
+            classification = classify_error(row.snapshot or {}, None, correct=False)
+            item = {"question_id": row.question_id, "correct": False, "your_answer": "（未作答）", "correct_answer": (row.snapshot or {}).get("answer_spec", {}).get("correct"), "analysis": (row.snapshot or {}).get("analysis") or "", "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"], "error_classification": classification}
         items.append(item)
         correct += int(bool(item["correct"]))
         for code in item.get("knowledge_point_codes") or []:
@@ -281,7 +304,7 @@ async def _result_for(session: PracticeSession) -> dict[str, Any]:
     elapsed = _elapsed_seconds(session.started_at, session.completed_at)
     errors: dict[str, int] = defaultdict(int)
     for item in items:
-        if not item.get("correct"): errors[item.get("error_category") or "unanswered"] += 1
+        if not item.get("correct"): errors[item.get("error_category") or "UNKNOWN"] += 1
     return {"session_id": session.id, "status": session.status, "total": len(session.questions), "completed": len(attempts), "correct": correct, "duration_seconds": elapsed, "results": items, "knowledge_breakdown": [{"knowledge_point_code": c, **v, "accuracy": round(v["correct"] / v["total"], 3)} for c, v in sorted(breakdown.items())], "error_breakdown": [{"category": category, "count": count} for category, count in sorted(errors.items())], "next_practice_config": {"course_id": session.course_id, "version_id": session.version_id, "knowledge_point_codes": weakest, "question_count": min(10, max(5, len(session.questions)))} if weakest else None}
 
 

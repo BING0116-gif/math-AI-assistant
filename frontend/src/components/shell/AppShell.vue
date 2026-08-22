@@ -97,14 +97,15 @@ function deleteChat(e: MouseEvent, chatId: string) {
       <div v-if="!ui.sidebarCollapsed" class="sidebar__history">
         <div class="sidebar__section-label">对话历史</div>
         <div class="sidebar__chat-list">
-          <button
+          <div
             v-for="chat in filteredChats"
             :key="chat.id"
             class="sidebar__chat-item"
             :class="{ 'sidebar__chat-item--active': chat.id === chatStore.currentChatId }"
-            @click="openChat(chat.id)"
           >
-            <span class="sidebar__chat-title">{{ chat.title || '新对话' }}</span>
+            <button class="sidebar__chat-open" @click="openChat(chat.id)">
+              <span class="sidebar__chat-title">{{ chat.title || '新对话' }}</span>
+            </button>
             <button
               class="sidebar__chat-delete"
               :aria-label="`删除 ${chat.title || '对话'}`"
@@ -112,7 +113,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
-          </button>
+          </div>
           <p v-if="filteredChats.length === 0" class="sidebar__empty">
             {{ searchQuery ? '未找到匹配的对话' : '还没有对话记录' }}
           </p>
@@ -451,6 +452,17 @@ function deleteChat(e: MouseEvent, chatId: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+.sidebar__chat-open {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .sidebar__chat-delete {
   opacity: 0;

@@ -5,9 +5,10 @@
 """
 
 import logging
+import uuid
 import re as _re
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config.settings import settings
 from app.middleware.security import (
@@ -50,6 +51,13 @@ class ErrorUpdateRequest(BaseModel):
     added_at: str | None = None
     mastery_level: int | None = None
     is_mastered: bool | None = None
+
+
+class ErrorReviewRequest(BaseModel):
+    event_type: str
+    event_id: str = ""
+    attempt_id: str
+    details: dict = Field(default_factory=dict)
 
 
 def get_error_book_manager():
@@ -188,6 +196,20 @@ async def update_error(error_id: str, request: Request, body: ErrorUpdateRequest
                 except SecurityValidationError as e:
                     raise HTTPException(status_code=400, detail=str(e))
 
+        if update_data.get("is_mastered") is True:
+            from sqlalchemy import select
+            from app.data.database import get_db_session
+            from app.data.models import ErrorItem as ErrorItemModel
+            async with get_db_session() as db:
+                source = await db.scalar(select(ErrorItemModel.source).where(
+                    ErrorItemModel.user_id == user_id,
+                    ErrorItemModel.item_id == validated_id,
+                ))
+            if source == "attempt":
+                raise HTTPException(
+                    status_code=409,
+                    detail="自动错题必须完成原题、变式和间隔复测后才能毕业",
+                )
         success = await get_error_book_manager().update(user_id, validated_id, **update_data)
         return {"success": success}
     except HTTPException as e:
@@ -211,3 +233,60 @@ async def delete_error(error_id: str, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail="服务器内部错误")
+
+
+@router.post("/api/error-book/{error_id}/review")
+async def record_error_review(error_id: str, request: Request, body: ErrorReviewRequest):
+    """Record immutable review evidence and apply the guarded state transition."""
+    from app.data.database import get_db_session
+    from app.services.error_review import record_review_evidence
+
+    user_id = _get_user_id(request)
+    try:
+        validated_id = validate_input(error_id, "error_id", max_length=64)
+        async with get_db_session() as db:
+            from sqlalchemy import select
+            from app.data.models import ErrorItem as ErrorItemModel, PracticeAttempt, PracticeSession
+
+            owned_item = await db.scalar(select(ErrorItemModel).where(
+                ErrorItemModel.user_id == user_id,
+                ErrorItemModel.item_id == validated_id,
+            ))
+            if owned_item is None:
+                raise LookupError("error item not found")
+            attempt_row = (await db.execute(
+                select(PracticeAttempt, PracticeSession)
+                .join(PracticeSession, PracticeSession.id == PracticeAttempt.session_id)
+                .where(
+                    PracticeAttempt.id == body.attempt_id,
+                    PracticeAttempt.user_id == user_id,
+                    PracticeAttempt.correct.is_(True),
+                )
+            )).one_or_none()
+            if attempt_row is None:
+                raise ValueError("review evidence must reference your own correct attempt")
+            attempt, review_session = attempt_row
+            config = review_session.config_snapshot or {}
+            if body.event_type == "original_correct" and attempt.question_id != owned_item.question_id:
+                raise ValueError("original review attempt does not match the error question")
+            if body.event_type in {"variant_correct", "spaced_correct"}:
+                if config.get("review_kind") != body.event_type or config.get("error_item_id") != validated_id:
+                    raise ValueError("review attempt is not bound to this error item and review stage")
+            item = await record_review_evidence(
+                db, user_id=user_id, item_id=validated_id,
+                event_type=body.event_type,
+                event_id=body.event_id or str(uuid.uuid4()),
+                attempt_id=attempt.id, details=body.details,
+            )
+            await db.flush()
+            return {
+                "id": item.item_id, "review_state": item.review_state,
+                "is_mastered": item.is_mastered,
+                "last_reviewed_at": item.last_reviewed_at,
+            }
+    except LookupError:
+        raise HTTPException(status_code=404, detail="错题不存在")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except SecurityValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

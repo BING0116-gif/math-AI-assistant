@@ -11,6 +11,7 @@ from app.data.models import (
     ChatMessage,
     ChatSession,
     ErrorItem,
+    ErrorReviewEvent,
     ExamPaper,
     ExamSubmission,
     LearningRecord,
@@ -18,7 +19,8 @@ from app.data.models import (
     MemoryAccessLog,
     MemoryTag,
     UserProfile,
-    UserSkill,
+    UserKnowledgeState,
+    ReviewSchedule,
 )
 
 
@@ -49,8 +51,10 @@ async def delete_user_data(session: AsyncSession, user_id: str) -> Dict[str, int
             delete(ExamSubmission).where(ExamSubmission.paper_id.in_(paper_ids)),
         ),
         ("exam_papers", delete(ExamPaper).where(ExamPaper.user_id == user_id)),
+        ("error_review_events", delete(ErrorReviewEvent).where(ErrorReviewEvent.user_id == user_id)),
         ("error_items", delete(ErrorItem).where(ErrorItem.user_id == user_id)),
-        ("user_skills", delete(UserSkill).where(UserSkill.user_id == user_id)),
+        ("review_schedules", delete(ReviewSchedule).where(ReviewSchedule.user_id == user_id)),
+        ("user_knowledge_states", delete(UserKnowledgeState).where(UserKnowledgeState.user_id == user_id)),
         (
             "learning_records",
             delete(LearningRecord).where(LearningRecord.user_id == user_id),

@@ -123,6 +123,13 @@ const timeText = computed(() => {
  */
 const graduationStage = computed(() => {
   const e = props.error
+  const serverStages = {
+    new: { label: '新错', class: 'new', level: 0 },
+    understanding: { label: '理解中', class: 'understanding', level: 1 },
+    consolidating: { label: '巩固中', class: 'consolidating', level: 3 },
+    mastered: { label: '稳定掌握', class: 'mastered', level: 4 }
+  }
+  if (serverStages[e.review_state]) return serverStages[e.review_state]
   if (e.is_mastered) {
     return { label: '稳定掌握', class: 'mastered', level: 4 }
   }

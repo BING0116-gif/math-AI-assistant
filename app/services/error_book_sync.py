@@ -15,7 +15,7 @@ class ErrorBookSkillSyncService:
 
     功能:
     1. 错题本新增/更新时 → 写入 learning_records + 触发 SkillAggregator 重算
-    2. 错题本"标记已掌握"时 → 更新对应 user_skills.status
+    2. 错题本状态变化时 → 更新学习事实并重算 UserKnowledgeState
     3. 批量同步：将历史错题本数据一次性导入 skill 系统
     """
 

@@ -335,16 +335,18 @@ class MemoryPersistenceFacade:
         return snapshot
 
     async def invalidate_profile_snapshot(self, user_id: str) -> None:
-        """使画像快照缓存失效。
+        """使缓存和持久化物化快照同时失效。
 
-        只清除缓存；user_profiles 作为可重建快照保留，
-        下次读取若缓存未命中会回源重建或读取持久化快照。
+        user_profiles 仍被保留用于审计，但下一次读取必须从事实层重建，
+        避免缓存清除后重新读到陈旧的持久化快照。
         """
         try:
             cache = get_cache_manager()
             await cache.delete(self._profile_snapshot_cache_key(user_id))
         except Exception as e:
             logger.warning(f"画像快照缓存失效失败（可忽略）: user={user_id} error={e}")
+        repo = ProfileSnapshotRepository(self._session_factory)
+        await repo.invalidate(user_id)
 
     def _profile_snapshot_cache_key(self, user_id: str) -> str:
         return f"{PROFILE_SNAPSHOT_CACHE_PREFIX}{user_id}"
@@ -398,6 +400,22 @@ class MemoryPersistenceFacade:
         except Exception as e:
             logger.warning(f"画像深度分析失败（使用基础统计）: {e}")
 
+        canonical_weak = [
+            {
+                "category": skill.get("display_name") or skill.get("skill_code", ""),
+                "mastery": float(skill.get("mastery_level") or 0),
+                "confidence": float(skill.get("confidence") or 0),
+                "memory_strength": float(skill.get("memory_strength") or 0),
+            }
+            for skill in skills
+            if skill.get("status") in {"novice", "learning"}
+        ][:10]
+        canonical_strong = [
+            skill.get("display_name") or skill.get("skill_code", "")
+            for skill in skills
+            if skill.get("status") == "mastered"
+        ][:10]
+
         snapshot = ProfileSnapshot(
             user_id=user_id,
             version=base.get("version", 1),
@@ -405,8 +423,8 @@ class MemoryPersistenceFacade:
             correct_rate=base.get("correct_rate", 0.0),
             avg_time_per_question=base.get("avg_time_per_question", 0.0),
             recommended_difficulty=recommended_difficulty,
-            weak_points=base.get("weak_points", []),
-            strong_points=base.get("strong_points", []),
+            weak_points=canonical_weak or base.get("weak_points", []),
+            strong_points=canonical_strong or base.get("strong_points", []),
             skills=skills,
             error_patterns=analyzer_data.get("error_patterns", {}),
             behavior=analyzer_data.get("behavior", {}),

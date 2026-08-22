@@ -1,8 +1,8 @@
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.data.models import Base, Course, Chapter, KnowledgeGraphVersion, KnowledgePoint, Question, QuestionKnowledgePoint, User
+from app.data.models import Base, Course, Chapter, ErrorItem, KnowledgeGraphVersion, KnowledgePoint, Question, QuestionKnowledgePoint, User, UserKnowledgeState
 from app.services.practice_service import PracticeError, complete_session, create_session, get_session, start_session, submit_attempt
 
 
@@ -38,6 +38,36 @@ async def test_practice_session_is_owner_bound_idempotent_and_hides_answers(monk
     answer = await submit_attempt("user-1", session["session_id"], session["questions"][0]["question_id"], "A", "attempt-1")
     assert answer["correct"] is True and answer["correct_answer"] == "A"
     assert (await submit_attempt("user-1", session["session_id"], session["questions"][0]["question_id"], "A", "attempt-1"))["correct"] is True
+    wrong = await submit_attempt("user-1", session["session_id"], session["questions"][1]["question_id"], "B", "attempt-2")
+    assert wrong["error_category"] == "UNKNOWN"
+    assert wrong["error_classification"]["source"] == "deterministic_rule"
+    assert wrong["error_classification"]["version"] == "error-taxonomy-v1"
+    async with factory() as db:
+        automatic_error = await db.scalar(select(ErrorItem).where(ErrorItem.user_id == "user-1"))
+        assert automatic_error is not None
+        assert automatic_error.question_id == session["questions"][1]["question_id"]
+        assert automatic_error.source == "attempt" and automatic_error.review_state == "new"
     complete = await complete_session("user-1", session["session_id"])
     assert complete["status"] == "completed" and complete["correct"] == 1
+    assert complete["error_breakdown"] == [{"category": "UNKNOWN", "count": 4}]
+    async with factory() as db:
+        state = await db.scalar(select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == "user-1",
+            UserKnowledgeState.knowledge_point_code == "limit",
+        ))
+        snapshot = (state.mastery, state.memory_strength, state.confidence, state.attempts_count, state.calculation_version, state.evolution_history)
+    from app.services.learning_projection import rebuild_learning_projections
+    await rebuild_learning_projections("user-1")
+    async with factory() as db:
+        rebuilt = await db.scalar(select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == "user-1",
+            UserKnowledgeState.knowledge_point_code == "limit",
+        ))
+        assert snapshot == (rebuilt.mastery, rebuilt.memory_strength, rebuilt.confidence, rebuilt.attempts_count, rebuilt.calculation_version, rebuilt.evolution_history)
+    from app.services.skill_aggregator import SkillAggregator
+    aggregator = SkillAggregator()
+    assert await aggregator.recalculate_skills("user-1") == 1
+    projected_skills = await aggregator.get_all_skills("user-1")
+    assert projected_skills[0]["skill_code"] == "limit"
+    assert projected_skills[0]["mastery_level"] == rebuilt.mastery
     await engine.dispose()

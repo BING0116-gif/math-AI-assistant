@@ -201,6 +201,9 @@ class ProfileSnapshotRepository:
                 row = result.scalar_one_or_none()
                 if row is None:
                     return None
+                now_ts = int(datetime.now(timezone.utc).timestamp())
+                if row.expire_at is not None and row.expire_at <= now_ts:
+                    return None
                 data = json.loads(row.full_profile_json)
                 snapshot = ProfileSnapshot.from_dict(user_id, data)
                 snapshot.version = row.version
@@ -224,6 +227,7 @@ class ProfileSnapshotRepository:
                     existing.full_profile_json = full_json
                     existing.version = snapshot.version
                     existing.updated_at = now_ts
+                    existing.expire_at = None
                 else:
                     db.add(UserProfile(
                         user_id=snapshot.user_id,
@@ -231,12 +235,31 @@ class ProfileSnapshotRepository:
                         full_profile_json=full_json,
                         version=snapshot.version,
                         updated_at=now_ts,
+                        expire_at=None,
                     ))
                 await db.commit()
                 logger.debug(f"[ProfileSnapshotRepo] 保存成功: user={snapshot.user_id}")
                 return True
         except Exception as e:
             logger.error(f"[ProfileSnapshotRepo] 保存失败: user={snapshot.user_id} error={e}")
+            return False
+
+    async def invalidate(self, user_id: str) -> bool:
+        """标记持久化快照过期；事实层数据不受影响。"""
+        try:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            async with self._session_factory() as db:
+                result = await db.execute(
+                    select(UserProfile).where(UserProfile.user_id == user_id)
+                )
+                row = result.scalar_one_or_none()
+                if row is None:
+                    return False
+                row.expire_at = now_ts
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[ProfileSnapshotRepo] 失效失败: user={user_id} error={e}")
             return False
 
     async def delete(self, user_id: str) -> bool:

@@ -32,12 +32,22 @@ class ErrorItem:
     added_at: str = ""
     mastery_level: int = 3  # 1-5, 默认3
     is_mastered: bool = False
+    question_id: Optional[str] = None
+    source: str = "manual"
+    structure_confidence: float = 0.5
+    review_state: str = "new"
+    knowledge_point_codes: List[str] = None
+    wrong_attempt_count: int = 0
+    last_attempt_id: Optional[str] = None
+    last_reviewed_at: Optional[str] = None
 
     def __post_init__(self):
         if not self.id:
             self.id = str(uuid.uuid4())[:8]
         if self.categories is None:
             self.categories = []
+        if self.knowledge_point_codes is None:
+            self.knowledge_point_codes = []
         if not self.added_at:
             self.added_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -64,6 +74,14 @@ class ErrorItem:
             added_at=model.added_at or "",
             mastery_level=model.mastery_level or 3,
             is_mastered=model.is_mastered or False,
+            question_id=model.question_id,
+            source=model.source or "manual",
+            structure_confidence=model.structure_confidence if model.structure_confidence is not None else 0.5,
+            review_state=model.review_state or "new",
+            knowledge_point_codes=list(model.knowledge_point_codes or []),
+            wrong_attempt_count=model.wrong_attempt_count or 0,
+            last_attempt_id=model.last_attempt_id,
+            last_reviewed_at=model.last_reviewed_at.isoformat() if model.last_reviewed_at else None,
         )
 
 
@@ -108,6 +126,13 @@ class ErrorBookManager:
                 added_at=item.added_at,
                 mastery_level=item.mastery_level,
                 is_mastered=item.is_mastered,
+                question_id=item.question_id,
+                source=item.source,
+                structure_confidence=item.structure_confidence,
+                review_state=item.review_state,
+                knowledge_point_codes=item.knowledge_point_codes,
+                wrong_attempt_count=item.wrong_attempt_count,
+                last_attempt_id=item.last_attempt_id,
             )
             db.add(db_item)
             await db.flush()  # 让数据库生成 id，但不提交（get_db_session 会提交）

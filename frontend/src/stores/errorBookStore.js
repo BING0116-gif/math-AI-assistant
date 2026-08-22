@@ -134,12 +134,22 @@ export const useErrorBookStore = defineStore('errorBook', () => {
     }
   }
 
-  function toggleMastery(errorId) {
+  async function toggleMastery(errorId) {
     const error = errors.value.find(e => e.id === errorId)
-    if (error) {
-      error.is_mastered = !error.is_mastered
-      persist()
+    if (!error) return
+    // Automatic attempt-backed items can only graduate from server-verified
+    // original, variant and spaced-review evidence.
+    if (error.source === 'attempt') return error
+    error.is_mastered = !error.is_mastered
+    error.review_state = error.is_mastered ? 'mastered' : 'new'
+    persist()
+    try {
+      await errorBookApi.updateErrorBook(errorId, { is_mastered: error.is_mastered })
+    } catch (err) {
+      console.error('更新错题状态失败:', err)
+      await loadErrors()
     }
+    return error
   }
 
   function setFilter(newFilter) {

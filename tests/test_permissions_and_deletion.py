@@ -24,7 +24,6 @@ from app.data.models import (
     Question,
     User,
     UserProfile,
-    UserSkill,
 )
 from app.security.access_control import require_internal_auth
 from app.services.cache import CacheManager
@@ -156,7 +155,6 @@ async def test_delete_user_data_is_complete_and_isolated():
                 paper,
                 ExamSubmission(paper=paper, question_id="q1"),
                 ErrorItem(user_id="user-a", item_id="e1", question="wrong"),
-                UserSkill(user_id="user-a", skill_code="algebra"),
                 memory,
                 UserProfile(
                     user_id="user-a",
@@ -183,7 +181,7 @@ async def test_delete_user_data_is_complete_and_isolated():
         counts = await delete_user_data(session, "user-a")
         await session.commit()
 
-        assert sum(counts.values()) == 11
+        assert sum(counts.values()) == 10
         for model in (
             LearningRecord,
             ChatSession,
@@ -191,7 +189,6 @@ async def test_delete_user_data_is_complete_and_isolated():
             ExamPaper,
             ExamSubmission,
             ErrorItem,
-            UserSkill,
             Memory,
             MemoryTag,
             MemoryAccessLog,

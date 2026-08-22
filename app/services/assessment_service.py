@@ -28,6 +28,8 @@ from app.data.models import (
 )
 from app.services.llm_service import LLMResponse
 from app.services.paper_generator import _grade_one
+from app.services.error_classification import classify_error
+from app.services.error_review import capture_wrong_attempt
 from app.services.practice_service import PracticeError, SUPPORTED_TYPES, _question_snapshot
 from app.services.profile_service import get_profile_service
 
@@ -356,9 +358,16 @@ async def submit_assessment(user_id: str, session_id: str, key: str):
         for row in session.questions:
             answer=drafts.get(row.id).answer if row.id in drafts else None
             graded=_grade_one(row.snapshot or {},answer)
-            snapshot={"question_id":row.question_id,"question_content":(row.snapshot or {}).get("content") or "","your_answer":answer if answer not in (None,"") else "（未作答）","correct":graded["correct"],"correct_answer":graded["correct_answer"],"analysis":(row.snapshot or {}).get("analysis") or "","knowledge_point_codes":(row.snapshot or {}).get("knowledge_point_codes") or [],"selection_reason":(row.snapshot or {}).get("selection_reason"),"error_category":None if graded["correct"] else ("unanswered" if answer in (None,"") else "answer_mismatch")}
+            classification=classify_error(row.snapshot or {},answer,correct=graded["correct"])
+            snapshot={"question_id":row.question_id,"question_content":(row.snapshot or {}).get("content") or "","your_answer":answer if answer not in (None,"") else "（未作答）","correct":graded["correct"],"correct_answer":graded["correct_answer"],"analysis":(row.snapshot or {}).get("analysis") or "","difficulty":(row.snapshot or {}).get("difficulty") or 3,"estimated_time":(row.snapshot or {}).get("estimated_time"),"knowledge_point_codes":(row.snapshot or {}).get("knowledge_point_codes") or [],"selection_reason":(row.snapshot or {}).get("selection_reason"),"error_category":classification["category"] if classification else None,"error_classification":classification,"learning_signals":{"attempt_kind":"regular","hint_used":False,"solution_viewed":False}}
             attempt=PracticeAttempt(user_id=user_id,session_id=session.id,session_question_id=row.id,question_id=row.question_id,user_answer=answer,correct=graded["correct"],grading_snapshot=snapshot,idempotency_key=f"{key}:{row.question_id}")
-            db.add(attempt); db.add(_learning_record(user_id,row,answer,graded["correct"],graded["correct_answer"],session.id,"assessment"))
+            db.add(attempt)
+            if not graded["correct"]:
+                await capture_wrong_attempt(
+                    db, attempt=attempt, question_snapshot=row.snapshot or {},
+                    classification=classification,
+                )
+            db.add(_learning_record(user_id,row,answer,graded["correct"],graded["correct_answer"],session.id,"assessment"))
         expired = _session_expired(session)
         session.status="completed"; session.completed_at=datetime.now(timezone.utc); session.completion_reason="timeout" if expired else "submitted"
         await db.flush(); await db.refresh(session, attribute_names=["attempts"])
@@ -382,7 +391,7 @@ def _assessment_result(session):
     weakest=sorted(by_code,key=lambda code:(by_code[code]["correct"]/by_code[code]["total"],code))[:3]
     errors=defaultdict(int)
     for item in items:
-        if not item.get("correct"): errors[item.get("error_category") or "unanswered"]+=1
+        if not item.get("correct"): errors[item.get("error_category") or "UNKNOWN"]+=1
     started=session.started_at.replace(tzinfo=timezone.utc) if session.started_at and session.started_at.tzinfo is None else session.started_at
     completed=session.completed_at.replace(tzinfo=timezone.utc) if session.completed_at and session.completed_at.tzinfo is None else session.completed_at
     elapsed=max(0,int((completed-started).total_seconds())) if started and completed else None

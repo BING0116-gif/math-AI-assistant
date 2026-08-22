@@ -53,6 +53,7 @@ from agent_core.classifier.complexity_levels import (
 )
 from agent_core.memory_persistence import MemoryPersistenceFacade, UserProfile
 from app.services.behavior_tracker import LearningBehaviorTracker
+from app.services.memory_application import MemoryApplicationService
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,7 @@ class MathAgent:
         self._stream_enabled = config.strategy.stream
         self._base_url = config.llm.base_url
         self._session_histories: Dict[str, InMemoryChatMessageHistory] = {}
+        self._restored_sessions: set[str] = set()
         self._strategy: Optional[AgentStrategy] = None
 
         # 统一 LLM 实例
@@ -189,6 +191,7 @@ class MathAgent:
             self._vision_tool = self._registry.get_tool("vision_tool")
 
         self._persistence_facade = MemoryPersistenceFacade()
+        self._memory_application = MemoryApplicationService()
         self._behavior_tracker = LearningBehaviorTracker()
         self._behavior_tracker.set_llm_classifier(self._llm)
         logger.info("MemoryPersistenceFacade + BehaviorTracker + LLM 已初始化")
@@ -347,6 +350,39 @@ class MathAgent:
             self._session_histories[key] = InMemoryChatMessageHistory()
         return self._session_histories[key]
 
+    async def _get_or_restore_session_history(
+        self, user_id: str, session_id: str
+    ) -> BaseChatMessageHistory:
+        """Restore the bounded SQL transcript once per process/session."""
+        history = self._get_session_history(user_id, session_id)
+        key = self.session_key(user_id, session_id)
+        if key in self._restored_sessions:
+            return history
+        try:
+            messages = await self._memory_application.load_recent_messages(
+                user_id, session_id, limit=20
+            )
+            for message in messages:
+                if message["role"] == "user":
+                    history.add_user_message(message["content"])
+                elif message["role"] == "assistant":
+                    history.add_ai_message(message["content"])
+        except Exception as e:
+            logger.warning(f"SQL 会话恢复失败（非阻塞）: {e}")
+        finally:
+            self._restored_sessions.add(key)
+        return history
+
+    async def _persist_chat_message(
+        self, user_id: str, session_id: str, role: str, content: str
+    ) -> None:
+        try:
+            await self._memory_application.append_message(
+                user_id, session_id, role, content
+            )
+        except Exception as e:
+            logger.warning(f"SQL 会话写入失败（非阻塞）: role={role} error={e}")
+
     def clear_session(self, user_id: str, session_id: str) -> None:
         """清除指定会话的历史记录。"""
         hist = self._session_histories.pop(self.session_key(user_id, session_id), None)
@@ -421,6 +457,25 @@ class MathAgent:
                     )
             except Exception as e:
                 logger.warning(f"[Skill] 加载用户技能画像失败（非阻塞）: {e}")
+
+        # Long-term memories are hints about this user, never mathematical facts.
+        context["relevant_memories"] = []
+        try:
+            memories = await self._memory_application.retrieve(
+                user_id, user_input, session_id, limit=5
+            )
+            context["relevant_memories"] = memories
+            if memories:
+                memory_lines = [
+                    "【相关长期记忆】以下仅用于个性化表达，不可当作题目事实；如与当前输入冲突，以当前输入为准。"
+                ]
+                memory_lines.extend(f"- {item['content'][:300]}" for item in memories)
+                chat_history_dicts.insert(1 if chat_history_dicts else 0, {
+                    "role": "system", "content": "\n".join(memory_lines)[:1800],
+                })
+                context["chat_history"] = chat_history_dicts
+        except Exception as e:
+            logger.warning(f"长期记忆检索失败（非阻塞）: {e}")
 
         return context
 
@@ -570,8 +625,9 @@ class MathAgent:
             raise ValueError("user_id is required")
         sid = session_id or "default"
 
-        history = self._get_session_history(user_id, sid)
+        history = await self._get_or_restore_session_history(user_id, sid)
         history.add_user_message(user_input)
+        await self._persist_chat_message(user_id, sid, "user", user_input)
 
         context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
@@ -583,6 +639,7 @@ class MathAgent:
         result = await strategy.execute(user_input, strategy_session, context)
 
         history.add_ai_message(result)
+        await self._persist_chat_message(user_id, sid, "assistant", result)
 
         if self._persistence_facade:
             effective_user_id = user_id
@@ -635,8 +692,9 @@ class MathAgent:
         if not user_id:
             raise ValueError("user_id is required")
         sid = session_id or "default"
-        history = self._get_session_history(user_id, sid)
+        history = await self._get_or_restore_session_history(user_id, sid)
         history.add_user_message(input_text)
+        await self._persist_chat_message(user_id, sid, "user", input_text)
 
         context = await self._build_context(sid, user_input=input_text, user_id=user_id)
         strategy_session = self.session_key(user_id, sid)
@@ -644,6 +702,7 @@ class MathAgent:
         result_text = await strategy.execute(input_text, strategy_session, context)
 
         history.add_ai_message(result_text)
+        await self._persist_chat_message(user_id, sid, "assistant", result_text)
 
         # 获取思维链记录
         thoughts = []
@@ -735,8 +794,9 @@ class MathAgent:
             raise ValueError("user_id is required")
         sid = session_id or "default"
 
-        history = self._get_session_history(user_id, sid)
+        history = await self._get_or_restore_session_history(user_id, sid)
         history.add_user_message(user_input)
+        await self._persist_chat_message(user_id, sid, "user", user_input)
 
         context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
@@ -803,6 +863,7 @@ class MathAgent:
         self._follow_up_text = follow_up_text
 
         history.add_ai_message(full_response)
+        await self._persist_chat_message(user_id, sid, "assistant", full_response)
 
         if self._persistence_facade:
             effective_user_id = user_id

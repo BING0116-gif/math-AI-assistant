@@ -177,9 +177,6 @@ class User(Base):
     exam_papers = relationship(
         "ExamPaper", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
     )
-    user_skills = relationship(
-        "UserSkill", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
-    )
     error_items = relationship(
         "ErrorItem", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
     )
@@ -223,52 +220,6 @@ class LearningRecord(Base):
         Index("idx_learning_user_time", "user_id", "created_at"),
         Index("idx_learning_event_type", "event_type", "created_at"),
         Index("idx_learning_errors", "user_id", "category", postgresql_where="is_correct = FALSE"),
-    )
-
-
-class UserSkill(Base):
-    """用户技能熟练度表（A03 Skill机制）"""
-    __tablename__ = "user_skills"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(
-        String(36), ForeignKey("users.id"), nullable=False, index=True
-    )
-    skill_code = Column(String(50), nullable=False)
-    display_name = Column(String(100))
-    category_path = Column(String(200))
-
-    mastery_level = Column(Float, nullable=False, default=0.0)
-    status = Column(String(20), nullable=False, default="novice")
-
-    total_attempts = Column(Integer, nullable=False, default=0)
-    correct_count = Column(Integer, nullable=False, default=0)
-    recent_streak = Column(Integer, nullable=False, default=0)
-    best_streak = Column(Integer, nullable=False, default=0)
-
-    first_seen_at = Column(DateTime(timezone=True))
-    last_practiced_at = Column(DateTime(timezone=True))
-    mastered_at = Column(DateTime(timezone=True))
-
-    evolution_history = Column(JSON, default=list)
-
-    created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-    )
-    updated_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-
-    user = relationship("User", back_populates="user_skills")
-
-    __table_args__ = (
-        Index("idx_us_user_mastery", "user_id", "mastery_level"),
-        Index("idx_us_user_status", "user_id", "status"),
-        Index("idx_us_skill_code", "skill_code"),
-        UniqueConstraint("user_id", "skill_code", name="uq_user_skill"),
     )
 
 
@@ -563,6 +514,9 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    external_session_id = Column(
+        String(128), nullable=False, index=True, default=lambda: str(uuid.uuid4())
+    )
     user_id = Column(
         String(36), ForeignKey("users.id"), nullable=False, index=True
     )
@@ -591,6 +545,10 @@ class ChatSession(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "external_session_id", name="uq_chat_session_user_external"),
     )
 
 
@@ -715,6 +673,14 @@ class ErrorItem(Base):
     added_at = Column(String(30), default="")
     mastery_level = Column(Integer, default=3)
     is_mastered = Column(Boolean, default=False)
+    question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=True)
+    source = Column(String(20), nullable=False, default="manual")
+    structure_confidence = Column(Float, nullable=False, default=0.5)
+    review_state = Column(String(20), nullable=False, default="new")
+    knowledge_point_codes = Column(JSON, nullable=False, default=list)
+    wrong_attempt_count = Column(Integer, nullable=False, default=0)
+    last_attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="SET NULL"), nullable=True)
+    last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -730,6 +696,28 @@ class ErrorItem(Base):
     __table_args__ = (
         Index("idx_error_items_user", "user_id", "is_mastered"),
         Index("idx_error_items_user_item", "user_id", "item_id", unique=True),
+        UniqueConstraint("user_id", "question_id", name="uq_error_item_owner_question"),
+        Index("ix_error_items_owner_state", "user_id", "review_state"),
+    )
+
+
+class ErrorReviewEvent(Base):
+    """Immutable evidence used to advance an error item through review states."""
+    __tablename__ = "error_review_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String(128), nullable=False, unique=True)
+    error_item_id = Column(Integer, ForeignKey("error_items.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="SET NULL"), nullable=True)
+    event_type = Column(String(30), nullable=False)
+    from_state = Column(String(20), nullable=False)
+    to_state = Column(String(20), nullable=False)
+    details = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        Index("ix_error_review_owner_item_time", "user_id", "error_item_id", "created_at"),
     )
 
 
@@ -1034,8 +1022,20 @@ class UserKnowledgeState(Base):
     attempts_count = Column(Integer, nullable=False, default=0)
     correct_count = Column(Integer, nullable=False, default=0)
     mastery = Column(Float, nullable=False, default=0.0)
+    memory_strength = Column(Float, nullable=False, default=0.0)
+    confidence = Column(Float, nullable=False, default=0.0)
+    mistake_count = Column(Integer, nullable=False, default=0)
+    error_type_counts = Column(JSON, nullable=False, default=dict)
+    variant_attempts_count = Column(Integer, nullable=False, default=0)
+    variant_correct_count = Column(Integer, nullable=False, default=0)
+    variant_performance = Column(Float, nullable=False, default=0.0)
     last_attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="SET NULL"), nullable=True)
     last_practiced_at = Column(DateTime(timezone=True), nullable=True)
+    last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    next_review_at = Column(DateTime(timezone=True), nullable=True)
+    calculation_version = Column(String(40), nullable=False, default="uks-rules-v1")
+    calculation_reason = Column(JSON, nullable=False, default=dict)
+    evolution_history = Column(JSON, nullable=False, default=list)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (

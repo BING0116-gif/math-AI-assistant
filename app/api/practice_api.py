@@ -51,6 +51,9 @@ class SubmitPracticeAttemptRequest(BaseModel):
     question_id: str = Field(min_length=1, max_length=20)
     answer: Any = None
     idempotency_key: str = Field(min_length=8, max_length=128)
+    time_spent_seconds: int | None = Field(default=None, ge=0, le=86400)
+    hint_used: bool = False
+    solution_viewed: bool = False
 
 
 def _user_id(request: Request) -> str:
@@ -105,7 +108,8 @@ async def post_start(request: Request, session_id: str):
 @router.post("/sessions/{session_id}/attempts")
 async def post_attempt(request: Request, session_id: str, body: SubmitPracticeAttemptRequest):
     try:
-        return {"code": 0, "data": await submit_attempt(_user_id(request), session_id, body.question_id, body.answer, body.idempotency_key)}
+        signals = body.model_dump(include={"time_spent_seconds", "hint_used", "solution_viewed"}, exclude_none=True)
+        return {"code": 0, "data": await submit_attempt(_user_id(request), session_id, body.question_id, body.answer, body.idempotency_key, signals)}
     except PracticeError as error:
         _raise(error)
 
