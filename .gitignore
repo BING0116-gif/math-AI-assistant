@@ -27,6 +27,7 @@ ENV/
 
 # 测试
 .pytest_cache/
+.pytest_tmp/
 .coverage
 htmlcov/
 
@@ -53,6 +54,8 @@ qdrant_storage/
 
 # 备份
 backup/
+# Dev DB 重建备份（scripts/reset_dev_db.py）
+data/backups/
 
 # Docker
 .dockerignore
@@ -68,3 +71,35 @@ docs/ui-demo.html
 
 # 本地设计文件
 math-ai-assistant.design/
+
+# Content Ingestion PoC / runtime data（Step 1.1-C）
+math_question_bank_pdf_demo/.venv/
+math_question_bank_pdf_demo/uploads/
+math_question_bank_pdf_demo/parsed/
+math_question_bank_pdf_demo/exports/
+math_question_bank_pdf_demo/data/*.db
+math_question_bank_pdf_demo/data/*.db-shm
+math_question_bank_pdf_demo/data/*.db-wal
+math_question_bank_pdf_demo/mineru_test/
+# MinerU 运行时临时目录（若未来落在仓库内）
+mineru-cache/
+.mineru_cache/
+
+# Content Ingestion 正式存储根目录（Step 1.1-C2）
+# 只落相对 storage_key 到 PostgreSQL，二进制/临时文件不入 Git
+runtime/content/
+
+# ===== 非代码内容隔离（2026-08-20 整理）=====
+# WorkBuddy 内部工作目录（记忆/技能/会话，含敏感信息，绝不入库）
+.workbuddy/
+
+# 运行时数据根目录：Content Ingestion 二进制存储 + MinerU 可执行文件(.exe) + 测试临时产物
+runtime/
+
+# 题库切分 Demo：仅保留代码(.py/.json/.md)，所有 PDF 不入 Git
+math_question_bank_pdf_demo/**/*.pdf
+math_question_bank_pdf_demo/*.pdf
+
+# 项目文档：除顶层 README.md / AGENTS.md 外，docs/ 与 plans/ 全部不入 Git
+docs/
+plans/
