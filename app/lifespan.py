@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.config.settings import settings
 from app.data.database import init_db, close_db
+from app.services.ai_capability import is_ai_available
 from app.services.cache import get_cache_manager
 from app.middleware.auth import init_default_admin
 from app.data.database import get_db_session
@@ -43,7 +44,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"向量数据库初始化失败: {e}")
         try:
-            if settings.RAG_ENABLE_AI_EXPLANATION:
+            if settings.RAG_ENABLE_AI_EXPLANATION and is_ai_available():
                 from app.services.llm_service import get_llm_service
                 get_llm_service()
                 logger.info("LLM服务初始化完成")

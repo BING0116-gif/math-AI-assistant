@@ -1,122 +1,192 @@
-# 数学 AI 助手
+# 知微 · 智能数学学习系统
 
-面向高等数学学习的 AI 助手，提供智能问答、错题本、知识目录、学习内容和题库检索能力。
+面向大学高等数学的 AI 学习助手。首批内容聚焦**函数、极限与连续**，提供智能问答、错题本、知识目录、学习分析和推荐能力。
 
 ## 当前架构
 
-```text
-frontend/                 Vue 3 + Vite 学生端
-app/application.py        FastAPI 应用组装入口
-app/api/                  HTTP API
-app/services/             业务服务
-app/data/                 SQLAlchemy 模型、仓储和 Alembic
-agent_core/               Agent、记忆和任务规划
-tools/                    Agent 工具注册与实现
-prompts/                  模型提示词
+```
+frontend/                 Vue 3 + Vite 学生端（7 个视图页面）
+app/application.py        FastAPI 应用组装入口（正式 ASGI 入口）
+app/api/                  HTTP API 路由（13 个路由模块）
+app/services/             业务服务（20+ 服务模块）
+app/data/                 SQLAlchemy 模型、仓储和 Alembic 迁移
+agent_core/               MathAgent、记忆、任务规划和策略
+tools/                    Agent 工具注册与实现（7 个工具）
+prompts/                  模型提示词（系统、ReAct、规划、分类器）
 scripts/                  导入、迁移、检查和验证脚本
-qdrant_storage/           本地 Qdrant 数据（题库向量）
-data/math_ai.db           本地 SQLite 数据（题库主数据）
-docs/                     当前开发文档
-docs/archive/             历史文档和旧迁移材料
-tests/                    自动化测试
+tests/                    自动化测试（34 个测试文件）
+docs/                     当前开发文档和功能状态基线
 ```
 
 ## 数据存储职责
 
-- SQLite/PostgreSQL：保存题目完整字段，负责列表、详情、筛选和后续教师端管理。
-- Qdrant `math_questions`：保存题目向量和检索元数据，负责语义搜索与推荐。
-- Chroma：已移除，不再作为项目数据源。
-
-当前本地题库已经同步：SQLite 和 Qdrant 均为 176 道题。
+- **PostgreSQL**：用户、课程、知识点、题目、错题、记忆、画像等所有业务数据的唯一正式事实来源。后续所有 Schema 设计、迁移和约束必须以 PostgreSQL 为准。
+- **SQLite**：仅作为本地开发兼容模式和测试兼容路径存在。代码层仍支持 SQLite，但 SQLite 不保证所有 PostgreSQL 特性可用。不建议将 SQLite 作为正式业务数据存储。
+- **Qdrant**：只保存可重建的题目和记忆向量索引，用于语义搜索与推荐。不保存权威业务状态。
+- **Redis**：只用于缓存、限流和短期任务状态，不作为永久学习数据源。
+- 不使用 Chroma（已移除）。
 
 ## 本地开发启动
 
 后端和前端是两个独立进程。
 
-启动后端：
+### 前置依赖
+
+- Python 3.10+
+- Node.js 18+
+- PostgreSQL（生产推荐，Docker Compose 默认使用）
+- Redis（可选，缓存降级可用）
+- Qdrant（可选，向量搜索降级可用）
+- SQLite（本地开发兼容，默认使用）
+
+### 环境变量
+
+复制 `.env.example` 或创建 `.env` 文件，至少需要：
+
+```env
+# 必需：JWT 签名密钥（生产环境必须替换）
+JWT_SECRET_KEY=your-strong-secret-key
+
+# 必需：数据加密密钥（生产环境必须设置）
+ENCRYPTION_KEY=your-encryption-key
+
+# AI 功能开关（默认 true，false 强制关闭 AI 功能）
+AI_ENABLED=true
+
+# 可选：DashScope API Key（无 Key 时聊天和 AI 功能不可用）
+DASHSCOPE_API_KEY=your-api-key
+
+# 可选：LLM 配置
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-max
+
+# 可选：数据库（本地开发默认 SQLite，生产必须使用 PostgreSQL）
+DATABASE_URL=sqlite:///./data/math_ai.db
+# DATABASE_URL=postgresql://user:pass@localhost:5432/math_ai
+
+# 可选：Redis
+REDIS_URL=redis://localhost:6379/0
+```
+
+### 启动后端
 
 ```powershell
 .\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8100 --reload
 ```
 
-启动前端：
+### 启动前端
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-访问学生端：`http://127.0.0.1:5173`
+### 访问
 
-API 地址：`http://127.0.0.1:8100`
+- **学生端**：`http://127.0.0.1:5173`
+- **API 文档**：`http://127.0.0.1:8100/docs`（当 `DEBUG=true` 时）
+- **API 基础地址**：`http://127.0.0.1:8100`
 
-当 `.env` 中 `DEBUG=true` 时，API 文档地址为 `http://127.0.0.1:8100/docs`。
+### 兼容入口
 
-Windows 下也可以运行根目录的 `start.bat`，它只启动后端；前端需要在另一个终端运行 `npm run dev`。
+根目录 `main.py` 保留为兼容入口，`python main.py` 仍可运行。新部署统一使用 `app.application:app`。
 
 ## Docker 启动
 
 ```powershell
+# 必须设置以下环境变量
+$env:DB_PASSWORD="your_db_password"
+$env:ENCRYPTION_KEY="your-encryption-key"
+$env:JWT_SECRET_KEY="your-jwt-secret"
+
 docker compose up --build
 ```
 
 访问：`http://127.0.0.1:3000`
 
-Docker 服务包括：Vue/Nginx、FastAPI、PostgreSQL、Redis 和 Qdrant。
-
-## 题库脚本
-
-导入题库：
-
-```powershell
-python scripts/import/import_pdf.py questions.pdf
-python scripts/import/batch_import.py data/template_import_questions.csv
-python scripts/import/vl_import.py questions.pdf --preview
-```
-
-同步 Qdrant 到本地 SQLite：
-
-```powershell
-python scripts/migration/sync_qdrant_to_sqlite.py
-```
-
-检查 Qdrant：
-
-```powershell
-python scripts/inspection/inspect_qdrant.py
-```
+Docker 服务包括：Vue/Nginx、FastAPI、PostgreSQL 15、Redis 7、Qdrant。
 
 ## 数据库迁移
 
-正式结构迁移统一使用 Alembic：
+正式结构迁移使用 Alembic：
 
 ```powershell
 alembic -c app/data/alembic.ini upgrade head
 ```
 
-旧 SQL 迁移文件已经归档到 `docs/archive/migrations/`，不再作为运行迁移入口。
-
-`app/data/legacy_migrations.py` 仅用于一次性迁移旧 JSON 用户/错题数据，不负责数据库 schema 迁移。
+当前有 5 个迁移文件，覆盖初始表结构、记忆外键、知识目录、学习内容和资源。
 
 ## 测试
+
+### 后端测试
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest tests -q
 ```
 
-前端构建：
+**全量 pytest suite**：当前未成功完整执行。存在测试初始化 / fixture / 事件循环相关错误（`ValueError: I/O operation on closed file`），导致 suite 无法正常结束。
+
+**分文件执行累计结果**（逐文件运行后加总）：675 passed, 5 skipped, 6 failed。6 个失败全部来自 `test_api_integration.py`，因认证中间件要求 token 但测试未传入。归属 Step 0.3。
+
+### 前端测试
+
+```powershell
+cd frontend
+npm test
+```
+
+当前有 5 个测试文件、38 个测试用例，覆盖：
+
+- **Auth Store**：登录/注册/登出、token 刷新、会话恢复、session 清理
+- **API Interceptor**：Authorization 统一注入、401 刷新重放、刷新失败清理
+- **Router Guard**：受保护路由未登录重定向、已登录放行
+- **AgentComposer**：AI 离线状态组件行为
+- **MathRenderer**：普通文本 / 合法 LaTeX / 异常输入渲染
+
+所有测试自包含，不依赖实际后端服务或 dev server。
+
+### 前端构建
 
 ```powershell
 cd frontend
 npm run build
 ```
 
-## 兼容入口
+当前状态：通过（含 Dart Sass 弃用警告和 chunk 大小警告）
 
-正式 ASGI 入口是：
+### 前端工程入口
 
-```text
-app.application:app
-```
+- **Application entry**：`frontend/src/main.js`
+- **Router**：`frontend/src/router/index.js`（唯一正式 Router，含认证守卫）
+- **Tests**：`npm test`（Vitest）
+- **Production build**：`npm run build`（Vite）
+- **Build artifact**：`frontend/dist/`（不提交 Git，构建时生成）
 
-根目录 `main.py` 仍保留为兼容入口，旧命令 `python main.py` 仍可运行，但新部署统一使用 `app.application:app`。
+## 当前产品范围
+
+- **课程**：大学高等数学
+- **首批内容**：函数、极限与连续（已通过启动种子数据加载）
+- **题型**：选择题、判断题、数值填空题（暂未实现判题引擎）
+- **高中数学**：属于旧产品方案中的早期规划，不作为当前 MVP 开发范围
+
+## 功能状态摘要
+
+详见 [docs/当前功能状态基线_V1.0.md](docs/当前功能状态基线_V1.0.md)
+
+| 模块 | 状态 |
+|------|------|
+| 认证（注册/登录/Token） | 已贯通 |
+| 课程与知识目录 | 已贯通 |
+| 聊天与 AI Agent | 已贯通（AI Enabled 条件下） |
+| 错题本 | 已贯通 |
+| 记忆系统 | 已贯通 |
+| 用户画像与技能 | 已贯通 |
+| 推荐系统 | 已贯通 |
+| 数据管理与安全 | 已贯通 |
+| 前端页面 | 已贯通 |
+| 练习会话 | 仅骨架 |
+| 判题引擎 | 未实现 |
+| 练习页面 | 未实现 |
+| 间隔复习计划 | 未实现 |
+| 今日任务 | 未实现 |
+| 考试/组卷/变式 | 暂缓 |

@@ -203,8 +203,8 @@ class RAGRecommender:
         from agent_core.memory_persistence import MemoryPersistenceFacade
         try:
             facade = MemoryPersistenceFacade(self._session_factory)
-            profile = await facade.get_profile(user_id)
-            return profile.to_dict()
+            snapshot = await facade.get_profile_snapshot(user_id)
+            return snapshot.to_dict()
         except Exception:
             return {"correct_rate": 0.5, "total_questions": 0}
 
@@ -245,7 +245,7 @@ class RAGRecommender:
         print(f"[RAG_DIAG] SQL检索参数 | category={repr(category)} | difficulty={difficulty} | exclude_count={len(exclude_ids)} | count={count}", flush=True)
         async with self._session_factory() as db:
             query = select(Question).where(
-                and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True)
+                and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True, Question.review_status == "published")
             )
             if exclude_ids:
                 query = query.where(Question.id.notin_(exclude_ids))
@@ -258,7 +258,8 @@ class RAGRecommender:
                 relaxed = select(Question).where(
                     and_(Question.category == category,
                          Question.difficulty.between(max(1, difficulty - 1), min(5, difficulty + 1)),
-                         Question.is_active == True)
+                         Question.is_active == True,
+                         Question.review_status == "published")
                 )
                 if exclude_ids:
                     relaxed = relaxed.where(Question.id.notin_(exclude_ids))
@@ -323,7 +324,7 @@ class RAGRecommender:
 
     async def _fetch_vector_questions(self, vector_ids: List[str], final: List[Question], seen_ids: set):
         async with self._session_factory() as db:
-            result = await db.execute(select(Question).where(Question.id.in_(vector_ids)))
+            result = await db.execute(select(Question).where(Question.id.in_(vector_ids), Question.review_status == "published"))
             for q in result.scalars().all():
                 if q.id not in seen_ids:
                     final.append(q)
@@ -374,7 +375,7 @@ class RAGRecommender:
         logger.info(f"[降级推荐] user={request.user_id}")
         try:
             async with self._session_factory() as db:
-                query = select(Question).where(and_(Question.is_active == True, Question.difficulty == 3))
+                query = select(Question).where(and_(Question.is_active == True, Question.difficulty == 3, Question.review_status == "published"))
                 if request.exclude_ids:
                     query = query.where(Question.id.notin_(request.exclude_ids))
                 query = query.limit(request.count)
@@ -392,12 +393,12 @@ class RAGRecommender:
 
     @staticmethod
     def _question_to_dict(q: Question) -> Dict[str, Any]:
+        # Step 1.1 P0：学生可见接口不得提前返回标准答案与完整解析
         return {
             "id": q.id, "content": q.content, "question_type": q.question_type,
-            "options": q.options, "answer": q.answer, "analysis": q.analysis,
-            "category": q.category, "sub_categories": q.sub_categories,
+            "options": q.options, "category": q.category, "sub_categories": q.sub_categories,
             "knowledge_points": q.knowledge_points, "difficulty": q.difficulty,
-            "estimated_time": q.estimated_time, "source": q.source,
+            "estimated_time": q.estimated_time,
         } if q else {}
 
 

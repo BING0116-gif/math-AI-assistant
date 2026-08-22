@@ -207,12 +207,16 @@ async def get_user_by_id(user_id: str) -> Optional[DBUser]:
 
 
 async def init_default_admin(secret_key: str):
-    admin_user = os.environ.get("ADMIN_USERNAME", "").strip()
-    admin_pass = os.environ.get("ADMIN_PASSWORD", "").strip()
+    # 凭据来自 pydantic-settings（读取 .env），不是 os.environ——
+    # pydantic-settings 不会把 .env 的值写回 os.environ。
+    from app.config.settings import settings
+
+    admin_user = (settings.ADMIN_USERNAME or "").strip()
+    admin_pass = (settings.ADMIN_PASSWORD or "").strip()
 
     if not admin_user or not admin_pass:
-        print("[安全] 未设置 ADMIN_USERNAME / ADMIN_PASSWORD 环境变量，跳过管理员初始化")
-        print("[安全] 请通过环境变量设置管理员凭据后重启服务")
+        print("[安全] 未设置 ADMIN_USERNAME / ADMIN_PASSWORD（.env 中），跳过管理员初始化")
+        print("[安全] 请在 .env 中添加 ADMIN_USERNAME / ADMIN_PASSWORD 后重启服务")
         return
 
     admin = await register_user(admin_user, admin_pass)

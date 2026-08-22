@@ -397,11 +397,11 @@ class MathAgent:
             "user_id": user_id,
         }
 
-        # 注入用户技能画像到上下文
+        # 注入用户技能画像到上下文（统一读取 ProfileSnapshot）
         context["user_skill_instruction"] = ""
         if user_id and self._persistence_facade:
             try:
-                profile = await self._persistence_facade.get_profile(user_id)
+                profile = await self._persistence_facade.get_profile_snapshot(user_id)
                 if profile and (profile.skills or profile.weak_points):
                     skill_text = self._format_skill_profile_for_llm(profile)
                     context["user_skill_instruction"] = skill_text
@@ -484,8 +484,13 @@ class MathAgent:
         rec_diff = int(profile.recommended_difficulty or 3)
         lines.append(f"- 推荐答题难度: T{rec_diff}")
 
-        if profile.error_patterns:
-            patterns = [ep.get("pattern", "") for ep in profile.error_patterns[:3] if ep.get("pattern")]
+        # error_patterns 兼容两种形态：旧版 List / 新版 ProfileSnapshot(私有 List 字段)
+        if isinstance(profile.error_patterns, list):
+            ep_list = profile.error_patterns
+        else:
+            ep_list = getattr(profile, "error_pattern_list", None) or []
+        if ep_list:
+            patterns = [ep.get("pattern", "") for ep in ep_list[:3] if ep.get("pattern")]
             if patterns:
                 lines.append(f"- 常见易错: {', '.join(patterns)} → 回答时主动提醒这些错误")
 

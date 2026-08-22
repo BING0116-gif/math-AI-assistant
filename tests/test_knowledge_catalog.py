@@ -23,15 +23,21 @@ async def test_phase_one_seed_is_idempotent_and_exposes_sorted_tree():
         await session.commit()
         tree = await get_published_course_tree(session, course.id)
         assert tree["version"]["status"] == "published"
-        assert [chapter["name"] for chapter in tree["chapters"]] == ["函数与极限"]
+        assert [chapter["name"] for chapter in tree["chapters"]] == ["函数、极限与连续"]
         sections = tree["chapters"][0]["children"]
-        assert [section["sort_order"] for section in sections] == [1, 2, 3]
+        assert [section["sort_order"] for section in sections] == [1, 2, 3, 4]
+        assert [section["name"] for section in sections] == ["函数基础", "极限概念", "极限计算", "连续性"]
         points = [point for section in sections for point in section["knowledge_points"]]
-        assert len(points) == 10
+        assert len(points) == 24
+        point_codes = {point["code"] for point in points}
+        assert len(point_codes) == 24  # 知识点 code 唯一
         detail = await get_published_point(session, points[0]["id"])
         assert detail["learning_objectives"]
         assert detail["key_concepts"]
         assert detail["exam_focuses"]
+        # Step 1.1：前置/关联关系已暴露
+        assert "prerequisites" in detail
+        assert "related" in detail
         learning = await get_published_learning_content(session, points[0]["id"])
         assert {resource["type"] for resource in learning["resources"]} == {"concept", "formula", "exam_focus", "example", "exercise"}
     await engine.dispose()

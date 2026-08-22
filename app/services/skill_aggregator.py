@@ -32,44 +32,45 @@ class SkillAggregator:
     async def get_all_skills(
         self, user_id: str, max_skills: int = 50
     ) -> List[Dict[str, Any]]:
-        from sqlalchemy import text
+        from sqlalchemy import select
+        from app.data.models import UserSkill
 
         async with self._session_factory() as db:
             result = await db.execute(
-                text(
-                    "SELECT skill_code, display_name, category_path, "
-                    "mastery_level, status, total_attempts, correct_count, "
-                    "recent_streak, best_streak, last_practiced_at, "
-                    "first_seen_at, mastered_at, evolution_history "
-                    "FROM user_skills WHERE user_id = :uid "
-                    "ORDER BY mastery_level DESC LIMIT :limit"
-                ),
-                {"uid": user_id, "limit": max_skills},
+                select(UserSkill)
+                .where(UserSkill.user_id == user_id)
+                .order_by(UserSkill.mastery_level.desc())
+                .limit(max_skills)
             )
-            rows = result.fetchall()
+            skills = result.scalars().all()
 
-            if rows:
+            if skills:
                 return [
                     {
-                        "skill_code": r[0],
-                        "display_name": r[1],
-                        "category_path": r[2],
-                        "mastery_level": r[3],
-                        "status": r[4],
-                        "total_attempts": r[5],
-                        "correct_count": r[6],
-                        "recent_streak": r[7],
-                        "best_streak": r[8],
+                        "skill_code": s.skill_code,
+                        "display_name": s.display_name,
+                        "category_path": s.category_path,
+                        "mastery_level": s.mastery_level,
+                        "status": s.status,
+                        "total_attempts": s.total_attempts,
+                        "correct_count": s.correct_count,
+                        "recent_streak": s.recent_streak,
+                        "best_streak": s.best_streak,
                         "last_practiced": (
-                            r[9].isoformat() if r[9] else None
+                            s.last_practiced_at.isoformat()
+                            if s.last_practiced_at else None
                         ),
-                        "first_seen": r[10].isoformat() if r[10] else None,
-                        "mastered_at": r[11].isoformat() if r[11] else None,
-                        "evolution_history": (
-                            json.loads(r[12]) if r[12] else []
+                        "first_seen": (
+                            s.first_seen_at.isoformat()
+                            if s.first_seen_at else None
                         ),
+                        "mastered_at": (
+                            s.mastered_at.isoformat()
+                            if s.mastered_at else None
+                        ),
+                        "evolution_history": s.evolution_history or [],
                     }
-                    for r in rows
+                    for s in skills
                 ]
 
             return await self._compute_skills(user_id, max_skills)
@@ -83,83 +84,111 @@ class SkillAggregator:
         if skill_codes:
             filtered = [s for s in skills if s["skill_code"] in skill_codes]
 
-        from sqlalchemy import text
+        from sqlalchemy import select
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.data.models import UserSkill
+
         async with self._session_factory() as db:
+            dialect = db.bind.dialect.name if db.bind else "sqlite"
             for skill in filtered:
-                await db.execute(
-                    text(
-                        "INSERT INTO user_skills (user_id, skill_code, "
-                        "display_name, category_path, mastery_level, status, "
-                        "total_attempts, correct_count, recent_streak, "
-                        "best_streak, first_seen_at, last_practiced_at, "
-                        "mastered_at, evolution_history, updated_at) "
-                        "VALUES (:uid, :sc, :dn, :cp, :ml, :st, :ta, :cc, "
-                        ":rs, :bs, :fs, :lp, :ma, :eh, CURRENT_TIMESTAMP) "
-                        "ON CONFLICT (user_id, skill_code) DO UPDATE SET "
-                        "mastery_level = EXCLUDED.mastery_level, "
-                        "status = EXCLUDED.status, "
-                        "total_attempts = EXCLUDED.total_attempts, "
-                        "correct_count = EXCLUDED.correct_count, "
-                        "recent_streak = EXCLUDED.recent_streak, "
-                        "best_streak = EXCLUDED.best_streak, "
-                        "last_practiced_at = EXCLUDED.last_practiced_at, "
-                        "evolution_history = EXCLUDED.evolution_history, "
-                        "updated_at = CURRENT_TIMESTAMP"
-                    ),
-                    {
-                        "uid": user_id,
-                        "sc": skill["skill_code"],
-                        "dn": skill["display_name"],
-                        "cp": skill.get("category_path", ""),
-                        "ml": skill["mastery_level"],
-                        "st": skill["status"],
-                        "ta": skill["total_attempts"],
-                        "cc": skill["correct_count"],
-                        "rs": skill["recent_streak"],
-                        "bs": skill["best_streak"],
-                        "fs": skill.get("first_seen"),
-                        "lp": skill.get("last_practiced"),
-                        "ma": skill.get("mastered_at"),
-                        "eh": json.dumps(
-                            skill.get("evolution_history", []),
-                            ensure_ascii=False,
-                        ),
-                    },
-                )
+                values = {
+                    "user_id": user_id,
+                    "skill_code": skill["skill_code"],
+                    "display_name": skill["display_name"],
+                    "category_path": skill.get("category_path", ""),
+                    "mastery_level": skill["mastery_level"],
+                    "status": skill["status"],
+                    "total_attempts": skill["total_attempts"],
+                    "correct_count": skill["correct_count"],
+                    "recent_streak": skill["recent_streak"],
+                    "best_streak": skill["best_streak"],
+                    "first_seen_at": self._parse_datetime(skill.get("first_seen")),
+                    "last_practiced_at": self._parse_datetime(skill.get("last_practiced")),
+                    "mastered_at": self._parse_datetime(skill.get("mastered_at")),
+                    "evolution_history": skill.get("evolution_history", []),
+                }
+
+                if dialect == "postgresql":
+                    stmt = pg_insert(UserSkill).values(**values)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["user_id", "skill_code"],
+                        set_={
+                            "display_name": stmt.excluded.display_name,
+                            "category_path": stmt.excluded.category_path,
+                            "mastery_level": stmt.excluded.mastery_level,
+                            "status": stmt.excluded.status,
+                            "total_attempts": stmt.excluded.total_attempts,
+                            "correct_count": stmt.excluded.correct_count,
+                            "recent_streak": stmt.excluded.recent_streak,
+                            "best_streak": stmt.excluded.best_streak,
+                            "last_practiced_at": stmt.excluded.last_practiced_at,
+                            "evolution_history": stmt.excluded.evolution_history,
+                            "updated_at": stmt.excluded.updated_at,
+                        },
+                    )
+                    await db.execute(stmt)
+                else:
+                    # SQLite / 其他方言：读-改-写（低频率写，非关键路径）
+                    existing = await db.execute(
+                        select(UserSkill).where(
+                            UserSkill.user_id == user_id,
+                            UserSkill.skill_code == skill["skill_code"],
+                        )
+                    )
+                    row = existing.scalar_one_or_none()
+                    if row is not None:
+                        for k, v in values.items():
+                            setattr(row, k, v)
+                    else:
+                        db.add(UserSkill(**values))
             await db.commit()
         return len(filtered)
 
     async def get_error_patterns(
         self, user_id: str
     ) -> List[Dict[str, Any]]:
-        from sqlalchemy import text
+        from sqlalchemy import select
+        from app.data.models import LearningRecord
 
         async with self._session_factory() as db:
             result = await db.execute(
-                text(
-                    "SELECT error_reason, COUNT(*) as freq, "
-                    "GROUP_CONCAT(DISTINCT category) as affected "
-                    "FROM learning_records "
-                    "WHERE user_id = :uid AND is_correct = FALSE "
-                    "AND error_reason IS NOT NULL AND error_reason != '' "
-                    "GROUP BY error_reason "
-                    "HAVING COUNT(DISTINCT category) >= 2 "
-                    "ORDER BY freq DESC "
-                    "LIMIT 10"
-                ),
-                {"uid": user_id},
+                select(
+                    LearningRecord.error_reason,
+                    LearningRecord.category,
+                ).where(
+                    LearningRecord.user_id == user_id,
+                    LearningRecord.is_correct.is_(False),
+                    LearningRecord.error_reason.isnot(None),
+                    LearningRecord.error_reason != "",
+                )
             )
             rows = result.fetchall()
 
-            total_errors = sum(r[1] for r in rows) or 1
-            return [
-                {
-                    "pattern": r[0],
-                    "frequency": round(r[1] / total_errors, 2),
-                    "affected_skills": r[2].split(",") if r[2] else [],
-                }
-                for r in rows
-            ]
+        # 应用层聚合（替代 GROUP_CONCAT，兼容 PostgreSQL / SQLite）
+        agg: Dict[str, Dict[str, Any]] = {}
+        for reason, category in rows:
+            entry = agg.setdefault(reason, {"freq": 0, "categories": set()})
+            entry["freq"] += 1
+            if category:
+                entry["categories"].add(category)
+
+        candidates = [
+            (reason, entry["freq"], entry["categories"])
+            for reason, entry in agg.items()
+            if len(entry["categories"]) >= 2
+        ]
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        candidates = candidates[:10]
+
+        total_errors = sum(freq for _, freq, _ in candidates) or 1
+        return [
+            {
+                "pattern": reason,
+                "frequency": round(freq / total_errors, 2),
+                "affected_skills": sorted(categories),
+            }
+            for reason, freq, categories in candidates
+        ]
 
     async def get_cognitive_style(
         self, user_id: str
@@ -395,6 +424,26 @@ class SkillAggregator:
         )
         status = self._determine_status(mastery)
         return mastery, status, current_streak, best_streak, history_points
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> Optional[datetime]:
+        """将 ISO 字符串 / datetime 解析为 aware datetime。
+
+        SQLite / PostgreSQL 的 DateTime 列均要求 Python datetime 对象，
+        不能直接写入 ISO 字符串（跨方言兼容修复）。
+        """
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            try:
+                dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
     @staticmethod
     def _determine_status(mastery: float) -> str:

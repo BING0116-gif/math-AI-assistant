@@ -18,7 +18,10 @@
 import logging
 from typing import Optional, Protocol, runtime_checkable
 
+from fastapi import HTTPException
+
 from app.config.settings import settings
+from app.services.ai_capability import is_ai_available, raise_ai_unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +109,12 @@ _vector_store: Optional[VectorStoreProtocol] = None
 
 
 def get_llm_service() -> LLMServiceProtocol:
-    """获取 LLM 服务实例（单例，延迟初始化）。"""
+    """获取 LLM 服务实例（单例，延迟初始化）。
+
+    当 AI 不可用（如 AI_ENABLED 为 false 或未配置 API Key）时抛出 503 异常。
+    """
+    if not is_ai_available():
+        raise_ai_unavailable("llm")
     global _llm_service
     if _llm_service is None:
         from app.services.llm_service import LLMService
@@ -134,8 +142,13 @@ async def get_vector_store() -> VectorStoreProtocol:
 
 
 def get_agent():
-    """获取全局 Agent 实例（由 main.py 在启动时设置）。"""
+    """获取全局 Agent 实例（由 main.py 在启动时设置）。
+
+    当 AI 不可用（agent 为 None）时抛出 503 异常。
+    """
     from main import agent
+    if agent is None:
+        raise_ai_unavailable("agent")
     return agent
 
 

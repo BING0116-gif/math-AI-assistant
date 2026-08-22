@@ -18,7 +18,18 @@ import './styles/transitions.scss'
 
 const app = createApp(App)
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
+
+// 初始化 auth store 并恢复会话
+import { useAuthStore } from '@/stores/authStore'
+const authStore = useAuthStore()
+authStore.restoreSession()
+
+// 设置 API 客户端的 token getter，确保 Authorization 头统一注入
+import { setAuthTokenGetter } from '@/api'
+setAuthTokenGetter(() => authStore.getAccessToken())
+
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 

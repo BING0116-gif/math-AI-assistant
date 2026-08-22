@@ -8,12 +8,20 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 
 from app.config.settings import settings
+from app.models.ai_unavailable import AIUnavailableResponse
+from app.services.ai_capability import get_ai_capability, is_ai_available, raise_ai_unavailable
 from app.services.cache import get_cache_manager
 from app.data.database import check_database_health
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agent"])
+
+
+def _check_ai_available(capability: str) -> None:
+    """检查 AI 是否可用，不可用时抛出结构化 503。"""
+    if not is_ai_available():
+        raise_ai_unavailable(capability)
 
 
 def get_agent():
@@ -28,8 +36,11 @@ def get_registry():
     return _get_registry()
 
 
-@router.get("/api/agent/thought/{session_id}")
+@router.get("/api/agent/thought/{session_id}", responses={
+    503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
+})
 async def get_thought_history(session_id: str, request: Request):
+    _check_ai_available("agent")
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise HTTPException(status_code=401, detail="未认证")
@@ -46,8 +57,11 @@ async def get_thought_history(session_id: str, request: Request):
     }
 
 
-@router.get("/api/agent/stats")
+@router.get("/api/agent/stats", responses={
+    503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
+})
 async def get_agent_stats():
+    _check_ai_available("agent")
     recorder = get_agent().get_thought_recorder()
     return recorder.get_stats()
 
@@ -103,9 +117,18 @@ async def detailed_health():
         c.get("status") == "healthy" for c in checks.values()
     ) else "degraded"
 
+    # AI capability 状态
+    ai_cap = get_ai_capability()
+
     return {
         "status": overall,
         "checks": checks,
+        "ai": {
+            "enabled": ai_cap.enabled_config,
+            "configured": ai_cap.has_api_key,
+            "available": ai_cap.available,
+            "reason": ai_cap.reason,
+        },
         "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
     }
 

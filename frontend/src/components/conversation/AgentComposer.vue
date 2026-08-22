@@ -3,8 +3,12 @@ import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   large?: boolean
+  disabled?: boolean
+  disabledReason?: string
 }>(), {
   large: false,
+  disabled: false,
+  disabledReason: '',
 })
 
 const emit = defineEmits<{
@@ -42,12 +46,13 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 function handleSend() {
+  if (props.disabled) return
   const trimmed = text.value.trim()
   if (imagePreview.value) {
     emit('sendImage', trimmed, imagePreview.value)
     text.value = ''
     imagePreview.value = null
-    autoResize()
+    nextTick(autoResize)
     return
   }
   if (trimmed) {
@@ -129,12 +134,24 @@ onUnmounted(() => {
 <template>
   <div
     class="agent-composer"
-    :class="{ 'agent-composer--large': large }"
+    :class="{ 'agent-composer--large': large, 'agent-composer--disabled': disabled }"
   >
+    <!-- AI 不可用提示 -->
+    <div v-if="disabled" class="agent-composer__offline-banner">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="agent-composer__offline-icon">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 8v4M12 16h.01"/>
+      </svg>
+      <span>{{ disabledReason || 'AI 功能当前不可用，请稍后再试' }}</span>
+    </div>
+
     <div
       class="agent-composer__box"
-      :class="{ 'agent-composer__box--with-image': imagePreview }"
-      @drop.prevent="handleDrop"
+      :class="{
+        'agent-composer__box--with-image': imagePreview,
+        'agent-composer__box--disabled': disabled
+      }"
+      @drop.prevent="disabled ? null : handleDrop"
       @dragover.prevent
     >
       <!-- 图片预览 -->
@@ -157,11 +174,12 @@ onUnmounted(() => {
           class="agent-composer__textarea"
           :placeholder="placeholder"
           :rows="1"
+          :disabled="disabled"
           @compositionstart="isComposing = true"
           @compositionend="isComposing = false"
-          @keydown="handleKeydown"
+          @keydown="disabled ? null : handleKeydown"
           @input="autoResize"
-          @paste="handlePaste"
+          @paste="disabled ? null : handlePaste"
           aria-label="输入数学问题"
         />
       </div>
@@ -173,7 +191,8 @@ onUnmounted(() => {
             class="agent-composer__tool-btn agent-composer__tool-btn--icon"
             aria-label="添加图片"
             title="添加图片"
-            @click="handleFileSelect"
+            :disabled="disabled"
+            @click="disabled ? null : handleFileSelect"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M12 5v14M5 12h14"/>
@@ -182,7 +201,8 @@ onUnmounted(() => {
           <button
             class="agent-composer__tool-btn agent-composer__tool-btn--text"
             aria-label="拍照或上传题目"
-            @click="handleFileSelect"
+            :disabled="disabled"
+            @click="disabled ? null : handleFileSelect"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <rect x="3" y="5" width="18" height="15" rx="2"/>
@@ -194,7 +214,7 @@ onUnmounted(() => {
 
         <button
           class="agent-composer__send-btn"
-          :disabled="!text.trim() && !imagePreview"
+          :disabled="disabled || (!text.trim() && !imagePreview)"
           aria-label="发送"
           @click="handleSend"
         >
@@ -212,6 +232,40 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   width: 100%;
+}
+
+.agent-composer--disabled {
+  opacity: 0.85;
+}
+
+.agent-composer__offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-warning, rgba(200, 145, 61, 0.08));
+  border: 1px solid var(--border-warning, rgba(200, 145, 61, 0.2));
+  color: var(--text-warning, #b8860b);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.agent-composer__offline-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.agent-composer__box--disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.agent-composer__tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .agent-composer__box {

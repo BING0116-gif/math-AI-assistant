@@ -17,7 +17,7 @@
       <section v-else-if="error" class="state error-state" role="alert">
         <h2>{{ requiresAuth ? '登录后即可查看知识图谱' : '知识图谱暂时无法加载' }}</h2>
         <p>{{ error }}</p>
-        <button v-if="requiresAuth" @click="authOpen = true">登录或注册</button>
+        <button v-if="requiresAuth" @click="openLogin()">登录或注册</button>
         <button v-else @click="loadCatalog">重试</button>
       </section>
       <template v-else-if="tree">
@@ -128,27 +128,24 @@
         </div>
       </template>
     </div>
-
-    <el-dialog v-model="authOpen" width="min(420px, 92vw)" :close-on-click-modal="false" :title="authMode === 'login' ? '登录学习账号' : '创建学习账号'">
-      <p class="auth-hint">{{ authMode === 'login' ? '登录后将自动打开知识图谱。' : '注册完成后会自动登录并打开知识图谱。' }}</p>
-      <el-form label-position="top" @submit.prevent="submitAuth"><el-form-item label="用户名" required><el-input v-model.trim="authForm.username" autocomplete="username" minlength="3" maxlength="32" placeholder="3–32 个字母、数字或下划线" /></el-form-item><el-form-item label="密码" required><el-input v-model="authForm.password" type="password" show-password autocomplete="current-password" minlength="6" maxlength="64" placeholder="至少 6 位" /></el-form-item><p v-if="authError" class="auth-error" role="alert">{{ authError }}</p><el-button native-type="submit" type="primary" :loading="authSubmitting" class="auth-submit">{{ authMode === 'login' ? '登录并查看图谱' : '注册并查看图谱' }}</el-button></el-form>
-      <template #footer><button class="mode-switch" type="button" @click="toggleAuthMode">{{ authMode === 'login' ? '没有账号？立即注册' : '已有账号？去登录' }}</button></template>
-    </el-dialog>
   </AppShell>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppShell from '@/components/shell/AppShell.vue'
 import KnowledgeGalaxy from '@/components/knowledge/KnowledgeGalaxy.vue'
 import { getCourseTree, getKnowledgePoint, listCourses } from '@/api/knowledge'
-import api from '@/api'
 import { useErrorBookStore } from '@/stores/errorBookStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useLoginDialog } from '@/composables/useLoginDialog'
 
 const router = useRouter()
 const errorBookStore = useErrorBookStore()
+const authStore = useAuthStore()
+const { openLogin } = useLoginDialog()
 const tree = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -156,11 +153,13 @@ const requiresAuth = ref(false)
 const selectedPoint = ref(null)
 const selectedBranch = ref(null)
 const pointLoading = ref(false)
-const authOpen = ref(false)
-const authMode = ref('login')
-const authSubmitting = ref(false)
-const authError = ref('')
-const authForm = reactive({ username: '', password: '' })
+
+// 登录成功后自动重新加载图谱
+watch(() => authStore.isAuthenticated, (val) => {
+  if (val && requiresAuth.value) {
+    loadCatalog()
+  }
+})
 
 const hasSelection = computed(() => selectedPoint.value || selectedBranch.value)
 
@@ -245,33 +244,6 @@ function openLearning(point) {
 
 function goToRelatedErrors(point) {
   router.push({ path: '/error-book', query: { search: point.name } })
-}
-
-function toggleAuthMode() {
-  authMode.value = authMode.value === 'login' ? 'register' : 'login'
-  authError.value = ''
-}
-
-async function submitAuth() {
-  authError.value = ''
-  if (authForm.username.length < 3 || authForm.password.length < 6) {
-    authError.value = '用户名至少 3 位，密码至少 6 位。'
-    return
-  }
-  authSubmitting.value = true
-  try {
-    if (authMode.value === 'register') await api.post('/auth/register', authForm)
-    const { data } = await api.post('/auth/login', authForm)
-    localStorage.setItem('auth_token', data.data.access_token)
-    localStorage.setItem('refresh_token', data.data.refresh_token)
-    authOpen.value = false
-    ElMessage.success(authMode.value === 'login' ? '登录成功' : '注册并登录成功')
-    await loadCatalog()
-  } catch (err) {
-    authError.value = err.response?.data?.detail || '操作失败，请检查用户名和密码后重试。'
-  } finally {
-    authSubmitting.value = false
-  }
 }
 
 onMounted(loadCatalog)
@@ -661,12 +633,6 @@ onMounted(loadCatalog)
   font-weight: 600;
   cursor: pointer;
 }
-
-/* Auth dialog */
-.auth-hint { margin: 0 0 20px; color: var(--text-secondary); }
-.auth-error { color: var(--danger); }
-.auth-submit { width: 100%; min-height: 44px; }
-.mode-switch { border: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; font-weight: 700; }
 
 /* 响应式 */
 @media (max-width: 1100px) {

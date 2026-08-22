@@ -7,6 +7,11 @@ from .models import (
     ChatMessage,
     ExamPaper,
     ExamSubmission,
+    PaperTemplate,
+    Paper,
+    PaperQuestion,
+    QuestionAuditLog,
+    ContentTask,
 )
 from .database import (
     engine,
@@ -35,6 +40,11 @@ __all__ = [
     "ChatMessage",
     "ExamPaper",
     "ExamSubmission",
+    "PaperTemplate",
+    "Paper",
+    "PaperQuestion",
+    "QuestionAuditLog",
+    "ContentTask",
     "engine",
     "async_session_factory",
     "get_db_session",

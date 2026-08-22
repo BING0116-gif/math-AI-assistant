@@ -23,11 +23,19 @@ def mock_dependencies():
     mock_eb.add = AsyncMock(return_value="test_id")
     mock_eb.remove = AsyncMock(return_value=True)
     mock_eb.update = AsyncMock(return_value=True)
+
+    # 为 auth middleware 提供 mock user
+    mock_user = MagicMock()
+    mock_user.id = "test_user_id"
+    mock_user.is_active = True
+    mock_user.role = "student"
+
     with patch("app.dependencies._llm_service", Mock()), \
          patch("app.dependencies._vector_store", Mock()), \
          patch("main.agent", Mock()), \
          patch("main.registry", Mock()), \
-         patch("main.error_book_manager", mock_eb):
+         patch("main.error_book_manager", mock_eb), \
+         patch("app.middleware.auth_middleware.get_user_by_id", AsyncMock(return_value=mock_user)):
         yield
 
 
@@ -36,6 +44,24 @@ def client():
     """创建 TestClient。"""
     from main import app
     return TestClient(app)
+
+
+@pytest.fixture
+def auth_token():
+    """生成一个正式合法的 JWT access token 用于认证测试。"""
+    from app.middleware.auth import create_access_token
+    from app.config.settings import settings
+    return create_access_token(
+        "test_user_id",
+        settings.JWT_SECRET_KEY,
+        settings.JWT_ALGORITHM,
+    )
+
+
+@pytest.fixture
+def auth_headers(auth_token):
+    """返回合法 Authorization 头。"""
+    return {"Authorization": f"Bearer {auth_token}"}
 
 
 class TestHealthEndpoint:
@@ -78,21 +104,21 @@ class TestAgentEndpoints:
 class TestErrorBookEndpoints:
     """测试错题本端点"""
 
-    def test_list_error_books(self, client):
+    def test_list_error_books(self, client, auth_headers):
         mock_manager = MagicMock()
         mock_manager.get_all = AsyncMock(return_value=[])
         with patch("main.error_book_manager", mock_manager):
-            response = client.get("/api/error-book")
+            response = client.get("/api/error-book", headers=auth_headers)
             assert response.status_code == 200
 
-    def test_add_error_book_validation(self, client):
+    def test_add_error_book_validation(self, client, auth_headers):
         """测试添加错题时的输入验证"""
         # 空请求应返回验证错误
-        response = client.post("/api/error-book", json={})
+        response = client.post("/api/error-book", json={}, headers=auth_headers)
         # 验证失败应返回 422 或 400
         assert response.status_code in (400, 422)
 
-    def test_add_error_book_valid(self, client):
+    def test_add_error_book_valid(self, client, auth_headers):
         """测试添加有效错题"""
         mock_manager = MagicMock()
         mock_manager.add = AsyncMock(return_value="test_id")
@@ -103,20 +129,20 @@ class TestErrorBookEndpoints:
                 "correct_answer": "1",
                 "error_reason": "概念不清",
                 "categories": ["极限"],
-            })
+            }, headers=auth_headers)
             assert response.status_code in (200, 201, 400, 422)
 
 
 class TestChatEndpoints:
     """测试聊天端点"""
 
-    def test_chat_request_validation(self, client):
+    def test_chat_request_validation(self, client, auth_headers):
         """测试聊天请求输入验证"""
         # 空消息应返回验证错误
-        response = client.post("/api/chat", json={})
+        response = client.post("/api/chat", json={}, headers=auth_headers)
         assert response.status_code == 422
 
-    def test_chat_with_message(self, client):
+    def test_chat_with_message(self, client, auth_headers):
         """测试正常聊天请求"""
         mock_agent = MagicMock()
         mock_agent.chat_stream = AsyncMock()
@@ -128,7 +154,7 @@ class TestChatEndpoints:
             response = client.post("/api/chat", json={
                 "message": "1+1等于几？",
                 "session_id": "test_session",
-            })
+            }, headers=auth_headers)
             # 流式响应应返回 200
             assert response.status_code == 200
 
@@ -136,7 +162,7 @@ class TestChatEndpoints:
 class TestRecommendationEndpoint:
     """测试推荐端点"""
 
-    def test_recommendation_request(self, client):
+    def test_recommendation_request(self, client, auth_headers):
         """测试推荐请求"""
         mock_recommender = AsyncMock()
         mock_recommender.recommend = AsyncMock(return_value=MagicMock(
@@ -152,9 +178,81 @@ class TestRecommendationEndpoint:
             response = client.post("/api/recommendation", json={
                 "user_id": "test_user",
                 "count": 3,
-            })
+            }, headers=auth_headers)
             # 可能返回 200 或 404（如果路由未注册）
             assert response.status_code in (200, 404)
+
+
+class TestProfileMeEndpoint:
+    """Step 0.5-B：/api/profile/me 系列 + 旧路由 ownership 权限测试。
+
+    - /me 从认证上下文取 user_id，不接受 path user_id
+    - 旧 /api/profile/{user_id} 通过 verify_resource_ownership 校验
+    - 学生访问他人资源 → 403；未认证 → 401
+    """
+
+    def _mock_facade(self):
+        from app.services.profile_application import ProfileSnapshot
+
+        facade = AsyncMock()
+        snapshot = ProfileSnapshot(user_id="test_user_id", total_questions=3)
+        facade.get_profile_snapshot = AsyncMock(return_value=snapshot)
+        facade.invalidate_profile_snapshot = AsyncMock(return_value=None)
+        return facade
+
+    def test_me_requires_auth(self, client):
+        """未认证访问 /api/profile/me → 401。"""
+        response = client.get("/api/profile/me")
+        assert response.status_code == 401
+
+    def test_me_returns_profile(self, client, auth_headers):
+        """已认证访问 /api/profile/me → 200，user_id 来自认证上下文。"""
+        facade = self._mock_facade()
+        with patch("app.api.profile_api._get_facade", AsyncMock(return_value=facade)):
+            response = client.get("/api/profile/me", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["user_id"] == "test_user_id"
+        assert data["summary"]["total_questions"] == 3
+
+    def test_me_skills_endpoint(self, client, auth_headers):
+        """已认证访问 /api/profile/me/skills → 200。"""
+        facade = self._mock_facade()
+        from app.services.skill_aggregator import SkillAggregator
+
+        # /me/skills 内部直接实例化 Facade / SkillAggregator（不经 _get_facade），
+        # 因此 patch 类方法避免真实 DB 访问。
+        with patch("app.api.profile_api._get_facade", AsyncMock(return_value=facade)), \
+             patch.object(
+                 SkillAggregator, "get_error_patterns",
+                 AsyncMock(return_value=[]),
+             ), \
+             patch.object(
+                 SkillAggregator, "get_cognitive_style",
+                 AsyncMock(return_value={}),
+             ):
+            response = client.get("/api/profile/me/skills", headers=auth_headers)
+        assert response.status_code == 200
+        assert "skills" in response.json()
+
+    def test_legacy_own_profile_allowed(self, client, auth_headers):
+        """学生访问自己的 /api/profile/{user_id} → 200。"""
+        facade = self._mock_facade()
+        with patch("app.api.profile_api._get_facade", AsyncMock(return_value=facade)):
+            response = client.get(
+                "/api/profile/test_user_id", headers=auth_headers
+            )
+        assert response.status_code == 200
+
+    def test_legacy_other_user_denied(self, client, auth_headers):
+        """学生访问他人 /api/profile/{user_id} → 403。"""
+        response = client.get("/api/profile/other_user", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_legacy_profile_requires_auth(self, client):
+        """未认证访问 /api/profile/{user_id} → 401。"""
+        response = client.get("/api/profile/test_user_id")
+        assert response.status_code == 401
 
 
 class TestSecurityHeaders:

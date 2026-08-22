@@ -65,31 +65,25 @@ class ErrorBookSkillSyncService:
         self, user_id: str, error_id: str, is_mastered: bool
     ) -> Dict[str, Any]:
         async with get_db_session() as db:
-            from sqlalchemy import text
+            from sqlalchemy import select
+            from app.data.models import LearningRecord
 
-            await db.execute(
-                text("""
-                    UPDATE learning_records
-                    SET metadata_ = json_set(
-                        COALESCE(metadata_, '{}'),
-                        '$.error_book_mastery', :mastery
-                    )
-                    WHERE user_id = :uid
-                      AND json_extract(metadata_, '$.error_book_id') = :eid
-                """),
-                {"uid": user_id, "eid": error_id, "mastery": str(is_mastered)},
-            )
-
-            if is_mastered:
-                await db.execute(
-                    text("""
-                        UPDATE learning_records
-                        SET is_correct = 1, event_type = 'review_mastered'
-                        WHERE user_id = :uid
-                          AND json_extract(metadata_, '$.error_book_id') = :eid
-                    """),
-                    {"uid": user_id, "eid": error_id},
+            result = await db.execute(
+                select(LearningRecord).where(
+                    LearningRecord.user_id == user_id,
+                    LearningRecord.metadata_["error_book_id"].as_string() == error_id,
                 )
+            )
+            records = result.scalars().all()
+
+            for record in records:
+                metadata = dict(record.metadata_ or {})
+                metadata["error_book_mastery"] = str(is_mastered)
+                record.metadata_ = metadata
+
+                if is_mastered:
+                    record.is_correct = True
+                    record.event_type = "review_mastered"
 
             await db.commit()
 

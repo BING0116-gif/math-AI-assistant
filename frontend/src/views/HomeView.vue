@@ -5,10 +5,12 @@ import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import AppShell from '@/components/shell/AppShell.vue'
 import AgentComposer from '@/components/conversation/AgentComposer.vue'
+import { useAiCapability } from '@/composables/useAiCapability'
 
 const router = useRouter()
 const chatStore = useChatStore()
 const errorBookStore = useErrorBookStore()
+const { isAiAvailable, aiReason } = useAiCapability()
 
 const todayStats = computed(() => {
   const today = new Date()
@@ -52,6 +54,7 @@ const greetingText = computed(() => {
 
 function handleSend(text: string) {
   if (!text.trim()) return
+  if (!isAiAvailable.value) return
   const chat = chatStore.createNewChat()
   chatStore.addMessage(chat.id, {
     content: text.trim(),
@@ -64,6 +67,7 @@ function handleSend(text: string) {
 }
 
 function handleSendWithImage(text: string, imageData: string) {
+  if (!isAiAvailable.value) return
   const chat = chatStore.createNewChat()
   chatStore.addMessage(chat.id, {
     content: imageData,
@@ -82,6 +86,7 @@ function openChat(chatId: string) {
 }
 
 function shortcutSolve() {
+  if (!isAiAvailable.value) return
   router.push({ path: '/' })
   setTimeout(() => {
     const textarea = document.querySelector('.agent-composer__textarea') as HTMLElement
@@ -98,6 +103,7 @@ function shortcutKnowledge() {
 }
 
 function shortcutPractice() {
+  if (!isAiAvailable.value) return
   const chat = chatStore.createNewChat()
   chatStore.addMessage(chat.id, {
     content: '请根据我近期的学习情况和错题记录，为我生成一些针对性的练习题，帮助我巩固薄弱知识点。',
@@ -148,6 +154,8 @@ function formatTimeAgo(timestamp: string): string {
         <AgentComposer
           class="home-composer"
           :large="true"
+          :disabled="!isAiAvailable"
+          :disabled-reason="aiReason"
           @send="handleSend"
           @send-image="handleSendWithImage"
         />
@@ -205,6 +213,33 @@ function formatTimeAgo(timestamp: string): string {
             <div class="shortcut-card__body">
               <span class="shortcut-card__title">生成练习</span>
               <span class="shortcut-card__desc">针对薄弱点生成个性化练习</span>
+            </div>
+          </button>
+
+          <button class="shortcut-card" @click="router.push('/paper/test')">
+            <div class="shortcut-card__icon shortcut-card__icon--teal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                <path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/>
+                <path d="M9 12l2 2 4-4"/>
+              </svg>
+            </div>
+            <div class="shortcut-card__body">
+              <span class="shortcut-card__title">组卷测试</span>
+              <span class="shortcut-card__desc">按题型组卷，客观题自动判分</span>
+            </div>
+          </button>
+
+          <button class="shortcut-card" @click="router.push('/admin/review')">
+            <div class="shortcut-card__icon shortcut-card__icon--amber">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M9 12l2 2 4-4"/>
+                <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
+              </svg>
+            </div>
+            <div class="shortcut-card__body">
+              <span class="shortcut-card__title">题库审核</span>
+              <span class="shortcut-card__desc">内容导入 · AI 分析 · 发布治理（管理员）</span>
             </div>
           </button>
         </section>

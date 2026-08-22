@@ -566,25 +566,36 @@ class MemoryStore:
     # ========================================================================
 
     async def get_memory_by_id(self, memory_id: int) -> Optional[Dict[str, Any]]:
-        """根据 ID 获取单条记忆。"""
+        """根据 ID 获取单条记忆（含标签）。"""
         try:
             async with get_db_session() as db:
-                from sqlalchemy import text as sa_text
+                from sqlalchemy import select
+                from app.data.models import Memory, MemoryTag
 
                 result = await db.execute(
-                    sa_text("""
-                        SELECT m.*, GROUP_CONCAT(mt.tag_name) as tags
-                        FROM memories m
-                        LEFT JOIN memory_tags mt ON mt.memory_id = m.id
-                        WHERE m.id = :id AND m.deleted_at IS NULL
-                        GROUP BY m.id
-                    """),
-                    {"id": memory_id},
+                    select(Memory).where(
+                        Memory.id == memory_id,
+                        Memory.deleted_at.is_(None),
+                    )
                 )
-                row = result.fetchone()
+                row = result.scalar_one_or_none()
                 if row is None:
                     return None
-                return dict(row._mapping)
+
+                # 应用层读取标签（替代 GROUP_CONCAT）
+                tag_result = await db.execute(
+                    select(MemoryTag.tag_name).where(
+                        MemoryTag.memory_id == memory_id
+                    )
+                )
+                tags = [t[0] for t in tag_result.fetchall()]
+
+                data = {
+                    c.name: getattr(row, c.name)
+                    for c in row.__table__.columns
+                }
+                data["tags"] = ",".join(tags) if tags else None
+                return data
         except Exception as e:
             logger.error(f"[记忆存储] 查询记忆失败: id={memory_id}, error={e}")
             return None
@@ -597,43 +608,56 @@ class MemoryStore:
         offset: int = 0,
         limit: int = 20,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        """分页查询用户记忆列表。"""
+        """分页查询用户记忆列表（含标签，应用层聚合替代 GROUP_CONCAT）。"""
         try:
             async with get_db_session() as db:
-                from sqlalchemy import text as sa_text
+                from sqlalchemy import select, func
+                from app.data.models import Memory, MemoryTag
 
-                conditions = "m.user_id = :user_id AND m.deleted_at IS NULL"
-                params = {"user_id": user_id}
-
+                filters = [Memory.user_id == user_id, Memory.deleted_at.is_(None)]
                 if memory_type:
-                    conditions += " AND m.memory_type = :memory_type"
-                    params["memory_type"] = memory_type
+                    filters.append(Memory.memory_type == memory_type)
                 if status:
-                    conditions += " AND m.status = :status"
-                    params["status"] = status
+                    filters.append(Memory.status == status)
 
                 # 查询总数
                 count_result = await db.execute(
-                    sa_text(f"SELECT COUNT(*) FROM memories m WHERE {conditions}"),
-                    params,
+                    select(func.count(Memory.id)).where(*filters)
                 )
                 total = count_result.scalar() or 0
 
                 # 查询列表
                 result = await db.execute(
-                    sa_text(f"""
-                        SELECT m.*, GROUP_CONCAT(mt.tag_name) as tags
-                        FROM memories m
-                        LEFT JOIN memory_tags mt ON mt.memory_id = m.id
-                        WHERE {conditions}
-                        GROUP BY m.id
-                        ORDER BY m.created_at DESC
-                        LIMIT :limit OFFSET :offset
-                    """),
-                    {**params, "limit": limit, "offset": offset},
+                    select(Memory)
+                    .where(*filters)
+                    .order_by(Memory.created_at.desc())
+                    .offset(offset)
+                    .limit(limit)
                 )
-                rows = result.fetchall()
-                memories = [dict(row._mapping) for row in rows]
+                rows = result.scalars().all()
+
+                # 批量读取标签（应用层聚合替代 GROUP_CONCAT）
+                memory_ids = [m.id for m in rows]
+                if memory_ids:
+                    tag_result = await db.execute(
+                        select(MemoryTag.memory_id, MemoryTag.tag_name)
+                        .where(MemoryTag.memory_id.in_(memory_ids))
+                    )
+                    tags_by_memory: Dict[int, List[str]] = {}
+                    for mid, tname in tag_result.fetchall():
+                        tags_by_memory.setdefault(mid, []).append(tname)
+                else:
+                    tags_by_memory = {}
+
+                memories = []
+                for m in rows:
+                    data = {
+                        c.name: getattr(m, c.name)
+                        for c in m.__table__.columns
+                    }
+                    tags = tags_by_memory.get(m.id, [])
+                    data["tags"] = ",".join(tags) if tags else None
+                    memories.append(data)
 
                 return memories, total
         except Exception as e:

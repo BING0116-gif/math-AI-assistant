@@ -11,11 +11,13 @@ import { useErrorBookStore } from '@/stores/errorBookStore'
 import { sendChatMessage, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
+import { useAiCapability } from '@/composables/useAiCapability'
 
 const route = useRoute()
 const router = useRouter()
 const store = useChatStore()
 const errorBookStore = useErrorBookStore()
+const { isAiAvailable, aiReason } = useAiCapability()
 
 const messagesRef = ref<HTMLElement | null>(null)
 const streaming = ref(false)
@@ -178,6 +180,7 @@ function handleFollowUpSelect(question: any) {
 
 async function handleTextSend(text: string) {
   if (!text || streaming.value) return
+  if (!isAiAvailable.value) return
   followUpQuestions.value = []
 
   const chatId = store.currentChatId
@@ -252,6 +255,7 @@ async function handleTextSend(text: string) {
 
 async function handleSendWithImage(text: string, imageData: string) {
   if (streaming.value) return
+  if (!isAiAvailable.value) return
   followUpQuestions.value = []
 
   const chatId = store.currentChatId
@@ -431,6 +435,8 @@ function handleSkip(msgId: string) {
 
       <div class="composer-area">
         <AgentComposer
+          :disabled="!isAiAvailable"
+          :disabled-reason="aiReason"
           @send="handleTextSend"
           @send-image="handleSendWithImage"
         />

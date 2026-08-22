@@ -47,6 +47,12 @@ class Settings(BaseSettings):
         default="math-ai-jwt-secret-must-be-overridden-in-production",
         alias="JWT_SECRET_KEY",
     )
+    # 默认管理员凭据（内容审核后台登录用）。
+    # 仅在两者都非空时，lifespan 才会创建/确认管理员角色。
+    # 注意：pydantic-settings 仅把这些值读入 settings 对象、不会写回 os.environ，
+    # 因此 init_default_admin 必须读 settings 而非 os.environ。
+    ADMIN_USERNAME: str = Field(default="", alias="ADMIN_USERNAME")
+    ADMIN_PASSWORD: str = Field(default="", alias="ADMIN_PASSWORD")
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
         default=60 * 24, alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES"
@@ -54,6 +60,9 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
         default=30, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS"
     )
+
+    # ── AI 能力开关 ──
+    AI_ENABLED: bool = Field(default=True, alias="AI_ENABLED")
 
     DASHSCOPE_API_KEY: str = Field(default="", alias="DASHSCOPE_API_KEY")
 
@@ -123,6 +132,44 @@ class Settings(BaseSettings):
     RAG_ENABLE_VECTOR_SEARCH: bool = Field(default=True, alias="RAG_ENABLE_VECTOR_SEARCH")
     RAG_DEFAULT_RECOMMEND_COUNT: int = Field(default=5, alias="RAG_DEFAULT_RECOMMEND_COUNT")
     RAG_HYBRID_SEARCH_TOP_K: int = Field(default=20, alias="RAG_HYBRID_SEARCH_TOP_K")
+
+    # ── Content Ingestion（Step 1.1-C）──
+    # MinerU 独立 runtime 的可执行文件路径。生产代码只读配置，不硬编码 Demo venv 路径。
+    MINERU_EXECUTABLE: str = Field(default="", alias="MINERU_EXECUTABLE")
+    # MinerU 模型源（huggingface / modelscope）。传递到 subprocess env，
+    # 确保 dedicated venv 命中用户级 ModelScope 模型缓存，而非触发重新下载。
+    MINERU_MODEL_SOURCE: str = Field(default="modelscope", alias="MINERU_MODEL_SOURCE")
+    # 正式存储根目录（仅 metadata 的相对 storage_key 落 PostgreSQL，不存绝对路径）
+    CONTENT_STORAGE_ROOT: str = Field(default="./runtime/content", alias="CONTENT_STORAGE_ROOT")
+    # 上传/解析安全上限（由配置而非散落的硬编码）
+    CONTENT_MAX_UPLOAD_BYTES: int = Field(default=50 * 1024 * 1024, alias="CONTENT_MAX_UPLOAD_BYTES")
+    CONTENT_MAX_PAGES: int = Field(default=500, alias="CONTENT_MAX_PAGES")
+    # 单次解析 subprocess 超时（秒）
+    CONTENT_PARSER_TIMEOUT_SECONDS: int = Field(default=600, alias="CONTENT_PARSER_TIMEOUT_SECONDS")
+
+    # ── Content AI Pipeline（Step 1.1-E2-A0）──
+    # 选择 AI 内容分析 provider：开发阶段默认 mock（不调用任何真实 AI API、
+    # 不消耗 token、不要求 API Key）。真实 provider 启用后，只需在 .env 配置对应
+    # API Key，后端自动检测并切换，UI / API / DB / workflow 不变。
+    #   可选值：mock（默认） / deepseek（真实，OpenAI 兼容，填 DEEPSEEK_API_KEY） / qwen（占位 stub）
+    CONTENT_AI_PROVIDER: str = Field(default="mock", alias="CONTENT_AI_PROVIDER")
+    # 真实 Qwen provider 配置契约（仅后端读取；API Key 永不离开后端、永不传入前端）。
+    # 当前 QwenContentAIProvider 仍为 stub（调用即 AI_PROVIDER_NOT_IMPLEMENTED）。
+    QWEN_API_KEY: str = Field(default="", alias="QWEN_API_KEY")
+    QWEN_MODEL: str = Field(default="qwen-max", alias="QWEN_MODEL")
+    QWEN_BASE_URL: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        alias="QWEN_BASE_URL",
+    )
+    # 真实 DeepSeek provider 配置契约（OpenAI 兼容；API Key 只从环境变量读取）。
+    # 默认 base_url 为 DeepSeek 官方兼容端点；DEEPSEEK_MODEL 可填 deepseek-chat / deepseek-reasoner。
+    DEEPSEEK_API_KEY: str = Field(default="", alias="DEEPSEEK_API_KEY")
+    DEEPSEEK_MODEL: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    DEEPSEEK_BASE_URL: str = Field(
+        default="https://api.deepseek.com/v1",
+        alias="DEEPSEEK_BASE_URL",
+    )
+    DEEPSEEK_TIMEOUT_SECONDS: int = Field(default=60, alias="DEEPSEEK_TIMEOUT_SECONDS")
 
     model_config = {
         "env_file": ".env",

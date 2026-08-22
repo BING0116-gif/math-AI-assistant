@@ -8,6 +8,11 @@ class MiddlewareConfig(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
     RATE_LIMIT_MAX_REQUESTS: int = Field(default=30, alias="RATE_LIMIT_PER_MINUTE")
 
+    RATE_LIMIT_SKIP_PATHS: Set[str] = Field(
+        default={"/api/admin/"},
+        alias="RATE_LIMIT_SKIP_PATHS",
+    )
+
     NO_AUTH_PATHS: Set[str] = Field(
         default={
             "/api/auth/login",

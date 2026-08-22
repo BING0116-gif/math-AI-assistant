@@ -25,10 +25,21 @@ async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
 def _get_database_url() -> str:
-    url = os.environ.get("ASYNC_DATABASE_URL", "") or os.environ.get("DATABASE_URL", "") or DATABASE_URL
+    # 异步引擎必须使用异步驱动。优先取显式异步 URL，再回退到同步 URL（下方自动补全 async 驱动）。
+    # 注：pydantic-settings 不会把 .env 注入 os.environ，故 os.environ.get 常为空，需回退到模块级 ASYNC_DATABASE_URL。
+    url = (
+        os.environ.get("ASYNC_DATABASE_URL", "")
+        or ASYNC_DATABASE_URL
+        or os.environ.get("DATABASE_URL", "")
+        or DATABASE_URL
+        or ""
+    )
     if not url:
         url = "sqlite+aiosqlite:///./data/math_ai.db"
         logger.warning(f"未配置数据库连接，使用默认SQLite: {url}")
+    # 异步引擎要求异步驱动：缺失时根据库类型自动补全
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("sqlite:///") and "aiosqlite" not in url:
         url = url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
     return url
@@ -39,8 +50,15 @@ def _get_sync_database_url() -> str:
 
 
 async def _run_alembic_migration(db_url: str) -> None:
-    """使用 Alembic 执行数据库迁移。"""
+    """使用 Alembic 执行数据库迁移。
+
+    注意：必须用 `asyncio.to_thread + subprocess.run` 同步子进程，
+    **不能**用 `asyncio.create_subprocess_exec` —— 在 Windows 上，
+    uvicorn --reload 的 reloader 子进程里 asyncio 子循环不支持 subprocess，
+    会直接抛 NotImplementedError，导致 lifespan 启动失败。
+    """
     import asyncio
+    import subprocess
     import sys
 
     # 获取同步 URL（Alembic 使用同步引擎）
@@ -51,22 +69,26 @@ async def _run_alembic_migration(db_url: str) -> None:
 
     alembic_cfg = os.path.join(os.path.dirname(__file__), "alembic.ini")
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    
-    # 使用异步子进程执行 Alembic 迁移，避免阻塞事件循环
-    process = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "alembic", "-c", alembic_cfg, "upgrade", "head",
-        cwd=project_root,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    
-    stdout, stderr = await process.communicate()
-    
-    if process.returncode != 0:
-        error_msg = stderr.decode("utf-8", errors="replace")
-        logger.error(f"Alembic 迁移失败: {error_msg}")
-        raise RuntimeError(f"数据库迁移失败: {error_msg}")
+
+    def _invoke() -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", alembic_cfg, "upgrade", "head"],
+            cwd=project_root,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    # 在线程里跑同步子进程，避开 reload 子进程下 asyncio 子进程限制
+    result = await asyncio.to_thread(_invoke)
+
+    if result.returncode != 0:
+        logger.error(f"Alembic 迁移失败: {result.stderr}")
+        raise RuntimeError(f"数据库迁移失败: {result.stderr}")
+    if result.stdout:
+        # alembic 输出通常包含 INFO 行，转发给 logger
+        for line in result.stdout.splitlines():
+            logger.info("alembic: %s", line)
     logger.info("Alembic 迁移完成")
 
 

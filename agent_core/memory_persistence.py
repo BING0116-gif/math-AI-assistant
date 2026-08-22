@@ -15,6 +15,11 @@ from app.services.memory import (
     MemoryItem,
 )
 from app.services.event_buffer import EnhancedEventBuffer
+from app.services.profile_application import (
+    ProfileSnapshot,
+    ProfileSnapshotRepository,
+)
+from app.services.cache import get_cache_manager
 from app.data.database import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -34,10 +39,15 @@ RECALC_TRIGGER = {
 - flush_callback: 注册为 EventBuffer 的 on_flush 回调
 """
 
+# ── 画像快照缓存 ──
+PROFILE_SNAPSHOT_CACHE_PREFIX = "user:profile:snapshot:"
+PROFILE_SNAPSHOT_CACHE_TTL = 300  # 秒
+
 @dataclass
 class UserProfile:
     """用户画像（扩展版），包含原有统计字段 + Skill 字段 + 错误模式"""
 
+    user_id: str = ""
     total_questions: int = 0
     correct_rate: float = 0.0
     avg_time_per_question: float = 0.0
@@ -147,8 +157,34 @@ class MemoryPersistenceFacade:
 }
 
     async def record_event(
-        self, user_id: str, event_data: Dict[str, Any]
+        self,
+        user_id: str,
+        event_data: Dict[str, Any],
+        *,
+        event_id: Optional[str] = None,
     ) -> bool:
+        """记录一条学习事件（异步批量写入）。
+
+        Args:
+            user_id: 用户 ID
+            event_data: 事件数据（写入 learning_records 的字段）
+            event_id: 稳定事件 ID（幂等）。相同 event_id 只写入一次事实；
+                      由调用方生成稳定 ID，禁止用随机值冒充。
+                      未提供时保持兼容（无去重），并记录弃用日志。
+
+        Returns:
+            bool: 是否已成功加入写入队列。
+        """
+        if event_id is None:
+            event_id = event_data.pop("event_id", None) or (
+                (event_data.get("metadata_") or {}).get("event_id")
+            )
+            if event_id is None:
+                logger.warning(
+                    "record_event 未提供 event_id，无法保证幂等（deprecated）: "
+                    f"user={user_id}, event_type={event_data.get('event_type')}"
+                )
+
         existing_uid = event_data.get("user_id")
         if existing_uid and existing_uid != "anonymous" and existing_uid.strip():
             pass
@@ -164,6 +200,11 @@ class MemoryPersistenceFacade:
             existing_meta = event_data.get("metadata_", {}) or {}
             existing_meta.update(extra_fields)
             event_data["metadata_"] = existing_meta
+
+        # 事件 ID 仅用于写入期幂等去重（LearningRecord 无 event_id 列，
+        # 批量写入时会被过滤掉，不会落库）
+        if event_id:
+            event_data["event_id"] = event_id
 
         # [P0-02] 懒启动批量写入worker（首次调用时才启动，确保有事件循环）
         self._ensure_batch_worker_started()
@@ -210,9 +251,186 @@ class MemoryPersistenceFacade:
         ]
 
     async def get_profile(self, user_id: str) -> UserProfile:
+        """兼容入口：返回旧版 UserProfile（内部转发到统一画像快照）。
+
+        保留供 Agent / Recommendation 等旧调用方使用；新代码应使用
+        get_profile_snapshot() 获取统一快照。
+        """
+        snapshot = await self.get_profile_snapshot(user_id)
+        return self._snapshot_to_legacy(snapshot)
+
+    def _snapshot_to_legacy(self, snapshot: ProfileSnapshot) -> UserProfile:
+        """将统一快照转换为旧版 UserProfile dataclass（兼容入口）。"""
+        return UserProfile(
+            user_id=snapshot.user_id,
+            total_questions=snapshot.total_questions,
+            correct_rate=snapshot.correct_rate,
+            avg_time_per_question=snapshot.avg_time_per_question,
+            weak_points=snapshot.weak_points,
+            strong_points=snapshot.strong_points,
+            recommended_difficulty=snapshot.recommended_difficulty,
+            recent_activity=snapshot.recent_activity,
+            skills=snapshot.skills,
+            error_patterns=snapshot.error_pattern_list,
+            cognitive_style=snapshot.cognitive_style,
+        )
+
+    # ── 唯一画像应用入口：ProfileSnapshot ──
+
+    async def get_profile_snapshot(
+        self,
+        user_id: str,
+        *,
+        force_refresh: bool = False,
+    ) -> ProfileSnapshot:
+        """获取统一画像快照（唯一应用层画像入口）。
+
+        读取优先级（fallback 链）：
+        1. 缓存（cache.py L1 + Redis L2，key 含 user_id）
+        2. 持久化快照（user_profiles，materialized snapshot，可重建）
+        3. 从事实层重建（learning_records / user_skills / memories）+ 持久化 + 缓存
+
+        任何一层失败都会降级到下一层；Redis down 不影响正确性。
+        """
+        cache_key = self._profile_snapshot_cache_key(user_id)
+
+        if not force_refresh:
+            cache = get_cache_manager()
+            cached = await cache.get(cache_key)
+            if cached is not None:
+                try:
+                    return ProfileSnapshot.from_dict(user_id, cached)
+                except Exception as e:
+                    logger.warning(f"画像快照缓存反序列化失败，回源重建: {e}")
+
+            # 尝试从持久化快照读取（user_profiles）
+            repo = ProfileSnapshotRepository(self._session_factory)
+            persisted = await repo.get(user_id)
+            if persisted is not None:
+                await cache.set(cache_key, persisted.to_dict(), ttl=PROFILE_SNAPSHOT_CACHE_TTL)
+                return persisted
+
+        # 从事实层重建
+        return await self.refresh_profile_snapshot(user_id)
+
+    async def refresh_profile_snapshot(self, user_id: str) -> ProfileSnapshot:
+        """从事实层完整重建画像快照并持久化、刷新缓存。
+
+        同一批事实下重复调用结果一致（幂等）。
+        """
+        snapshot = await self._build_profile_snapshot(user_id)
+
+        # 持久化到 user_profiles（materialized snapshot，可重建）
+        repo = ProfileSnapshotRepository(self._session_factory)
+        await repo.upsert(snapshot)
+
+        # 写缓存
+        cache = get_cache_manager()
+        await cache.set(
+            self._profile_snapshot_cache_key(user_id),
+            snapshot.to_dict(),
+            ttl=PROFILE_SNAPSHOT_CACHE_TTL,
+        )
+
+        return snapshot
+
+    async def invalidate_profile_snapshot(self, user_id: str) -> None:
+        """使画像快照缓存失效。
+
+        只清除缓存；user_profiles 作为可重建快照保留，
+        下次读取若缓存未命中会回源重建或读取持久化快照。
+        """
+        try:
+            cache = get_cache_manager()
+            await cache.delete(self._profile_snapshot_cache_key(user_id))
+        except Exception as e:
+            logger.warning(f"画像快照缓存失效失败（可忽略）: user={user_id} error={e}")
+
+    def _profile_snapshot_cache_key(self, user_id: str) -> str:
+        return f"{PROFILE_SNAPSHOT_CACHE_PREFIX}{user_id}"
+
+    async def _build_profile_snapshot(self, user_id: str) -> ProfileSnapshot:
+        """画像快照统一生成逻辑（内部计算组件）。
+
+        复用：
+        - LongTermMemory.get_user_profile（事实统计）
+        - SkillAggregator（技能聚合，唯一实现）
+        - DifficultyEstimator（难度估算）
+        - UserProfileAnalyzer（行为/错误/进度/偏好分析，作为内部组件）
+        """
         base = await self._long_term.get_user_profile(user_id)
 
-        profile = UserProfile(
+        # 技能相关（来自 SkillAggregator，唯一实现）
+        skills: List[Dict[str, Any]] = []
+        error_pattern_list: List[Dict[str, Any]] = []
+        cognitive_style: Dict[str, Any] = {}
+        if self._skill_aggregator:
+            skills = await self._skill_aggregator.get_all_skills(user_id)
+            error_pattern_list = (
+                await self._skill_aggregator.get_error_patterns(user_id)
+            )
+            cognitive_style = (
+                await self._skill_aggregator.get_cognitive_style(user_id)
+            )
+
+        # 推荐难度（DifficultyEstimator 动态计算）
+        recommended_difficulty = base.get("recommended_difficulty", 3)
+        if self._difficulty_estimator:
+            try:
+                dynamic_diff = await self._difficulty_estimator.estimate_for_profile(
+                    user_id=user_id,
+                    profile=self._to_legacy_profile(
+                        user_id, base, skills, error_pattern_list, cognitive_style
+                    ),
+                )
+                recommended_difficulty = dynamic_diff
+            except Exception as e:
+                logger.warning(f"动态难度计算失败（保留基础值）: {e}")
+
+        # 行为 / 错误 / 进度 / 偏好 / 推荐（UserProfileAnalyzer 作为内部组件）
+        analyzer_data: Dict[str, Any] = {}
+        try:
+            from app.services.profile_analyzer import UserProfileAnalyzer
+
+            analyzer = UserProfileAnalyzer(self._session_factory)
+            analyzed = await analyzer.analyze(user_id)
+            analyzer_data.update(analyzed)
+        except Exception as e:
+            logger.warning(f"画像深度分析失败（使用基础统计）: {e}")
+
+        snapshot = ProfileSnapshot(
+            user_id=user_id,
+            version=base.get("version", 1),
+            total_questions=base.get("total_questions", 0),
+            correct_rate=base.get("correct_rate", 0.0),
+            avg_time_per_question=base.get("avg_time_per_question", 0.0),
+            recommended_difficulty=recommended_difficulty,
+            weak_points=base.get("weak_points", []),
+            strong_points=base.get("strong_points", []),
+            skills=skills,
+            error_patterns=analyzer_data.get("error_patterns", {}),
+            behavior=analyzer_data.get("behavior", {}),
+            progress_trends=analyzer_data.get("progress_trends", {}),
+            preferences=analyzer_data.get("preferences", {}),
+            recommendations=analyzer_data.get("recommendations", []),
+            recent_activity=base.get("recent_activity", []),
+            cognitive_style=cognitive_style,
+        )
+        snapshot.error_pattern_list = error_pattern_list
+        snapshot.summary_text = self._generate_profile_summary(snapshot)
+        return snapshot
+
+    def _to_legacy_profile(
+        self,
+        user_id: str,
+        base: Dict[str, Any],
+        skills: List[Dict[str, Any]],
+        error_pattern_list: List[Dict[str, Any]],
+        cognitive_style: Dict[str, Any],
+    ) -> UserProfile:
+        """将基础数据包装为旧版 UserProfile（供 DifficultyEstimator 兼容）。"""
+        legacy = UserProfile(
+            user_id=user_id,
             total_questions=base.get("total_questions", 0),
             correct_rate=base.get("correct_rate", 0.0),
             avg_time_per_question=base.get("avg_time_per_question", 0.0),
@@ -220,33 +438,48 @@ class MemoryPersistenceFacade:
             strong_points=base.get("strong_points", []),
             recommended_difficulty=base.get("recommended_difficulty", 3),
             recent_activity=base.get("recent_activity", []),
+            skills=skills,
+            error_patterns=error_pattern_list,
+            cognitive_style=cognitive_style,
         )
+        return legacy
 
-        if self._skill_aggregator:
-            profile.skills = await self._skill_aggregator.get_all_skills(
-                user_id
+    @staticmethod
+    def _generate_profile_summary(snapshot: ProfileSnapshot) -> str:
+        """从快照生成摘要文本（用于 Prompt 注入 / 管理端展示）。"""
+        parts = []
+        weak_points = snapshot.weak_points
+        if weak_points:
+            weak_str = "、".join(
+                w.get("category", "") for w in weak_points[:5] if w.get("category")
             )
-            profile.error_patterns = (
-                await self._skill_aggregator.get_error_patterns(user_id)
-            )
-            profile.cognitive_style = (
-                await self._skill_aggregator.get_cognitive_style(user_id)
-            )
+            if weak_str:
+                parts.append(f"薄弱知识点：{weak_str}")
 
-        # ── P1：使用 DifficultyEstimator 动态计算推荐难度 ──
-        if self._difficulty_estimator:
-            try:
-                dynamic_diff = await self._difficulty_estimator.estimate_for_profile(
-                    user_id=user_id, profile=profile
+        mastered = [
+            s.get("display_name") or s.get("skill_code", "")
+            for s in snapshot.skills
+            if s.get("status") == "mastered"
+        ]
+        if mastered:
+            parts.append(f"已掌握：{'、'.join(mastered[:3])}")
+
+        ep = snapshot.error_patterns
+        if isinstance(ep, dict):
+            common = ep.get("common_error_reasons", []) or ep.get("common_errors", [])
+            if common:
+                first = common[0]
+                reason = (
+                    first.get("reason", "") if isinstance(first, dict) else str(first)
                 )
-                profile.recommended_difficulty = dynamic_diff
-                logger.debug(
-                    f"动态难度已更新: {base.get('recommended_difficulty', 3)} → {dynamic_diff}"
-                )
-            except Exception as e:
-                logger.warning(f"动态难度计算失败（保留基础值）: {e}")
+                if reason:
+                    parts.append(f"易犯错误：{reason[:40]}")
 
-        return profile
+        prefs = snapshot.preferences
+        if isinstance(prefs, dict) and prefs.get("difficulty_mode") == "fixed":
+            parts.append("固定难度模式")
+
+        return "；".join(parts) if parts else "该用户暂无详细画像数据。"
 
     async def buffer_event(
         self, user_id: str, event_data: Dict[str, Any]
@@ -339,19 +572,47 @@ class MemoryPersistenceFacade:
                 await asyncio.sleep(1.0)
 
     async def _flush_batch(self, batch: List[Dict]) -> None:
-        """刷新批量数据到数据库。"""
-        from app.data.models import LearningRecord
+        """刷新批量数据到数据库。
+
+        带 event_id 的事件做原子幂等去重：先 claim（EventIdempotency，
+        event_id UNIQUE + 冲突即跳过），成功后才写事实 learning_records。
+        claim 与事实写入处于同一事务（savepoint 回滚失败 claim）。
+        """
+        from app.data.models import LearningRecord, EventIdempotency
+        from sqlalchemy.exc import IntegrityError
 
         try:
             async with self._session_factory() as db:
-                for data in batch:
-                    record = LearningRecord(**{
-                        k: v for k, v in data.items()
-                        if k in LearningRecord.__table__.columns
-                    })
-                    db.add(record)
-                await db.commit()
-                logger.info(f"批量写入成功: {len(batch)}条")
+                inserted = 0
+                async with db.begin():
+                    for data in batch:
+                        event_id = data.get("event_id")
+                        if event_id:
+                            try:
+                                # 原子 claim：唯一键冲突 → 已处理，跳过
+                                async with db.begin_nested():
+                                    db.add(EventIdempotency(
+                                        event_id=event_id,
+                                        event_type=str(data.get("event_type", "learning_record"))[:64],
+                                        processed_at=int(time.time()),
+                                        status="processed",
+                                    ))
+                                    await db.flush()
+                                db.add(LearningRecord(**{
+                                    k: v for k, v in data.items()
+                                    if k in LearningRecord.__table__.columns
+                                }))
+                                inserted += 1
+                            except IntegrityError:
+                                logger.debug(f"事件已处理，跳过重复写入: event_id={event_id}")
+                                continue
+                        else:
+                            db.add(LearningRecord(**{
+                                k: v for k, v in data.items()
+                                if k in LearningRecord.__table__.columns
+                            }))
+                            inserted += 1
+                logger.info(f"批量写入成功: {len(batch)}条队列, {inserted}条实际落库")
         except Exception as e:
             logger.error(f"批量写入失败: {e}")
             await self._retry_flush(batch)
@@ -395,6 +656,8 @@ class MemoryPersistenceFacade:
             )
             self._last_recalc_time[user_id] = time.time()
             self._event_count_since_recalc[user_id] = 0
+            # 技能状态变更 → 使画像快照缓存失效（下次读取重建）
+            await self.invalidate_profile_snapshot(user_id)
             logger.info(
                 f"技能重计算完成: user={user_id} "
                 f"skills_updated={count} "

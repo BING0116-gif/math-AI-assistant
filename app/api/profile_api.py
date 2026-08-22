@@ -4,8 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.data.database import get_db_session
 from app.data.repositories import UserRepository
-from app.services.profile_analyzer import UserProfileAnalyzer
-from app.services.cache import get_cache_manager
+from app.services.profile_application import ProfileSnapshot
 from app.security.audit import get_audit_logger
 from app.security.access_control import verify_resource_ownership
 
@@ -18,6 +17,155 @@ class PreferencesUpdateRequest(BaseModel):
     daily_goal_minutes: Optional[int] = Field(None, ge=5, le=240)
 
 
+def _current_user(request: Request) -> str:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="未认证")
+    return user_id
+
+
+async def _get_facade():
+    from agent_core.memory_persistence import MemoryPersistenceFacade
+    return MemoryPersistenceFacade()
+
+
+def _snapshot_to_profile_response(
+    snapshot: ProfileSnapshot,
+    include_recommendations: bool = False,
+) -> dict:
+    """将统一快照转换为旧版 /profile/{user_id} 响应结构（契约不变）。"""
+    summary = {
+        "total_questions": snapshot.total_questions,
+        "correct_rate": snapshot.correct_rate,
+        "avg_time_per_question": snapshot.avg_time_per_question,
+        "learning_level": snapshot.get_learning_level(),
+    }
+
+    capabilities = {
+        wp["category"]: wp["mastery"] for wp in snapshot.weak_points
+    }
+    for sp in snapshot.strong_points:
+        capabilities[sp] = 0.9
+
+    response = {
+        "user_id": snapshot.user_id,
+        "generated_at": snapshot.generated_at,
+        "summary": summary,
+        "capability": {
+            "knowledge_mastery": capabilities,
+            "recommended_difficulty": snapshot.recommended_difficulty,
+        },
+        "behavior": snapshot.behavior,
+        "error_patterns": snapshot.error_patterns,
+        "progress_trends": snapshot.progress_trends,
+        "preferences": snapshot.preferences,
+    }
+
+    if include_recommendations:
+        response["recommendations"] = snapshot.recommendations
+
+    return response
+
+
+def _snapshot_to_report(snapshot: ProfileSnapshot) -> dict:
+    """将统一快照转换为旧版 /report 响应结构（契约不变）。"""
+    return {
+        "user_id": snapshot.user_id,
+        "generated_at": snapshot.generated_at,
+        "overview": {
+            "total_questions": snapshot.total_questions,
+            "correct_rate": snapshot.correct_rate,
+            "avg_time_per_question": snapshot.avg_time_per_question,
+            "recommended_difficulty": snapshot.recommended_difficulty,
+        },
+        "weak_points": snapshot.weak_points,
+        "strong_points": snapshot.strong_points,
+        "error_patterns": snapshot.error_patterns,
+        "progress_trends": snapshot.progress_trends,
+        "recommendations": snapshot.recommendations,
+    }
+
+
+# ========================================================================
+# /me 系列：一律从认证上下文取 user_id，不接受 path user_id
+# ========================================================================
+
+
+@router.get("/me")
+async def get_my_profile(
+    http_request: Request,
+    include_recommendations: bool = Query(False),
+    include_history: bool = Query(False),
+):
+    user_id = _current_user(http_request)
+    facade = await _get_facade()
+    snapshot = await facade.get_profile_snapshot(user_id)
+
+    response = _snapshot_to_profile_response(
+        snapshot, include_recommendations=include_recommendations
+    )
+
+    audit_logger = get_audit_logger()
+    audit_logger.log_access(
+        user_id=user_id,
+        resource_type="profile",
+        resource_id=user_id,
+        action="view_profile",
+        ip_address=http_request.client.host if http_request.client else "",
+    )
+    return response
+
+
+@router.get("/me/report")
+async def get_my_report(http_request: Request):
+    user_id = _current_user(http_request)
+    facade = await _get_facade()
+    snapshot = await facade.get_profile_snapshot(user_id)
+
+    report = _snapshot_to_report(snapshot)
+
+    audit_logger = get_audit_logger()
+    audit_logger.log_access(
+        user_id=user_id,
+        resource_type="report",
+        resource_id=user_id,
+        action="view_report",
+        ip_address=http_request.client.host if http_request.client else "",
+    )
+    return report
+
+
+@router.get("/me/recommendations")
+async def get_my_recommendations(http_request: Request):
+    user_id = _current_user(http_request)
+    facade = await _get_facade()
+    snapshot = await facade.get_profile_snapshot(user_id)
+    return {
+        "user_id": user_id,
+        "recommendations": snapshot.recommendations,
+    }
+
+
+@router.get("/me/skills")
+async def get_my_skill_profile(http_request: Request):
+    user_id = _current_user(http_request)
+    return await _build_skill_profile_response(user_id)
+
+
+@router.put("/me/preferences")
+async def update_my_preferences(
+    preferences: PreferencesUpdateRequest,
+    http_request: Request,
+):
+    user_id = _current_user(http_request)
+    return await _apply_preferences(user_id, preferences, http_request)
+
+
+# ========================================================================
+# 旧路由：保留兼容，校验 ownership 后转发到统一快照实现
+# ========================================================================
+
+
 @router.get("/{user_id}")
 async def get_user_profile(
     user_id: str,
@@ -27,152 +175,55 @@ async def get_user_profile(
 ):
     verify_resource_ownership(http_request, user_id)
 
-    cache = get_cache_manager()
-    cache_key = f"user:profile:{user_id}:{include_recommendations}"
+    facade = await _get_facade()
+    snapshot = await facade.get_profile_snapshot(user_id)
 
-    if not include_history:
-        cached = await cache.get(cache_key)
-        if cached is not None:
-            return cached
+    response = _snapshot_to_profile_response(
+        snapshot, include_recommendations=include_recommendations
+    )
 
-    try:
-        analyzer = UserProfileAnalyzer(get_db_session)
-        profile = await analyzer.analyze(user_id)
-
-        profile["user_id"] = user_id
-
-        summary = {
-            "total_questions": profile.get("total_questions", 0),
-            "correct_rate": profile.get("correct_rate", 0),
-            "avg_time_per_question": profile.get("avg_time_per_question", 0),
-        }
-        if summary["correct_rate"] > 0.85:
-            summary["learning_level"] = "expert"
-        elif summary["correct_rate"] > 0.7:
-            summary["learning_level"] = "advanced"
-        elif summary["correct_rate"] > 0.5:
-            summary["learning_level"] = "intermediate"
-        elif summary["correct_rate"] > 0.3:
-            summary["learning_level"] = "elementary"
-        else:
-            summary["learning_level"] = "beginner"
-
-        weak_points = profile.pop("weak_points", [])
-        strong_points = profile.pop("strong_points", [])
-        capabilities = {wp["category"]: wp["mastery"] for wp in weak_points}
-        for sp in strong_points:
-            capabilities[sp] = 0.9
-
-        response = {
-            "user_id": user_id,
-            "generated_at": profile.get(
-                "generated_at",
-                __import__("datetime").datetime.now(
-                    __import__("datetime").timezone.utc
-                ).isoformat(),
-            ),
-            "summary": summary,
-            "capability": {
-                "knowledge_mastery": capabilities,
-                "recommended_difficulty": profile.get(
-                    "recommended_difficulty", 3
-                ),
-            },
-            "behavior": profile.get("behavior", {}),
-            "error_patterns": profile.get("error_patterns", {}),
-            "progress_trends": profile.get("progress_trends", {}),
-            "preferences": profile.get("preferences", {}),
-        }
-
-        if include_recommendations:
-            response["recommendations"] = profile.get("recommendations", [])
-
-        if not include_history:
-            await cache.set(cache_key, response, ttl=600)
-
-        audit_logger = get_audit_logger()
-        audit_logger.log_access(
-            user_id=user_id,
-            resource_type="profile",
-            resource_id=user_id,
-            action="view_profile",
-            ip_address=http_request.client.host
-            if http_request.client
-            else "",
-        )
-
-        return response
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"获取用户画像失败: {str(e)}"
-        )
+    audit_logger = get_audit_logger()
+    audit_logger.log_access(
+        user_id=user_id,
+        resource_type="profile",
+        resource_id=user_id,
+        action="view_profile",
+        ip_address=http_request.client.host if http_request.client else "",
+    )
+    return response
 
 
 @router.get("/{user_id}/report")
 async def get_user_report(user_id: str, http_request: Request):
     verify_resource_ownership(http_request, user_id)
 
-    try:
-        analyzer = UserProfileAnalyzer(get_db_session)
-        profile = await analyzer.analyze(user_id)
+    facade = await _get_facade()
+    snapshot = await facade.get_profile_snapshot(user_id)
 
-        report = {
-            "user_id": user_id,
-            "generated_at": __import__("datetime")
-            .datetime.now(__import__("datetime").timezone.utc)
-            .isoformat(),
-            "overview": {
-                "total_questions": profile.get("total_questions", 0),
-                "correct_rate": profile.get("correct_rate", 0),
-                "avg_time_per_question": profile.get("avg_time_per_question", 0),
-                "recommended_difficulty": profile.get(
-                    "recommended_difficulty", 3
-                ),
-            },
-            "weak_points": profile.get("weak_points", []),
-            "strong_points": profile.get("strong_points", []),
-            "error_patterns": profile.get("error_patterns", {}),
-            "progress_trends": profile.get("progress_trends", {}),
-            "recommendations": profile.get("recommendations", []),
-        }
+    report = _snapshot_to_report(snapshot)
 
-        audit_logger = get_audit_logger()
-        audit_logger.log_access(
-            user_id=user_id,
-            resource_type="report",
-            resource_id=user_id,
-            action="view_report",
-            ip_address=http_request.client.host
-            if http_request.client
-            else "",
-        )
-
-        return report
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"生成学习报告失败: {str(e)}"
-        )
+    audit_logger = get_audit_logger()
+    audit_logger.log_access(
+        user_id=user_id,
+        resource_type="report",
+        resource_id=user_id,
+        action="view_report",
+        ip_address=http_request.client.host if http_request.client else "",
+    )
+    return report
 
 
 @router.get("/{user_id}/recommendations")
 async def get_recommendations(user_id: str, http_request: Request):
     verify_resource_ownership(http_request, user_id)
 
-    try:
-        analyzer = UserProfileAnalyzer(get_db_session)
-        profile = await analyzer.analyze(user_id)
+    facade = await _get_facade()
+    snapshot = await facade.get_profile_snapshot(user_id)
 
-        return {
-            "user_id": user_id,
-            "recommendations": profile.get("recommendations", []),
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"获取推荐建议失败: {str(e)}"
-        )
+    return {
+        "user_id": user_id,
+        "recommendations": snapshot.recommendations,
+    }
 
 
 @router.put("/{user_id}/preferences")
@@ -182,7 +233,25 @@ async def update_preferences(
     http_request: Request,
 ):
     verify_resource_ownership(http_request, user_id)
+    return await _apply_preferences(user_id, preferences, http_request)
 
+
+@router.get("/{user_id}/skills")
+async def get_user_skill_profile(user_id: str, http_request: Request):
+    verify_resource_ownership(http_request, user_id)
+    return await _build_skill_profile_response(user_id)
+
+
+# ========================================================================
+# 共享实现
+# ========================================================================
+
+
+async def _apply_preferences(
+    user_id: str,
+    preferences: PreferencesUpdateRequest,
+    http_request: Request,
+) -> dict:
     try:
         async with get_db_session() as db:
             user_repo = UserRepository(db)
@@ -208,8 +277,10 @@ async def update_preferences(
             changed_fields=list(update_data.keys()),
         )
 
-        cache = get_cache_manager()
-        await cache.invalidate_pattern(f"user:profile:{user_id}*")
+        # 偏好变更影响画像 → 使快照缓存失效
+        from agent_core.memory_persistence import MemoryPersistenceFacade
+        facade = MemoryPersistenceFacade()
+        await facade.invalidate_profile_snapshot(user_id)
 
         return {
             "success": True,
@@ -225,21 +296,18 @@ async def update_preferences(
         )
 
 
-@router.get("/{user_id}/skills")
-async def get_user_skill_profile(user_id: str, http_request: Request):
-    verify_resource_ownership(http_request, user_id)
-
+async def _build_skill_profile_response(user_id: str) -> dict:
+    """技能画像响应（复用统一快照的技能数据 + SkillAggregator/DAG 扩展）。"""
     try:
-        from agent_core.memory_persistence import MemoryPersistenceFacade
         from app.services.skill_aggregator import SkillAggregator
         from app.services.difficulty_estimator import DifficultyEstimator
         from app.services.math_skill_dag import MathSkillDAG
 
-        facade = MemoryPersistenceFacade()
-        profile = await facade.get_profile(user_id)
-        skills = await SkillAggregator().get_all_skills(user_id)
-        error_patterns = await SkillAggregator().get_error_patterns(user_id)
-        cognitive_style = await SkillAggregator().get_cognitive_style(user_id)
+        facade = await _get_facade()
+        snapshot = await facade.get_profile_snapshot(user_id)
+        skills = snapshot.skills
+        error_patterns = snapshot.error_pattern_list or await SkillAggregator().get_error_patterns(user_id)
+        cognitive_style = snapshot.cognitive_style or await SkillAggregator().get_cognitive_style(user_id)
 
         dag = MathSkillDAG()
         mastered_codes = {
@@ -257,9 +325,7 @@ async def get_user_skill_profile(user_id: str, http_request: Request):
 
         return {
             "user_id": user_id,
-            "generated_at": __import__("datetime")
-            .datetime.now(__import__("datetime").timezone.utc)
-            .isoformat(),
+            "generated_at": snapshot.generated_at,
             "skill_summary": {
                 "total_skills": len(skills),
                 "mastered": sum(1 for s in skills if s["status"] == "mastered"),
@@ -287,7 +353,7 @@ async def get_user_skill_profile(user_id: str, http_request: Request):
                 for n in next_unlockable[:5]
             ],
             "difficulty_estimate_by_category": difficulty_by_category,
-            "compact_profile": profile.to_compact_json(max_length=1200),
+            "compact_profile": snapshot.to_compact_json(max_length=1200),
         }
 
     except Exception as e:

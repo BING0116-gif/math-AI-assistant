@@ -1,63 +1,51 @@
-import api from './index'
+import { useAuthStore } from '@/stores/authStore'
 
-export function sendChatMessage(message, sessionId, signal) {
-  const token = localStorage.getItem('auth_token')
+function getAuthHeaders() {
+  const store = useAuthStore()
+  const token = store.getAccessToken()
   const headers = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
   }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  
+  return headers
+}
+
+export function sendChatMessage(message, sessionId, signal) {
   return fetch('/api/chat', {
     method: 'POST',
-    headers,
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       message,
-      session_id: sessionId
+      session_id: sessionId,
     }),
-    signal
+    signal,
   })
 }
 
 export function sendRecognizeRequest(imageData, sessionId, signal) {
-  const token = localStorage.getItem('auth_token')
-  const headers = {
-    'Content-Type': 'application/json'
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   return fetch('/api/recognize', {
     method: 'POST',
-    headers,
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       image: imageData,
-      session_id: sessionId
+      session_id: sessionId,
     }),
-    signal
+    signal,
   })
 }
 
 export function sendMultimodalRequest(message, imageData, sessionId, signal) {
-  const token = localStorage.getItem('auth_token')
-  const headers = {
-    'Content-Type': 'application/json'
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  
   return fetch('/api/chat/multimodal', {
     method: 'POST',
-    headers,
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       message: message || '',
       image: imageData || null,
-      session_id: sessionId
+      session_id: sessionId,
     }),
-    signal
+    signal,
   })
 }
 

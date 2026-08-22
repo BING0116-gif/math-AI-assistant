@@ -48,7 +48,7 @@ async def get_published_point(session: AsyncSession, point_id: str) -> dict | No
     if course is None or version is None:
         return None
     result = _point_summary(point)
-    result.update({"course": _course_summary(course), "version": _version_summary(version), "aliases": point.aliases, "learning_objectives": point.learning_objectives, "common_errors": point.common_errors, "key_concepts": point.key_concepts, "key_formulas": point.key_formulas, "exam_focuses": point.exam_focuses})
+    result.update({"course": _course_summary(course), "version": _version_summary(version), "aliases": point.aliases, "learning_objectives": point.learning_objectives, "common_errors": point.common_errors, "key_concepts": point.key_concepts, "key_formulas": point.key_formulas, "exam_focuses": point.exam_focuses, "prerequisites": point.prerequisites, "related": point.related})
     return result
 
 
@@ -74,4 +74,4 @@ def _version_summary(version: KnowledgeGraphVersion) -> dict:
 
 
 def _point_summary(point: KnowledgePoint) -> dict:
-    return {"id": point.id, "code": point.code, "name": point.name, "description": point.description, "difficulty": point.difficulty, "importance": point.importance, "sort_order": point.sort_order}
+    return {"id": point.id, "code": point.code, "name": point.name, "description": point.description, "difficulty": point.difficulty, "importance": point.importance, "sort_order": point.sort_order, "prerequisites": point.prerequisites, "related": point.related}

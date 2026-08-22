@@ -67,6 +67,7 @@ def setup_middleware(app: FastAPI):
     path_matcher = PathMatcher(
         static_paths=middleware_config.STATIC_PATHS,
         skip_paths=list(middleware_config.NO_AUTH_PATHS),
+        rate_limit_skip_paths=list(middleware_config.RATE_LIMIT_SKIP_PATHS),
     )
 
     app.add_middleware(

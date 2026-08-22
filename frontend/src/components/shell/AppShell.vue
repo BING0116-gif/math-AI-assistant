@@ -15,6 +15,7 @@ const navItems = [
   { to: '/dashboard', label: '学习看板', icon: 'grid' },
   { to: '/profile', label: '记忆画像', icon: 'user' },
   { to: '/knowledge', label: '知识星球', icon: 'book' },
+  { to: '/apply', label: '学以致用', icon: 'pencil' },
   { to: '/error-book', label: '错题复盘', icon: 'alert-circle' },
 ]
 
@@ -155,6 +156,9 @@ function deleteChat(e: MouseEvent, chatId: string) {
               <circle cx="12" cy="12" r="10"/>
               <line x1="12" y1="8" x2="12" y2="12"/>
               <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </template>
+            <template v-if="item.icon === 'pencil'">
+              <path d="m14 4 6 6M3 21l4.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11L3 21z"/>
             </template>
           </svg>
           <span v-if="!ui.sidebarCollapsed">{{ item.label }}</span>
