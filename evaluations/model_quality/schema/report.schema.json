@@ -1,0 +1,533 @@
+{
+  "$defs": {
+    "CaseExecution": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "attempt": {
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "failed",
+            "not_run"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "response": {
+          "default": "",
+          "title": "Response",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "prompt_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Version"
+        },
+        "tool_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tool Names",
+          "type": "array"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "token_usage": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Token Usage"
+        },
+        "estimated_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Cost"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "first_token_latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Token Latency Ms"
+        },
+        "cache_hit": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Hit"
+        },
+        "retry_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Retry Count",
+          "type": "integer"
+        },
+        "event_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Names",
+          "type": "array"
+        },
+        "side_effects": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Side Effects",
+          "type": "object"
+        },
+        "persistence_evidence": {
+          "additionalProperties": true,
+          "title": "Persistence Evidence",
+          "type": "object"
+        },
+        "isolation_ok": {
+          "default": true,
+          "title": "Isolation Ok",
+          "type": "boolean"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        }
+      },
+      "required": [
+        "case_id",
+        "attempt",
+        "status"
+      ],
+      "title": "CaseExecution",
+      "type": "object"
+    },
+    "CaseResult": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/PrimaryCategory"
+        },
+        "tutor_mode": {
+          "$ref": "#/$defs/TutorMode"
+        },
+        "execution": {
+          "$ref": "#/$defs/CaseExecution"
+        },
+        "dimensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DimensionResult"
+          },
+          "title": "Dimensions",
+          "type": "object"
+        },
+        "weighted_score": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Weighted Score",
+          "type": "number"
+        },
+        "hard_failures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hard Failures",
+          "type": "array"
+        },
+        "root_cause_boundary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Cause Boundary"
+        },
+        "follow_up_test": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Follow Up Test"
+        }
+      },
+      "required": [
+        "case_id",
+        "category",
+        "tutor_mode",
+        "execution",
+        "dimensions",
+        "weighted_score"
+      ],
+      "title": "CaseResult",
+      "type": "object"
+    },
+    "DimensionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "needs_human_review": {
+          "default": false,
+          "title": "Needs Human Review",
+          "type": "boolean"
+        }
+      },
+      "title": "DimensionResult",
+      "type": "object"
+    },
+    "PrimaryCategory": {
+      "enum": [
+        "text",
+        "image",
+        "ambiguous",
+        "adversarial",
+        "plausible_wrong"
+      ],
+      "title": "PrimaryCategory",
+      "type": "string"
+    },
+    "TutorMode": {
+      "enum": [
+        "hint_only",
+        "step_by_step",
+        "check_my_work"
+      ],
+      "title": "TutorMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "report_schema_version": {
+      "const": "1.0",
+      "title": "Report Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "mocked",
+        "live"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "mocked_pass",
+        "not_run",
+        "incomplete",
+        "rejected",
+        "needs_human_review",
+        "baseline_only",
+        "approved"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "git_sha": {
+      "title": "Git Sha",
+      "type": "string"
+    },
+    "dataset_version": {
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "dataset_hash": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "schema_version": {
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "schema_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Schema Hash"
+    },
+    "case_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Case Hashes",
+      "type": "object"
+    },
+    "model_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Provider"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "prompt_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Version"
+    },
+    "safety_filter_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Safety Filter Version"
+    },
+    "environment": {
+      "additionalProperties": true,
+      "title": "Environment",
+      "type": "object"
+    },
+    "full_dataset": {
+      "title": "Full Dataset",
+      "type": "boolean"
+    },
+    "selected_case_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Case Ids",
+      "type": "array"
+    },
+    "summary": {
+      "additionalProperties": true,
+      "title": "Summary",
+      "type": "object"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/CaseResult"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "stability_runs": {
+      "items": {
+        "$ref": "#/$defs/CaseResult"
+      },
+      "title": "Stability Runs",
+      "type": "array"
+    },
+    "stability_summary": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Stability Summary",
+      "type": "array"
+    },
+    "human_review": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Human Review"
+    },
+    "approval": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approval"
+    }
+  },
+  "required": [
+    "report_schema_version",
+    "run_id",
+    "label",
+    "mode",
+    "status",
+    "created_at",
+    "git_sha",
+    "dataset_version",
+    "dataset_hash",
+    "schema_version",
+    "full_dataset",
+    "selected_case_ids",
+    "summary",
+    "results"
+  ],
+  "title": "RunReport",
+  "type": "object"
+}

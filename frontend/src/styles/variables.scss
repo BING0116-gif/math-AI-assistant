@@ -1,57 +1,27 @@
-$primary: #6366f1;
-$primary-light: #818cf8;
-$primary-dark: #4f46e5;
-$primary-bg: #eef2ff;
-$accent: #f59e0b;
-$accent-light: #fbbf24;
-$success: #10b981;
-$success-light: #d1fae5;
-$danger: #ef4444;
-$danger-light: #fee2e2;
-$warning: #f59e0b;
-$warning-light: #fef3c7;
-$info: #3b82f6;
-$info-light: #dbeafe;
+/* ============================================================
+   知微 Math AI — SCSS Compile-time Variables (V3.0)
+   仅用于编译时常量，运行时颜色/尺寸请使用 tokens.css 中的 CSS 变量。
+   ============================================================ */
 
-$bg-primary: #f8fafc;
-$bg-secondary: #ffffff;
-$bg-tertiary: #f1f5f9;
-$bg-sidebar: #ffffff;
+$sidebar-width: 248px;
+$sidebar-rail-width: 68px;
+$header-height: 56px;
+$mobile-nav-height: 72px;
 
-$text-primary: #1e293b;
-$text-secondary: #64748b;
-$text-tertiary: #94a3b8;
-$text-inverse: #ffffff;
-
-$border-color: #e2e8f0;
-$border-light: #f1f5f9;
-
-$sidebar-width: 280px;
-$header-height: 64px;
-
-$shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-$shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-$shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-$shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-
-$radius-sm: 6px;
-$radius-md: 10px;
+$radius-sm: 10px;
+$radius-md: 12px;
 $radius-lg: 16px;
-$radius-xl: 20px;
+$radius-xl: 16px;
 $radius-full: 9999px;
 
-$transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-$transition-base: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-$transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+$font-sans: 'Inter', 'Noto Sans SC', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+$font-mono: 'JetBrains Mono', 'DM Mono', 'Consolas', 'Monaco', monospace;
 
-$font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
-$font-mono: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+$shadow-sm: 0 1px 2px rgba(32, 35, 31, 0.04);
+$shadow-md: 0 2px 8px rgba(32, 35, 31, 0.06);
+$shadow-lg: 0 4px 16px rgba(32, 35, 31, 0.08);
+$shadow-xl: 0 8px 32px rgba(32, 35, 31, 0.10);
 
-$gradient-start: #e0f2fe;
-$gradient-middle: #bae6fd;
-$gradient-end: #7dd3fc;
-$gradient-sky-1: #f0f9ff;
-$gradient-sky-2: #e0f2fe;
-$gradient-sky-3: #bae6fd;
-$gradient-sky-4: #7dd3fc;
-$gradient-blue-glow: rgba(147, 197, 253, 0.15);
+$transition-fast: 140ms ease-out;
+$transition-base: 200ms ease-out;
+$transition-slow: 320ms ease-out;

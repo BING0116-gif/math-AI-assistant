@@ -6,11 +6,21 @@ A03 记忆持久化专项测试
 import asyncio
 import time
 import pytest
+from app.data.database import init_db, close_db
 from app.services.event_buffer import EnhancedEventBuffer, BufferedEvent
 from app.services.memory import (
     LongTermMemory, EventClassification, ShortTermMemory, MemoryItem
 )
 from agent_core.memory_persistence import MemoryPersistenceFacade, UserProfile
+
+
+# 模块级初始化数据库
+@pytest.fixture(scope="module", autouse=True)
+def _setup_database():
+    """初始化数据库。"""
+    asyncio.run(init_db())
+    yield
+    asyncio.run(close_db())
 
 
 class TestEventBuffer:

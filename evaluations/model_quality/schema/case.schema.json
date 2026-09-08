@@ -1,0 +1,435 @@
+{
+  "$defs": {
+    "AnswerMatch": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "exact",
+            "choice",
+            "judge",
+            "numeric",
+            "symbolic",
+            "set",
+            "manual"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tolerance"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "AnswerMatch",
+      "type": "object"
+    },
+    "CaseInput": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "image_asset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Asset"
+        },
+        "image_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Sha256"
+        },
+        "conversation_history": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Conversation History",
+          "type": "array"
+        },
+        "context_fixture": {
+          "additionalProperties": true,
+          "title": "Context Fixture",
+          "type": "object"
+        },
+        "user_fixture": {
+          "additionalProperties": true,
+          "title": "User Fixture",
+          "type": "object"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "CaseInput",
+      "type": "object"
+    },
+    "GoldReview": {
+      "additionalProperties": false,
+      "properties": {
+        "rationale": {
+          "minLength": 5,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "author": {
+          "minLength": 3,
+          "title": "Author",
+          "type": "string"
+        },
+        "reviewer": {
+          "minLength": 3,
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "approved_at": {
+          "format": "date-time",
+          "title": "Approved At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rationale",
+        "author",
+        "reviewer",
+        "approved_at"
+      ],
+      "title": "GoldReview",
+      "type": "object"
+    },
+    "Oracle": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_answer": {
+          "title": "Expected Answer",
+          "type": "string"
+        },
+        "answer_match": {
+          "$ref": "#/$defs/AnswerMatch"
+        },
+        "key_steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Key Steps",
+          "type": "array"
+        },
+        "allowed_expressions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Expressions",
+          "type": "array"
+        },
+        "forbidden_claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Claims",
+          "type": "array"
+        },
+        "knowledge_point_codes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Knowledge Point Codes",
+          "type": "array"
+        },
+        "ambiguity_behavior": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ambiguity Behavior"
+        }
+      },
+      "required": [
+        "expected_answer",
+        "answer_match",
+        "knowledge_point_codes"
+      ],
+      "title": "Oracle",
+      "type": "object"
+    },
+    "PrimaryCategory": {
+      "enum": [
+        "text",
+        "image",
+        "ambiguous",
+        "adversarial",
+        "plausible_wrong"
+      ],
+      "title": "PrimaryCategory",
+      "type": "string"
+    },
+    "RetrievalExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "expected_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Evidence Ids",
+          "type": "array"
+        },
+        "forbidden_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Evidence Ids",
+          "type": "array"
+        },
+        "citation_required": {
+          "default": false,
+          "title": "Citation Required",
+          "type": "boolean"
+        }
+      },
+      "title": "RetrievalExpectation",
+      "type": "object"
+    },
+    "SafetyExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "must_refuse": {
+          "default": false,
+          "title": "Must Refuse",
+          "type": "boolean"
+        },
+        "protected_canaries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Protected Canaries",
+          "type": "array"
+        },
+        "prohibited_disclosures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Prohibited Disclosures",
+          "type": "array"
+        }
+      },
+      "title": "SafetyExpectation",
+      "type": "object"
+    },
+    "SideEffectExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tables",
+          "type": "array"
+        },
+        "allowed_events": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Events",
+          "type": "array"
+        },
+        "forbidden_tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Tables",
+          "type": "array"
+        },
+        "forbidden_events": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Events",
+          "type": "array"
+        }
+      },
+      "title": "SideEffectExpectation",
+      "type": "object"
+    },
+    "ToolExpectation": {
+      "additionalProperties": false,
+      "properties": {
+        "required_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Tools",
+          "type": "array"
+        },
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "forbidden_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Forbidden Tools",
+          "type": "array"
+        }
+      },
+      "title": "ToolExpectation",
+      "type": "object"
+    },
+    "TutorMode": {
+      "enum": [
+        "hint_only",
+        "step_by_step",
+        "check_my_work"
+      ],
+      "title": "TutorMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "case_id": {
+      "pattern": "^mq-[a-z]+-[0-9]{3}$",
+      "title": "Case Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "case_version": {
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "title": "Case Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "reviewed",
+        "approved"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "primary_category": {
+      "$ref": "#/$defs/PrimaryCategory"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "modality": {
+      "enum": [
+        "text",
+        "image"
+      ],
+      "title": "Modality",
+      "type": "string"
+    },
+    "tutor_mode": {
+      "$ref": "#/$defs/TutorMode"
+    },
+    "applicable_dimensions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Applicable Dimensions",
+      "type": "array"
+    },
+    "ai_offline_case": {
+      "default": false,
+      "title": "Ai Offline Case",
+      "type": "boolean"
+    },
+    "input": {
+      "$ref": "#/$defs/CaseInput"
+    },
+    "oracle": {
+      "$ref": "#/$defs/Oracle"
+    },
+    "retrieval_expectation": {
+      "$ref": "#/$defs/RetrievalExpectation"
+    },
+    "tool_expectation": {
+      "$ref": "#/$defs/ToolExpectation"
+    },
+    "side_effect_expectation": {
+      "$ref": "#/$defs/SideEffectExpectation"
+    },
+    "safety_expectation": {
+      "$ref": "#/$defs/SafetyExpectation"
+    },
+    "gold": {
+      "$ref": "#/$defs/GoldReview"
+    }
+  },
+  "required": [
+    "case_id",
+    "schema_version",
+    "case_version",
+    "status",
+    "primary_category",
+    "modality",
+    "tutor_mode",
+    "applicable_dimensions",
+    "input",
+    "oracle",
+    "retrieval_expectation",
+    "tool_expectation",
+    "side_effect_expectation",
+    "safety_expectation",
+    "gold"
+  ],
+  "title": "EvaluationCase",
+  "type": "object"
+}

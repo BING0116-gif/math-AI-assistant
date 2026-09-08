@@ -1,0 +1,144 @@
+schema_version: '1.0'
+dataset_version: 1.0.0
+dataset_hash: 11af3e645d24460d336b8b03cb79f9385355f2a78374ec927a2fc4c3611272f2
+title: Phase 3 Step 3.4 AI Tutor 模型质量评测集
+course_scope:
+- 大学高等数学
+- 函数
+- 极限
+- 连续
+cases:
+- case_id: mq-text-001
+  path: cases/mq-text-001.yaml
+- case_id: mq-text-002
+  path: cases/mq-text-002.yaml
+- case_id: mq-text-003
+  path: cases/mq-text-003.yaml
+- case_id: mq-text-004
+  path: cases/mq-text-004.yaml
+- case_id: mq-text-005
+  path: cases/mq-text-005.yaml
+- case_id: mq-text-006
+  path: cases/mq-text-006.yaml
+- case_id: mq-text-007
+  path: cases/mq-text-007.yaml
+- case_id: mq-text-008
+  path: cases/mq-text-008.yaml
+- case_id: mq-text-009
+  path: cases/mq-text-009.yaml
+- case_id: mq-text-010
+  path: cases/mq-text-010.yaml
+- case_id: mq-text-011
+  path: cases/mq-text-011.yaml
+- case_id: mq-text-012
+  path: cases/mq-text-012.yaml
+- case_id: mq-text-013
+  path: cases/mq-text-013.yaml
+- case_id: mq-text-014
+  path: cases/mq-text-014.yaml
+- case_id: mq-text-015
+  path: cases/mq-text-015.yaml
+- case_id: mq-text-016
+  path: cases/mq-text-016.yaml
+- case_id: mq-text-017
+  path: cases/mq-text-017.yaml
+- case_id: mq-text-018
+  path: cases/mq-text-018.yaml
+- case_id: mq-text-019
+  path: cases/mq-text-019.yaml
+- case_id: mq-text-020
+  path: cases/mq-text-020.yaml
+- case_id: mq-image-001
+  path: cases/mq-image-001.yaml
+- case_id: mq-image-002
+  path: cases/mq-image-002.yaml
+- case_id: mq-image-003
+  path: cases/mq-image-003.yaml
+- case_id: mq-image-004
+  path: cases/mq-image-004.yaml
+- case_id: mq-image-005
+  path: cases/mq-image-005.yaml
+- case_id: mq-image-006
+  path: cases/mq-image-006.yaml
+- case_id: mq-image-007
+  path: cases/mq-image-007.yaml
+- case_id: mq-image-008
+  path: cases/mq-image-008.yaml
+- case_id: mq-image-009
+  path: cases/mq-image-009.yaml
+- case_id: mq-image-010
+  path: cases/mq-image-010.yaml
+- case_id: mq-image-011
+  path: cases/mq-image-011.yaml
+- case_id: mq-image-012
+  path: cases/mq-image-012.yaml
+- case_id: mq-ambiguous-001
+  path: cases/mq-ambiguous-001.yaml
+- case_id: mq-ambiguous-002
+  path: cases/mq-ambiguous-002.yaml
+- case_id: mq-ambiguous-003
+  path: cases/mq-ambiguous-003.yaml
+- case_id: mq-ambiguous-004
+  path: cases/mq-ambiguous-004.yaml
+- case_id: mq-ambiguous-005
+  path: cases/mq-ambiguous-005.yaml
+- case_id: mq-ambiguous-006
+  path: cases/mq-ambiguous-006.yaml
+- case_id: mq-ambiguous-007
+  path: cases/mq-ambiguous-007.yaml
+- case_id: mq-ambiguous-008
+  path: cases/mq-ambiguous-008.yaml
+- case_id: mq-adversarial-001
+  path: cases/mq-adversarial-001.yaml
+- case_id: mq-adversarial-002
+  path: cases/mq-adversarial-002.yaml
+- case_id: mq-adversarial-003
+  path: cases/mq-adversarial-003.yaml
+- case_id: mq-adversarial-004
+  path: cases/mq-adversarial-004.yaml
+- case_id: mq-adversarial-005
+  path: cases/mq-adversarial-005.yaml
+- case_id: mq-adversarial-006
+  path: cases/mq-adversarial-006.yaml
+- case_id: mq-adversarial-007
+  path: cases/mq-adversarial-007.yaml
+- case_id: mq-adversarial-008
+  path: cases/mq-adversarial-008.yaml
+- case_id: mq-adversarial-009
+  path: cases/mq-adversarial-009.yaml
+- case_id: mq-adversarial-010
+  path: cases/mq-adversarial-010.yaml
+- case_id: mq-plausible-001
+  path: cases/mq-plausible-001.yaml
+- case_id: mq-plausible-002
+  path: cases/mq-plausible-002.yaml
+- case_id: mq-plausible-003
+  path: cases/mq-plausible-003.yaml
+- case_id: mq-plausible-004
+  path: cases/mq-plausible-004.yaml
+- case_id: mq-plausible-005
+  path: cases/mq-plausible-005.yaml
+- case_id: mq-plausible-006
+  path: cases/mq-plausible-006.yaml
+- case_id: mq-plausible-007
+  path: cases/mq-plausible-007.yaml
+- case_id: mq-plausible-008
+  path: cases/mq-plausible-008.yaml
+- case_id: mq-plausible-009
+  path: cases/mq-plausible-009.yaml
+- case_id: mq-plausible-010
+  path: cases/mq-plausible-010.yaml
+category_quotas:
+  text: 20
+  image: 12
+  ambiguous: 8
+  adversarial: 10
+  plausible_wrong: 10
+tutor_mode_quotas:
+  hint_only: 20
+  step_by_step: 20
+  check_my_work: 20
+minimum_tool_cases: 15
+minimum_retrieval_cases: 12
+minimum_cross_user_cases: 10
+minimum_ai_offline_cases: 8

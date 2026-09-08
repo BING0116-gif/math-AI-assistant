@@ -1,6 +1,8 @@
 """
 VisionTool — 通义千问 VL（视觉-语言）多模态识别工具。
 
+技术栈定位：识图链路固定使用千问 VL（qwen-vl-plus / qwen-vl-max），
+不随主文本模型（DeepSeek）切换；API Key 复用 DASHSCOPE_API_KEY。
 截图直接发给 Qwen-VL，由模型端到端理解图片内容（文字+公式+图形），
 返回结构化的「题目描述 + LaTeX 公式 + 空间关系」。
 """
@@ -24,7 +26,6 @@ _DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 _VL_MODELS = [
     "qwen-vl-plus",           # 优先：数学理解强，支持流式
     "qwen-vl-max",            # 备选：更大规模
-    "qwen2-vl-72b-instruct",  # 最新一代（若账号支持）
 ]
 
 
@@ -463,6 +464,7 @@ class VisionTool:
                 buffer = b""
                 full_response = ""
                 chunk_count = 0
+                token_usage: Dict[str, int] = {}
 
                 async for chunk in stream_gen:
                     if chunk:
@@ -476,6 +478,13 @@ class VisionTool:
                                     break
                                 try:
                                     data = json.loads(data_str)
+                                    usage = data.get("usage") or {}
+                                    if usage:
+                                        token_usage = {
+                                            "prompt_tokens": int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0),
+                                            "completion_tokens": int(usage.get("completion_tokens", usage.get("output_tokens", 0)) or 0),
+                                            "total_tokens": int(usage.get("total_tokens", 0) or 0),
+                                        }
                                     delta = data.get("choices", [{}])[0].get("delta", {})
                                     content = delta.get("content", "")
                                     if content:
@@ -496,6 +505,7 @@ class VisionTool:
                     "llm_description": _build_llm_input(full_response),
                     "raw_response": full_response,
                     "model_used": try_model,
+                    "token_usage": token_usage or None,
                 }
                 return
 
@@ -639,6 +649,7 @@ class VisionToolAdapter(BaseTool):
                     metadata={
                         "model_used": result.get("model_used", ""),
                         "raw_response": result.get("raw_response", ""),
+                        "token_usage": result.get("token_usage"),
                     },
                 )
             else:

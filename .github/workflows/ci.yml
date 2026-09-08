@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, cleanup/refactor]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    env:
+      AI_ENABLED: "false"
+      DASHSCOPE_API_KEY: ""
+      APP_ENV: "test"
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-asyncio pytest-cov flake8
+
+      - name: Lint with flake8
+        run: |
+          flake8 app/ agent_core/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 app/ agent_core/ --count --exit-zero --max-complexity=10 --statistics
+
+      - name: Validate model quality goldens without AI
+        run: python -m scripts.model_quality_eval validate --dataset evaluations/model_quality/v1
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ \
+            --cov=app --cov=agent_core --cov-report=html --cov-report=term --cov-fail-under=40
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  compose-cold-start:
+    runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ci-only-database-password
+      JWT_SECRET_KEY: ci-only-jwt-secret-with-sufficient-length
+      ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+      DASHSCOPE_API_KEY: ci-placeholder-not-used-by-health-check
+      DEBUG: "false"
+      AUTO_MIGRATE: "false"
+      RAG_ENABLED: "false"
+      APP_ENV: "production"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Compose configuration
+        run: docker compose config
+
+      - name: Build and start empty stack
+        run: docker compose up -d --build
+
+      - name: Wait for services
+        shell: bash
+        run: |
+          timeout 180 bash -c '
+            until docker compose exec -T db pg_isready -U mathai -d math_ai &&
+                  curl --fail --silent http://localhost:8000/api/health >/dev/null;
+            do sleep 3; done
+          '
+
+      - name: Upgrade empty PostgreSQL database
+        run: docker compose exec -T web alembic -c app/data/alembic.ini upgrade head
+
+      - name: Verify PostgreSQL backend and schema
+        run: |
+          docker compose exec -T web python -m scripts.verification.verify_database_backend postgresql
+          docker compose exec -T db psql -U mathai -d math_ai -c '\d memories'
+          docker compose exec -T db psql -U mathai -d math_ai -c '\d user_profiles'
+          test ! -f data/math_ai.db
+
+      - name: Show Compose diagnostics
+        if: always()
+        run: |
+          docker compose ps
+          docker compose logs --no-color
+
+      - name: Remove cold-start stack
+        if: always()
+        run: docker compose down -v
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build, compose-cold-start]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t math-ai-assistant .
+
+      - name: Verify Docker image
+        run: docker images math-ai-assistant

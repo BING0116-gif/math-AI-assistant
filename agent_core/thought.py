@@ -321,6 +321,17 @@ class ThoughtRecorder:
         if session_id in self._processes:
             del self._processes[session_id]
 
+    def clear_user_sessions(self, user_id: str) -> None:
+        """Clear completed and active processes for user-scoped session keys."""
+        prefix = f"{user_id}:"
+        for session_id in [
+            key for key in self._processes if key.startswith(prefix)
+        ]:
+            del self._processes[session_id]
+        for process_id, process in list(self._active_processes.items()):
+            if process.session_id.startswith(prefix):
+                del self._active_processes[process_id]
+
     def clear_all(self) -> None:
         """清空所有记录。"""
         self._processes.clear()

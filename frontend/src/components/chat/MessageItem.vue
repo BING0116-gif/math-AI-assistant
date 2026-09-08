@@ -1,43 +1,59 @@
 <template>
   <div class="message-item" :class="[`msg-${message.sender}`, { streaming: isStreaming }]" :id="`msg-${message.id}`">
-    <div class="msg-avatar" v-if="message.sender === 'ai'">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-        <path d="M12 2a4 4 0 014 4v1a4 4 0 01-4 4 4 4 0 01-4-4V6a4 4 0 014-4z"/>
-        <path d="M9 20h6a4 4 0 014 4H5a4 4 0 014-4z"/>
-        <circle cx="12" cy="10" r="3"/>
-      </svg>
+    <!-- AI 消息：无大气泡，左对齐，占正文宽度 — 文档 §6.3 -->
+    <div v-if="message.sender === 'ai'" class="msg-ai-wrap">
+      <div class="msg-body msg-body--ai">
+        <div v-if="message.type === 'image'" class="msg-image-wrap">
+          <img :src="message.content" class="msg-image" alt="图片消息" />
+          <div v-if="message.text" class="msg-image-text">{{ message.text }}</div>
+        </div>
+        <div v-else class="msg-content" v-html="renderedContent"></div>
+
+        <!-- 流式状态指示 -->
+        <div v-if="isStreaming && (!message.content || message.content.length === 0)" class="msg-loading">
+          <span class="msg-loading-dot"></span>
+          <span class="msg-loading-dot"></span>
+          <span class="msg-loading-dot"></span>
+          <span class="msg-loading-text">正在组织推导…</span>
+        </div>
+
+        <!-- 消息操作 — 文档 §6.3: 默认弱化，hover 显示 -->
+        <div v-if="!isStreaming" class="msg-actions">
+          <template v-if="message.errorBookStatus === 'added'">
+            <button class="msg-action-btn msg-action-btn--done" disabled>已加入错题本</button>
+          </template>
+          <template v-else-if="message.errorBookStatus === 'skipped'">
+            <button class="msg-action-btn msg-action-btn--skipped" disabled>已跳过</button>
+          </template>
+          <template v-else>
+            <button class="msg-action-btn" @click.stop="$emit('addToErrorBook', message.id)">
+              加入错题本
+            </button>
+            <button class="msg-action-btn" @click.stop="$emit('skipErrorBook', message.id)">
+              跳过
+            </button>
+          </template>
+        </div>
+      </div>
+      <div class="msg-time">{{ message.timestamp }}</div>
     </div>
-    <div class="msg-body">
-      <div v-if="message.type === 'image'" class="msg-image-wrap">
-        <img :src="message.content" class="msg-image" alt="图片消息" />
-        <div v-if="message.text" class="msg-image-text">{{ message.text }}</div>
-      </div>
-      <div v-else class="msg-content" v-html="renderedContent"></div>
 
-      <div v-if="message.sender === 'ai' && !isStreaming" class="error-book-actions">
-        <template v-if="message.errorBookStatus === 'added'">
-          <button class="eb-btn added" disabled>✓ 已加入错题本</button>
-        </template>
-        <template v-else-if="message.errorBookStatus === 'skipped'">
-          <button class="eb-btn skipped" disabled>⏭️ 已跳过</button>
-        </template>
-        <template v-else>
-          <button class="eb-btn add" @click.stop="$emit('addToErrorBook', message.id)">
-            📚 加入错题本
-          </button>
-          <button class="eb-btn skip" @click.stop="$emit('skipErrorBook', message.id)">
-            不加入
-          </button>
-        </template>
+    <!-- 用户消息：右对齐，小范围中性背景，最大宽度 80% — 文档 §6.3 -->
+    <div v-else class="msg-user-wrap">
+      <div class="msg-body msg-body--user">
+        <div v-if="message.type === 'image'" class="msg-image-wrap">
+          <img :src="message.content" class="msg-image" alt="图片消息" />
+          <div v-if="message.text" class="msg-image-text">{{ message.text }}</div>
+        </div>
+        <div v-else class="msg-content" v-html="renderedContent"></div>
       </div>
-
       <div class="msg-time">{{ message.timestamp }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, watch, nextTick } from 'vue'
+import { computed } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps({
@@ -51,390 +67,301 @@ const renderedContent = computed(() => {
   if (props.message.sender === 'ai') {
     return renderMarkdown(props.message.content || '')
   }
-  return props.message.content || ''
+  // 用户消息做简单转义
+  const text = props.message.content || ''
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>')
 })
-
-// 公式已由 markdown.js 中的 @mdit/plugin-katex 在渲染阶段完成
-// 无需再调用 renderMathInElement 进行二次渲染
-
-onMounted(() => {
-  // DOM 已就绪，公式已渲染完毕
-})
-
-watch(() => [props.isStreaming, props.message.content], () => {
-  // 内容变化时 computed 自动触发重新渲染，无需手动处理
-}, { flush: 'post' })
 </script>
 
-<style lang="scss" scoped>
-@use '@/styles/variables' as *;
+<style scoped>
+/* 文档 §6.3:
+   - 用户消息右对齐，小范围中性背景，最大宽度 80%
+   - AI 消息左对齐、无大气泡、占正文宽度
+   - 时间戳和操作按钮默认弱化 */
 
 .message-item {
+  width: 100%;
+  animation: msgFadeIn 0.3s ease-out;
+}
+
+@keyframes msgFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- AI 消息 ---- */
+.msg-ai-wrap {
   display: flex;
-  gap: 16px;
-  max-width: 88%;
-  animation: messageSlideIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  &.msg-user {
-    align-self: flex-end;
-    flex-direction: row-reverse;
-    max-width: 75%;
-
-    .msg-body {
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-      color: white;
-      border-radius: $radius-xl $radius-xl 6px $radius-xl;
-      padding: 16px 22px;
-      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.28), 0 2px 8px rgba(99, 102, 241, 0.15);
-      
-      &:hover {
-        box-shadow: 0 12px 32px rgba(99, 102, 241, 0.35), 0 4px 12px rgba(99, 102, 241, 0.2);
-        transform: translateY(-2px);
-      }
-    }
-    
-    .msg-content { 
-      color: white; 
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    }
-    
-    .msg-time { 
-      color: rgba(255, 255, 255, 0.75); 
-    }
-  }
-
-  &.msg-ai {
-    align-self: flex-start;
-
-    .msg-body {
-      background: var(--bg-card);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-radius: 6px $radius-xl $radius-xl $radius-xl;
-      padding: 18px 24px;
-      box-shadow: var(--shadow-md);
-      border: 1px solid var(--border-light);
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-      &:hover {
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06);
-        transform: translateY(-1px);
-        border-color: var(--border-light);
-      }
-    }
-
-    &.streaming {
-      .msg-body {
-        background: linear-gradient(135deg, rgba(238, 242, 255, 0.95) 0%, rgba(255, 255, 255, 0.98) 100%);
-        border-color: rgba(99, 102, 241, 0.15);
-        
-        &::after {
-          content: '';
-          position: absolute;
-          bottom: 0;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 40%;
-          height: 2px;
-          background: linear-gradient(90deg, transparent 0%, var(--primary) 50%, transparent 100%);
-          animation: typing-indicator 1.5s ease-in-out infinite;
-        }
-      }
-    }
-  }
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
 }
 
-@keyframes messageSlideIn {
-  0% {
-    opacity: 0;
-    transform: translateY(30px) scale(0.95);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.msg-body--ai {
+  width: 100%;
+  /* 无大气泡：不加背景、边框、阴影 */
+  padding: 0;
 }
 
-@keyframes typing-indicator {
-  0%, 100% {
-    opacity: 0.3;
-    width: 30%;
-  }
-  50% {
-    opacity: 1;
-    width: 60%;
-  }
-}
-
-.msg-avatar {
-  width: 40px; height: 40px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(129, 140, 248, 0.15) 100%);
-  border-radius: var(--radius-lg);
+/* ---- 用户消息 ---- */
+.msg-user-wrap {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary);
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  transition: all 0.3s ease;
-
-  svg {
-    filter: drop-shadow(0 1px 2px rgba(99, 102, 241, 0.2));
-  }
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 80%;
+  margin-left: auto; /* 右对齐 */
 }
 
-.msg-body {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  overflow: hidden;
+.msg-body--user {
+  /* 小范围中性背景 */
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  max-width: 100%;
 }
 
+/* ---- 内容排版 ---- */
 .msg-content {
-  font-size: 15px;
-  line-height: 1.85;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
   word-break: break-word;
-
-  :deep(p) { margin: 11px 0; }
-  :deep(h1) { 
-    font-size: 22px; 
-    font-weight: 700; 
-    margin: 20px 0 14px; 
-    border-bottom: 2.5px solid linear-gradient(90deg, var(--primary) 0%, var(--primary-hover) 100%);
-    padding-bottom: 10px; 
-    background: linear-gradient(135deg, var(--text-primary) 0%, var(--primary) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-  :deep(h2) { 
-    font-size: 19px; 
-    font-weight: 600; 
-    margin: 18px 0 12px; 
-    color: var(--primary-dark);
-  }
-  :deep(h3) { 
-    font-size: 17px; 
-    font-weight: 600; 
-    margin: 15px 0 10px; 
-  }
-  :deep(strong) { 
-    font-weight: 700; 
-    color: var(--text-primary);
-  }
-  :deep(code) {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(254, 202, 202, 0.12) 100%);
-    padding: 3px 8px; 
-    border-radius: 6px;
-    font-family: $font-mono; 
-    font-size: 13px; 
-    color: #dc2626;
-    border: 1px solid rgba(239, 68, 68, 0.15);
-  }
-  :deep(pre) {
-    background: linear-gradient(135deg, #1e293b 0%, #334155 100%); 
-    color: #e2e8f0; 
-    padding: 18px 22px;
-    border-radius: var(--radius-lg); 
-    overflow-x: auto; 
-    margin: 16px 0;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(51, 65, 85, 0.5);
-    
-    code { 
-      background: none; 
-      color: inherit; 
-      padding: 0; 
-      border: none;
-    }
-  }
-  :deep(blockquote) {
-    margin: 16px 0; 
-    padding: 14px 20px;
-    border-left: 4px solid var(--primary); 
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.04) 0%, rgba(129, 140, 248, 0.02) 100%);
-    border-radius: 0 $radius-md $radius-md 0;
-    font-style: italic;
-    color: var(--text-secondary);
-  }
-  :deep(hr) { 
-    margin: 22px 0; 
-    border: none; 
-    height: 1.5px; 
-    background: linear-gradient(90deg, transparent 0%, rgba(226, 232, 240, 0.8) 50%, transparent 100%); 
-  }
-  :deep(.katex) { 
-    font-size: 1.13em !important; 
-  }
-  :deep(.katex-display) {
-    margin: 20px 0 !important; 
-    padding: 18px 24px !important;
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-    border-radius: var(--radius-lg) !important;
-    overflow-x: auto !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    border: 1px solid var(--border-light);
-  }
-  :deep(.math-display) {
-    display: block;
-    margin: 20px 0;
-    padding: 18px 24px;
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    border-radius: var(--radius-lg);
-    overflow-x: auto;
-    text-align: center;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  }
-  :deep(.math-inline) {
-    display: inline;
-  }
-  :deep(.math-error) {
-    color: #dc2626;
-    font-style: italic;
-    background: linear-gradient(135deg, rgba(254, 202, 202, 0.3) 0%, rgba(254, 226, 226, 0.4) 100%);
-    padding: 3px 7px;
-    border-radius: 5px;
-    border: 1px solid rgba(239, 68, 68, 0.2);
-  }
 }
 
-.msg-image-wrap { 
-  margin: 0; 
+.msg-body--user .msg-content {
+  font-size: var(--font-size-sm);
 }
 
-.msg-image { 
-  max-width: 280px; 
-  border-radius: var(--radius-lg); 
-  display: block; 
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
-  border: 2px solid rgba(255, 255, 255, 0.8);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-  &:hover {
-    transform: scale(1.03);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
-  }
+/* Markdown 元素 */
+.msg-content :deep(p) {
+  margin: var(--space-2) 0;
+}
+.msg-content :deep(p:first-child) {
+  margin-top: 0;
+}
+.msg-content :deep(p:last-child) {
+  margin-bottom: 0;
 }
 
-.msg-image-text {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-radius: $radius-md;
-  font-size: 14px;
-  line-height: 1.65;
-  word-break: break-word;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.msg-time {
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-  margin-top: 10px;
-  text-align: right;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  opacity: 0.85;
-}
-
-.msg-ai .msg-time { 
-  text-align: left; 
-  color: var(--text-tertiary);
-}
-
-.error-book-actions {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1.5px solid var(--border-light);
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.eb-btn {
-  padding: 8px 18px;
-  border-radius: $radius-full;
-  font-size: 13px;
+.msg-content :deep(h1),
+.msg-content :deep(h2),
+.msg-content :deep(h3) {
   font-weight: 600;
-  cursor: pointer;
-  border: 1.5px solid var(--border-light);
-  font-family: inherit;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  line-height: var(--line-height-tight);
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--text-primary);
+}
+.msg-content :deep(h1) { font-size: var(--font-size-xl); }
+.msg-content :deep(h2) { font-size: var(--font-size-lg); }
+.msg-content :deep(h3) { font-size: var(--font-size-base); }
 
-  &.add {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(129, 140, 248, 0.12) 100%);
-    color: var(--primary);
-    border-color: rgba(99, 102, 241, 0.25);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
-
-    &:hover { 
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-      color: white;
-      transform: translateY(-2px); 
-      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.25);
-      border-color: transparent;
-    }
-    
-    &:active {
-      transform: translateY(0);
-    }
-  }
-  
-  &.skip {
-    background: rgba(241, 245, 249, 0.9); 
-    color: var(--text-secondary);
-    
-    &:hover { 
-      background: rgba(226, 232, 240, 0.9);
-      transform: translateY(-1px);
-    }
-  }
-  
-  &.added {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(209, 250, 229, 0.15) 100%);
-    color: #059669;
-    cursor: default;
-    border-color: rgba(16, 185, 129, 0.25);
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
-  }
-  
-  &.skipped {
-    background: rgba(241, 245, 249, 0.6); 
-    color: var(--text-tertiary);
-    cursor: default; 
-    text-decoration: line-through;
-    opacity: 0.7;
-  }
-
-  &:disabled {
-    pointer-events: none;
-  }
+.msg-content :deep(strong) {
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
+.msg-content :deep(em) {
+  font-style: italic;
+}
+
+.msg-content :deep(ul),
+.msg-content :deep(ol) {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-6);
+}
+.msg-content :deep(li) {
+  margin: var(--space-1) 0;
+}
+
+.msg-content :deep(code) {
+  background: var(--surface-muted);
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  color: var(--text-primary);
+}
+
+.msg-content :deep(pre) {
+  background: var(--surface-muted);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+  border: 1px solid var(--border-subtle);
+}
+.msg-content :deep(pre code) {
+  background: none;
+  padding: 0;
+  border: none;
+  color: var(--text-primary);
+}
+
+.msg-content :deep(blockquote) {
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.msg-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+  font-size: var(--font-size-sm);
+}
+.msg-content :deep(th),
+.msg-content :deep(td) {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+.msg-content :deep(th) {
+  background: var(--surface-muted);
+  font-weight: 600;
+}
+
+/* KaTeX 公式 — 文档 §6.3: 行内公式与文字基线对齐，块级公式上下至少 16px 留白 */
+.msg-content :deep(.katex) {
+  font-size: 1.05em;
+}
+.msg-content :deep(.katex-display) {
+  margin: var(--space-4) 0 !important;
+  padding: var(--space-3) var(--space-4) !important;
+  overflow-x: auto;
+}
+.msg-content :deep(.math-display) {
+  display: block;
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  text-align: center;
+}
+.msg-content :deep(.math-inline) {
+  display: inline;
+}
+
+/* ---- 图片 ---- */
+.msg-image-wrap {
+  margin: 0;
+}
+.msg-image {
+  max-width: 280px;
+  border-radius: var(--radius-sm);
+  display: block;
+  border: 1px solid var(--border-subtle);
+}
+.msg-image-text {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: var(--line-height-base);
+  word-break: break-word;
+}
+
+/* ---- 时间戳 — 默认弱化 ---- */
+.msg-time {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+  opacity: 0.7;
+}
+.msg-ai-wrap .msg-time {
+  text-align: left;
+}
+.msg-user-wrap .msg-time {
+  text-align: right;
+}
+
+/* ---- 消息操作 — 默认弱化 ---- */
+.msg-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.message-item:hover .msg-actions {
+  opacity: 1;
+}
+
+.msg-action-btn {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.msg-action-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.msg-action-btn--done {
+  color: var(--mastered);
+  border-color: var(--mastered);
+  cursor: default;
+}
+.msg-action-btn--skipped {
+  color: var(--text-tertiary);
+  cursor: default;
+  text-decoration: line-through;
+}
+.msg-action-btn:disabled {
+  pointer-events: none;
+}
+
+/* ---- 流式加载指示器 ---- */
+.msg-loading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-2) 0;
+}
+.msg-loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  animation: msgDotPulse 1.4s ease-in-out infinite;
+}
+.msg-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.msg-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+.msg-loading-text {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  margin-left: var(--space-1);
+}
+@keyframes msgDotPulse {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+
+/* ---- 流式状态光标 ---- */
+.message-item.streaming .msg-content::after {
+  content: '▊';
+  display: inline;
+  color: var(--accent);
+  animation: msgCursorBlink 1s step-end infinite;
+  margin-left: 2px;
+}
+@keyframes msgCursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ---- 响应式 ---- */
 @media (max-width: 768px) {
-  .message-item {
-    max-width: 92%;
-    
-    &.msg-user {
-      max-width: 85%;
-    }
+  .msg-user-wrap {
+    max-width: 85%;
   }
-
-  .msg-body {
-    padding: 14px 18px;
-  }
-
-  .msg-avatar {
-    width: 36px;
-    height: 36px;
-  }
-
   .msg-image {
     max-width: 220px;
   }

@@ -14,9 +14,9 @@ from app.data.repositories import (
     ChatSessionRepository,
 )
 from app.services.cache import get_cache_manager
+from app.services.user_data_deletion import delete_user_data
+from app.services.memory_store import get_memory_store
 from app.security.audit import get_audit_logger
-from app.security.access_control import verify_resource_ownership
-from app.security.encryption import DataEncryption
 
 router = APIRouter(prefix="/api/data", tags=["数据管理"])
 
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/data", tags=["数据管理"])
 @router.get("/export")
 async def export_user_data(
     http_request: Request,
-    export_format: str = Query("json", regex="^(json|csv)$"),
+    export_format: str = Query("json", pattern="^(json|csv)$"),
 ):
     user_id = getattr(http_request.state, "user_id", None)
     if not user_id:
@@ -157,16 +157,7 @@ async def purge_user_data(
 
     try:
         async with get_db_session() as db:
-            record_repo = LearningRecordRepository(db)
-            from app.data.models import LearningRecord
-            from sqlalchemy import delete
-
-            deleted_records = await db.execute(
-                delete(LearningRecord).where(
-                    LearningRecord.user_id == user_id
-                )
-            )
-            await db.commit()
+            deleted = await delete_user_data(db, user_id)
 
         audit_logger = get_audit_logger()
         audit_logger.log_deletion(
@@ -177,12 +168,21 @@ async def purge_user_data(
         )
 
         cache = get_cache_manager()
-        await cache.invalidate_pattern(f"user:*:{user_id}*")
+        await cache.invalidate_user(user_id)
+        from app.api.memory_api import clear_user_short_term_memory
+        from app.dependencies import get_agent
+
+        clear_user_short_term_memory(user_id)
+        get_agent().clear_user_data(user_id)
+        vectors_deleted = await get_memory_store().delete_user_vectors(user_id)
 
         return {
-            "success": True,
+            "success": vectors_deleted,
             "message": "所有学习数据已删除",
-            "deleted_records": deleted_records.rowcount,
+            "deleted_records": deleted["learning_records"],
+            "deleted": deleted,
+            "total_deleted": sum(deleted.values()),
+            "vectors_deleted": vectors_deleted,
         }
 
     except Exception as e:

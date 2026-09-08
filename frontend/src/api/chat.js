@@ -1,70 +1,69 @@
+import { useAuthStore } from '@/stores/authStore'
 import api from './index'
 
-export function sendChatMessage(message, sessionId, signal) {
-  const token = localStorage.getItem('auth_token')
+function getAuthHeaders() {
+  const store = useAuthStore()
+  const token = store.getAccessToken()
   const headers = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
   }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  
+  return headers
+}
+
+export function sendChatMessage(message, sessionId, signal, options = {}) {
   return fetch('/api/chat', {
     method: 'POST',
-    headers,
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       message,
-      session_id: sessionId
+      session_id: sessionId,
+      tutor_mode: options.tutorMode || 'step_by_step',
+      context: options.context || {},
     }),
-    signal
+    signal,
   })
 }
 
 export function sendRecognizeRequest(imageData, sessionId, signal) {
-  const token = localStorage.getItem('auth_token')
-  const headers = {
-    'Content-Type': 'application/json'
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
   return fetch('/api/recognize', {
     method: 'POST',
-    headers,
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       image: imageData,
-      session_id: sessionId
+      session_id: sessionId,
     }),
-    signal
+    signal,
   })
 }
 
-export function sendMultimodalRequest(message, imageData, sessionId, signal) {
-  const token = localStorage.getItem('auth_token')
-  const headers = {
-    'Content-Type': 'application/json'
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  
+export function sendMultimodalRequest(message, imageData, sessionId, signal, options = {}) {
   return fetch('/api/chat/multimodal', {
     method: 'POST',
-    headers,
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       message: message || '',
       image: imageData || null,
-      session_id: sessionId
+      session_id: sessionId,
+      tutor_mode: options.tutorMode || 'step_by_step',
+      context: options.context || {},
     }),
-    signal
+    signal,
   })
 }
 
-export function parseSSEStream(response, onData, onDone, onError) {
+export const unwrapChat = (response) => response?.data?.data ?? response?.data
+export const listChatSessions = () => api.get('/chat/sessions')
+export const getChatSession = (id) => api.get(`/chat/sessions/${id}`)
+export const updateChatSession = (id, payload) => api.patch(`/chat/sessions/${id}`, payload)
+
+export function parseSSEStream(response, onData, onDone, onError, onEvent) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let currentEvent = ''
 
   async function read() {
     try {
@@ -93,17 +92,35 @@ export function parseSSEStream(response, onData, onDone, onError) {
     }
   }
 
-  function processLine(line) {
-    const trimmed = line.trim()
-    if (!trimmed || !trimmed.startsWith('data: ')) return
+  function processLine(block) {
+    const trimmed = block.trim()
+    if (!trimmed) return
 
-    const data = trimmed.substring(6)
-    if (data === '[DONE]') {
+    // Reset event type for each block
+    let eventType = currentEvent || ''
+    currentEvent = ''
+
+    // Process each line in the block
+    const lines = trimmed.split('\n')
+    let dataLine = ''
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        eventType = line.substring(7).trim()
+      } else if (line.startsWith('data: ')) {
+        dataLine = line.substring(6)
+      }
+    }
+
+    if (!dataLine) return
+
+    if (dataLine === '[DONE]') {
       onDone()
       return
     }
+
     try {
-      const parsed = JSON.parse(data)
+      const parsed = JSON.parse(dataLine)
       if (parsed.type === 'done') {
         onDone()
         return
@@ -112,11 +129,15 @@ export function parseSSEStream(response, onData, onDone, onError) {
         onError(new Error(parsed.content || '服务器错误'))
         return
       }
+      if (eventType === 'follow_up' && typeof onEvent === 'function') {
+        onEvent(eventType, parsed)
+        return
+      }
       if (parsed.content !== undefined) {
         onData(parsed)
       }
     } catch (e) {
-      console.warn('SSE parse warning:', e.message, 'data:', data.substring(0, 100))
+      console.warn('SSE parse warning:', e.message, 'data:', dataLine.substring(0, 100))
     }
   }
 

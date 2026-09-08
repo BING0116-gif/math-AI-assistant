@@ -1,1 +1,0 @@
-invalid type: string "题目: 2. 证明：由于 $f(a) = f(b) = 0$，因此 $f'_+(a) = \\lim_{x \\to a^+} \\frac{f(x)}{x - a}$, $f'_-(b) = \\lim_{x \\to b^-} \\frac{f(x)}{x - b}$。又由于 $f'_+(a) < 0$, $f'_-(b) < 0$。根据函数极限的局部保号性，存在 $\\delta_1\\left(0 < \\delta_1 < \\frac{b - a}{2}\\right)$ 与 $\\delta_2\\left(0 < \\delta_2 < \\frac{b - a}{2}\\right)$，使得\n

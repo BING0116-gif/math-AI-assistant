@@ -164,20 +164,18 @@ class LongTermMemory:
             )
             total_questions = total_result.scalar() or 0
 
-            correct_result = await db.execute(
-                select(func.count())
-                .select_from(LearningRecord)
-                .where(
-                    and_(
-                        LearningRecord.user_id == user_id,
-                        LearningRecord.is_correct == True,
-                    )
-                )
-            )
-            correct_count = correct_result.scalar() or 0
-            correct_rate = (
-                correct_count / total_questions if total_questions > 0 else 0
-            )
+            from app.services.mastery_evidence import unique_evidence, evidence_summary
+            # 旧聊天记录即使被标为正确，也不能混入答题能力统计。
+            evidence = unique_evidence((await db.execute(select(LearningRecord).where(
+                LearningRecord.user_id == user_id,
+            ).order_by(LearningRecord.created_at, LearningRecord.id))).scalars())
+            from app.data.models import PracticeAttempt
+            from app.services.mastery_evidence import is_attempt_evidence
+            attempts = (await db.execute(select(PracticeAttempt).where(PracticeAttempt.user_id == user_id))).scalars()
+            valid_keys = {(a.session_id, a.question_id) for a in attempts if is_attempt_evidence(a)}
+            evidence = [r for r in evidence if ((r.metadata_ or {}).get("session_id"), r.question_id) in valid_keys]
+            correct_count = sum(r.is_correct for r in evidence)
+            correct_rate = correct_count / len(evidence) if evidence else 0.0
 
             avg_time_result = await db.execute(
                 select(func.avg(LearningRecord.time_spent)).where(
@@ -189,37 +187,21 @@ class LongTermMemory:
             )
             avg_time = avg_time_result.scalar() or 0
 
-            weak_query = (
-                select(
-                    LearningRecord.category,
-                    func.count().label("total"),
-                    func.sum(
-                        func.cast(LearningRecord.is_correct == True, Integer)
-                    ).label("correct"),
-                )
-                .where(LearningRecord.user_id == user_id)
-                .group_by(LearningRecord.category)
-                .having(func.count() >= 3)
-                .order_by(func.sum(func.cast(LearningRecord.is_correct == True, Integer)) / func.count())
-            )
-
-            weak_result = await db.execute(weak_query)
-            weak_rows = weak_result.all()
-
-            weak_points = []
-            strong_points = []
-            for row in weak_rows:
-                mastery = row.correct / row.total if row.total > 0 else 0
+            from collections import defaultdict
+            categories = defaultdict(list)
+            for record in evidence:
+                categories[record.category].append(record)
+            weak_points, strong_points = [], []
+            for category, records in categories.items():
+                # 保留分类正确率算法，只对最终结果加 cap。
+                summary = evidence_summary(sum(r.is_correct for r in records) / len(records), len(records))
+                mastery = summary["mastery_score"]
                 if mastery < 0.7:
-                    weak_points.append(
-                        {
-                            "category": row.category,
-                            "mastery": round(mastery, 2),
-                            "count": row.total,
-                        }
-                    )
+                    weak_points.append({"category": category, "mastery": round(mastery, 2),
+                                        "count": len(records), **summary})
                 elif mastery > 0.85:
-                    strong_points.append(row.category)
+                    strong_points.append(category)
+            weak_points.sort(key=lambda point: point["mastery"])
 
             if correct_rate > 0.8:
                 recommended_difficulty = 5

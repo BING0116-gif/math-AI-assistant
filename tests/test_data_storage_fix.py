@@ -132,10 +132,10 @@ class TestErrorBookValidator:
         assert valid is True
         
         # 超过数量限制
-        many_cats = [f'cat{i}' for i in range(15)]
+        many_cats = [f'cat{i}' for i in range(16)]
         valid, error = ErrorBookValidator.validate_categories(many_cats)
         assert valid is False
-        assert '10' in error
+        assert '15' in error
 
 
 class TestErrorBookFormatter:

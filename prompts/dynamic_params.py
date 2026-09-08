@@ -17,9 +17,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from app.config.settings import settings
 from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
+
+# 主文本模型默认值：跟随 settings（.env），兜底 DeepSeek 官方兼容端点。
+# 注意：识图链路（vision_tool / qwen-vl-*）不在此列，固定走千问 VL。
+DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
+DEFAULT_LLM_MODEL = "deepseek-chat"
 
 
 class TaskType(str, Enum):
@@ -30,7 +36,6 @@ class TaskType(str, Enum):
     CONCEPT_TEACHING = "concept"         # T3 - 概念讲解
     MULTIMODAL = "multimodal"            # T4 - 图片+提问
     FULL_SOLUTION = "solution"           # T5 - 完整解题
-    PLANNED_SOLUTION = "planned"         # 复杂规划模式
     DEFAULT = "solution"                 # 默认=完整解题
 
     @classmethod
@@ -42,7 +47,6 @@ class TaskType(str, Enum):
             "T3": cls.CONCEPT_TEACHING,
             "T4": cls.MULTIMODAL,
             "T5": cls.FULL_SOLUTION,
-            "planned": cls.PLANNED_SOLUTION,
         }
         return mapping.get(label, cls.DEFAULT)
 
@@ -54,7 +58,6 @@ class TaskType(str, Enum):
             TaskType.CONCEPT_TEACHING: "概念讲解",
             TaskType.MULTIMODAL: "多模态适配",
             TaskType.FULL_SOLUTION: "完整解题",
-            TaskType.PLANNED_SOLUTION: "复杂规划",
         }
         return labels.get(self, "通用")
 
@@ -67,19 +70,18 @@ class TaskType(str, Enum):
             TaskType.CONCEPT_TEACHING: 500,
             TaskType.MULTIMODAL: 2000,
             TaskType.FULL_SOLUTION: 2000,
-            TaskType.PLANNED_SOLUTION: 4000,
         }
         return limits.get(self, 2000)
 
     @property
     def needs_tools(self) -> bool:
         """该任务类型是否需要注入工具描述。"""
-        return self in {TaskType.MULTIMODAL, TaskType.FULL_SOLUTION, TaskType.PLANNED_SOLUTION}
+        return self in {TaskType.MULTIMODAL, TaskType.FULL_SOLUTION}
 
     @property
     def needs_profile(self) -> bool:
         """该任务类型是否需要注入用户画像。"""
-        return self in {TaskType.CONCEPT_TEACHING, TaskType.FULL_SOLUTION, TaskType.PLANNED_SOLUTION}
+        return self in {TaskType.CONCEPT_TEACHING, TaskType.FULL_SOLUTION}
 
     @property
     def max_history_turns(self) -> int:
@@ -90,7 +92,6 @@ class TaskType(str, Enum):
             TaskType.CONCEPT_TEACHING: 2,
             TaskType.MULTIMODAL: 1,
             TaskType.FULL_SOLUTION: 5,
-            TaskType.PLANNED_SOLUTION: 10,
         }
         return values.get(self, 5)
 
@@ -154,13 +155,6 @@ TASK_PARAMS_MAP: Dict[TaskType, LLMParams] = {
         presence_penalty=0.0,
         frequency_penalty=0.0,
     ),
-    TaskType.PLANNED_SOLUTION: LLMParams(
-        temperature=0.1,
-        top_p=0.95,
-        max_tokens=12288,
-        presence_penalty=0.0,
-        frequency_penalty=0.0,
-    ),
     TaskType.DEFAULT: LLMParams(
         temperature=0.0,
         top_p=1.0,
@@ -169,24 +163,6 @@ TASK_PARAMS_MAP: Dict[TaskType, LLMParams] = {
         frequency_penalty=0.0,
     ),
 }
-
-
-# ── 复杂度评分 → max_tokens 自适应映射 ──
-
-COMPLEXITY_TOKEN_MAP: Dict[int, int] = {
-    1: 1024,     # 极简：1K tokens
-    2: 2048,     # 简单：2K tokens
-    3: 4096,     # 中等：4K tokens
-    4: 8192,     # 较难：8K tokens
-    5: 12288,    # 困难：12K tokens
-}
-
-
-def get_adaptive_max_tokens(complexity_score: int, task_type: TaskType) -> int:
-    """根据复杂度评分获取自适应的 max_tokens。"""
-    base = COMPLEXITY_TOKEN_MAP.get(complexity_score, 4096)
-    type_max = task_type.max_output_length * 2  # 汉字→token 约2倍
-    return max(base, type_max)
 
 
 # ── 任务分类器 ──
@@ -348,7 +324,7 @@ class DynamicLLMFactory:
     Example:
         factory = DynamicLLMFactory(
             api_key="sk-xxx",
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            base_url="https://api.deepseek.com/v1",
         )
 
         classifier = TaskClassifier()
@@ -361,14 +337,14 @@ class DynamicLLMFactory:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        model: str = "qwen-max",
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
         default_temperature: float = 0.0,
         streaming: bool = True,
     ):
         self._api_key = api_key
-        self._base_url = base_url
-        self._model = model
+        self._base_url = base_url or settings.LLM_API_BASE or DEFAULT_LLM_BASE_URL
+        self._model = model or settings.LLM_MODEL or DEFAULT_LLM_MODEL
         self._default_temperature = default_temperature
         self._streaming = streaming
 
@@ -376,8 +352,8 @@ class DynamicLLMFactory:
 
         self._base_config = {
             'api_key': api_key,
-            'base_url': base_url,
-            'model': model,
+            'base_url': self._base_url,
+            'model': self._model,
             'streaming': streaming,
         }
 
@@ -509,21 +485,22 @@ _factory_instance: Optional[DynamicLLMFactory] = None
 
 def init_dynamic_llm_factory(
     api_key: str,
-    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model: str = "qwen-max",
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
     streaming: bool = True,
 ) -> DynamicLLMFactory:
     """
     初始化全局DynamicLLMFactory单例。
 
-    应在应用启动时调用一次。
+    应在应用启动时调用一次。base_url / model 缺省时跟随 settings
+    （主文本模型默认 DeepSeek；识图仍走 vision_tool 的千问 VL）。
 
     Example:
         from prompts.dynamic_params import init_dynamic_llm_factory
 
         init_dynamic_llm_factory(
-            api_key=settings.DASHSCOPE_API_KEY,
-            base_url=settings.LLM_BASE_URL,
+            api_key=settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY,
+            base_url=settings.LLM_API_BASE,
         )
     """
     global _factory_instance

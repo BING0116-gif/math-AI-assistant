@@ -84,6 +84,8 @@ class LangChainReActStrategy(AgentStrategy):
         self._max_iterations = max_iterations
         self._timeout_seconds = timeout_seconds
         self._verbose = verbose
+        self._last_used_tools: set = set()  # 最近一次 stream 执行中使用的工具集
+        self._last_token_usage: Dict[str, int] = {}
 
         self._recorders: Dict[str, ThoughtRecordingCallbackHandler] = {}
 
@@ -144,10 +146,22 @@ class LangChainReActStrategy(AgentStrategy):
         session_id: str,
         context: Dict[str, Any],
     ) -> str:
+        start_time = time.time()
         chunks = []
         async for chunk in self.stream(user_input, session_id, context):
             chunks.append(chunk)
-        return "".join(chunks)
+        full_answer = "".join(chunks)
+
+        # [P0-01] 自动记忆提取与持久化
+        await self._auto_persist_memory(
+            context=context,
+            user_input=user_input,
+            full_answer=full_answer,
+            session_id=session_id,
+            execution_time=time.time() - start_time,
+        )
+
+        return full_answer
 
     async def stream(
         self,
@@ -174,18 +188,41 @@ class LangChainReActStrategy(AgentStrategy):
             f"[STREAM] 开始流式执行: session={session_id}, "
             f"input='{user_input[:50]}...', history_len={len(chat_history)}"
         )
+        self._last_used_tools = set()
+        self._last_token_usage = {}
 
         try:
             token_count = 0
             yield_count = 0
             _full_output = []  # 可观测性：累积完整输出用于日志
+            _used_tools = set()  # 追踪本次执行中使用的工具名称
+            _token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
             async for event in agent.astream_events(
                 {"messages": messages},
                 config={'callbacks': [recorder]},
                 version="v2",
             ):
-                if event.get("event") != "on_chat_model_stream":
+                event_name = event.get("event", "")
+
+                # 追踪工具调用（用于去重检测）
+                if event_name == "on_tool_start":
+                    tool_name = event.get("name", "")
+                    if tool_name:
+                        _used_tools.add(tool_name)
+                        logger.debug(f"[STREAM] 工具调用: {tool_name}")
+
+                # 只传播供应商/LangChain 已返回的 usage，不估算也不改变模型请求。
+                if event_name == "on_chat_model_end":
+                    output = event.get("data", {}).get("output")
+                    usage = getattr(output, "usage_metadata", None) or {}
+                    response_metadata = getattr(output, "response_metadata", None) or {}
+                    usage = usage or response_metadata.get("token_usage") or response_metadata.get("usage") or {}
+                    _token_usage["prompt_tokens"] += int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
+                    _token_usage["completion_tokens"] += int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
+                    _token_usage["total_tokens"] += int(usage.get("total_tokens", 0) or 0)
+
+                if event_name != "on_chat_model_stream":
                     continue
 
                 chunk = event.get("data", {}).get("chunk")
@@ -202,11 +239,17 @@ class LangChainReActStrategy(AgentStrategy):
                 logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
                 yield content
 
-            # 可观测性：记录LLM完整输出，便于对比工具返回原文
+            # 可观测性：记录LLM完整输出和工具使用情况
             _complete = "".join(_full_output)
             import hashlib as _hl
             _out_hash = _hl.md5(_complete.encode()).hexdigest()[:8]
             print(f"\n[OBSERVE] LLM完整输出 | hash={_out_hash} | 长度={len(_complete)}字符 | tokens={token_count}", flush=True)
+            print(f"[OBSERVE] 本次工具调用: {_used_tools or '(无)'}", flush=True)
+            # 暴露工具使用记录，供 agent.py 去重检测使用
+            self._last_used_tools = _used_tools
+            if not _token_usage["total_tokens"]:
+                _token_usage["total_tokens"] = _token_usage["prompt_tokens"] + _token_usage["completion_tokens"]
+            self._last_token_usage = _token_usage if _token_usage["total_tokens"] else {}
             # 检测是否包含RAG标记（说明LLM确实展示了推荐结果）
             _has_rag = "RAG推荐结果" in _complete or "来源:" in _complete
             print(f"[OBSERVE] RAG内容检测: {'检测到RAG题目展示' if _has_rag else '未检测到RAG内容 — 可能被LLM改写或忽略!'}", flush=True)
@@ -214,6 +257,15 @@ class LangChainReActStrategy(AgentStrategy):
             logger.info(
                 f"[STREAM] 流式执行完成: session={session_id}, "
                 f"tokens={token_count}, yields={yield_count}"
+            )
+
+            # [P0-01] 自动记忆提取与持久化（流式模式）
+            await self._auto_persist_memory(
+                context=context,
+                user_input=user_input,
+                full_answer=_complete,
+                session_id=session_id,
+                execution_time=0.0,  # 流式模式下不提供精确执行时间
             )
 
         except asyncio.TimeoutError:
@@ -242,6 +294,52 @@ class LangChainReActStrategy(AgentStrategy):
 
         return messages
 
+    # ── P0-01: 自动记忆提取与持久化 ──
+
+    async def _auto_persist_memory(
+        self,
+        context: Dict[str, Any],
+        user_input: str,
+        full_answer: str,
+        session_id: str,
+        execution_time: float,
+    ) -> None:
+        """自动提取并持久化学习记忆（失败不影响主流程）。"""
+        try:
+            from agent_core.memory_extractor import get_memory_extractor
+            from agent_core.memory_persistence import MemoryPersistenceFacade
+
+            # 获取思维链记录
+            recorder = self._get_recorder(session_id)
+            thoughts = []
+            if recorder._history:
+                last_process = recorder._history[-1]
+                thoughts = [s.to_dict() for s in last_process.steps]
+
+            extractor = get_memory_extractor()
+            event = await extractor.extract_from_agent_result(
+                user_id=context["user_id"],
+                user_input=user_input,
+                agent_result={
+                    "answer": full_answer,
+                    "thoughts": thoughts,
+                    "metadata": context.get("metadata", {}),
+                },
+                execution_time=execution_time,
+            )
+            if event:
+                facade = MemoryPersistenceFacade()
+                await facade.record_event(
+                    user_id=context["user_id"],
+                    event_data=event.to_dict(),
+                )
+                logger.info(
+                    f"学习记忆自动持久化: user={context.get('user_id')} "
+                    f"category={event.category}"
+                )
+        except Exception as e:
+            logger.error(f"自动持久化异常（已忽略）: {e}")
+
     def get_thought_recorder(self, session_id: str) -> ThoughtRecordingCallbackHandler:
         return self._get_recorder(session_id)
 
@@ -260,3 +358,9 @@ class LangChainReActStrategy(AgentStrategy):
     @property
     def thought_recorder(self) -> ThoughtRecordingCallbackHandler:
         return self._get_recorder("default")
+
+    def clear_user_data(self, user_id: str) -> None:
+        """Drop all per-session thought recorders owned by one user."""
+        prefix = f"{user_id}:"
+        for key in [key for key in self._recorders if key.startswith(prefix)]:
+            del self._recorders[key]

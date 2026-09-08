@@ -1,21 +1,49 @@
-version: '3.8'
-
 services:
   web:
     build: .
     ports:
       - "${PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/math_ai.db}
-      - ASYNC_DATABASE_URL=${ASYNC_DATABASE_URL:-sqlite+aiosqlite:///./data/math_ai.db}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DATABASE_URL=postgresql://${DB_USER:-mathai}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-math_ai}
+      - ASYNC_DATABASE_URL=postgresql+asyncpg://${DB_USER:-mathai}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-math_ai}
+      - REDIS_URL=redis://redis:6379/0
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - AI_ENABLED=${AI_ENABLED:-true}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_BASE=${LLM_API_BASE:-https://api.deepseek.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-v4-flash}
+      - LLM_MATH_MODEL=${LLM_MATH_MODEL:-deepseek-v4-flash}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      - DEEPSEEK_TIMEOUT_SECONDS=${DEEPSEEK_TIMEOUT_SECONDS:-60}
+      # 内容审核链路的 AI provider：mock / deepseek / qwen / auto。
+      # compose environment 是严格白名单，.env 的值不会自动进容器；
+      # 不显式透传 → 容器内为空 → 回退默认 "mock"，UI 顶部会显示「AI：mock」。
+      - CONTENT_AI_PROVIDER=${CONTENT_AI_PROVIDER:-mock}
       - DEBUG=${DEBUG:-false}
+      - APP_ENV=${APP_ENV:-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - JSON_LOGS=${JSON_LOGS:-true}
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
+      - METRICS_BEARER_TOKEN=${METRICS_BEARER_TOKEN:-}
+      # 开发/测试期临时旁路：允许 mock AI 生成的题正式发布（§18 硬性规则例外）
+      - ALLOW_MOCK_PUBLISH=${ALLOW_MOCK_PUBLISH:-false}
+      # JSON 配置；阈值待真实历史数据校准。空值使用 settings 默认。
+      - MASTERY_CONFIDENCE_CAP=${MASTERY_CONFIDENCE_CAP:-{"1":0.50,"2":0.80}}
+      - MASTERY_CONFIDENCE_LEVELS=${MASTERY_CONFIDENCE_LEVELS:-{"insufficient":[0,0],"low":[1,1],"medium":[2,2],"high":[3,null]}}
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - VECTOR_EMBEDDING_MODEL=${VECTOR_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      - VECTOR_SIZE=${VECTOR_SIZE:-512}
+      - QUESTION_QDRANT_COLLECTION=${QUESTION_QDRANT_COLLECTION:-math_questions_bge_zh_v1}
+      - MEMORY_QDRANT_COLLECTION=${MEMORY_QDRANT_COLLECTION:-user_memories_bge_zh_v1}
+      - HF_HOME=/app/runtime/model-cache
       - DB_USER=${DB_USER:-mathai}
-      - DB_PASSWORD=${DB_PASSWORD:-changeme}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - DB_NAME=${DB_NAME:-math_ai}
       - DB_HOST=${DB_HOST:-db}
       - DB_PORT=${DB_PORT:-5432}
@@ -24,15 +52,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     volumes:
       - ./app:/app/app
       - ./agent_core:/app/agent_core
       - ./tools:/app/tools
       - ./data_processing:/app/data_processing
       - ./frontend:/app/frontend
-      - ./static:/app/static
       - ./data:/app/data
-      - ./logs:/app/logs
+      - embedding_cache:/app/runtime/model-cache
     restart: unless-stopped
     deploy:
       resources:
@@ -45,11 +74,23 @@ services:
     networks:
       - mathai-network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - mathai-network
+
   db:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: ${DB_USER:-mathai}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_DB: ${DB_NAME:-math_ai}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -75,8 +116,8 @@ services:
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # 不发布宿主端口：web 通过 compose 内网 redis:6379 访问；
+    # 且 6379 落在 Windows WinNAT 排除段 6330-6429 内，宿主绑定必被拒。
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -91,9 +132,52 @@ services:
     networks:
       - mathai-network
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    # 宿主端口用 16333/16334 而非 6333/6334：
+    #   Windows NAT（WinNAT）为容器端口转发预留了 6330-6929 端口段，
+    #   直接绑 6333 会被 Windows 拒绝（"access forbidden"）。
+    #   容器内端口仍是 6333/6334，web 容器通过 docker 网络 hostname `qdrant` 访问 6333，不受影响。
+    #   宿主机上要直连调试时使用 localhost:16333。
+    ports:
+      - "16333:6333"
+      - "16334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      # Official Qdrant images do not ship curl. Use bash's built-in TCP
+      # support and verify an actual HTTP 200 response without adding tools.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q '200 OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    networks:
+      - mathai-network
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - web
+    restart: unless-stopped
+    networks:
+      - mathai-network
+
 volumes:
   postgres_data:
   redis_data:
+  qdrant_data:
+  embedding_cache:
+  prometheus_data:
 
 networks:
   mathai-network:

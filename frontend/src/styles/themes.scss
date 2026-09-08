@@ -1,79 +1,104 @@
-// ========================================
-// 数学AI助手 - 主题 CSS 自定义属性定义
-// 亮色/暗色双主题完整令牌
-// ========================================
+/* ============================================================
+   知微 Math AI — Legacy Theme Aliases (V3.0)
+   本文件为旧组件提供向后兼容的 --color-* 和 legacy alias 变量。
+   新组件应直接使用 tokens.css 中的 --canvas, --accent 等 V3 token。
+   ============================================================ */
 
-// 亮色主题（默认）
 :root,
 [data-theme='light'] {
-  --primary: #FF6B6B;
-  --primary-hover: #F87171;
-  --primary-active: #DC2626;
-  --primary-ghost: rgba(245, 158, 11, 0.08);
+  color-scheme: light;
 
-  --accent: #4F46E5;
-  --accent-ghost: rgba(79, 70, 229, 0.10);
+  /* 背景层级（legacy --color-* 命名） */
+  --color-canvas: #F7F6F1;
+  --color-surface: #FCFBF8;
+  --color-surface-raised: #FFFFFF;
+  --color-surface-muted: #F1F2EC;
+  --color-text: #20231F;
+  --color-text-muted: #72766F;
+  --color-text-subtle: #9A9D96;
+  --color-text-inverse: #FCFBF8;
+  --color-border: #E6E3DA;
+  --color-border-subtle: #E6E3DA;
+  --color-focus: #416B56;
 
-  --success: #10B981;
-  --warning: #F59E0B;
-  --danger: #EF4444;
-  --info: #3B82F6;
+  /* 语义色（legacy --color-* 命名） */
+  --color-action: #20231F;
+  --color-action-hover: #3A3D38;
+  --color-action-soft: #E8EFE9;
+  --color-agent: #416B56;
+  --color-agent-soft: #E8EFE9;
+  --color-knowledge: #417E7A;
+  --color-knowledge-soft: #E3EEE9;
+  --color-review: #C8913D;
+  --color-review-soft: #F3EADB;
+  --color-success: #5F947C;
+  --color-success-soft: #E3EFE6;
+  --color-warning: #C8913D;
+  --color-warning-soft: #F3EADB;
+  --color-danger: #C9674C;
+  --color-danger-soft: #F5E5DF;
+  --color-info: #417E7A;
+  --color-info-soft: #E3EEE9;
+  --color-graph: #14171A;
+  --color-graph-surface: #1C2024;
 
-  --bg-main: #F3F6FA;
-  --bg-card: #FFFFFF;
-  --bg-sidebar: #F8FAFC;
-  --bg-topbar: #FFFFFF;
-  --bg-overlay: rgba(15, 23, 42, 0.3);
-
-  --text-primary: #1E293B;
-  --text-secondary: #64748B;
-  --text-tertiary: #94A3B8;
-
-  --border-default: #CBD5E1;
-  --border-light: #E2E8F0;
-  --border-subtle: #F1F5F9;
-
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
-  --shadow-glow: 0 0 20px rgba(245, 158, 11, 0.15);
-
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 20px;
-
-  --transition-theme: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Legacy aliases — 仅定义 tokens.css 中不存在的旧变量名。
+     所有与 tokens.css 同名的变量（--accent, --radius-*, --shadow-*,
+     --text-*, --border-* 等）已由 tokens.css 统一管理，此处不再重复定义，
+     避免因加载顺序后置而覆盖 tokens.css 的值。 */
+  --primary: var(--color-agent);
+  --primary-hover: #355B49;
+  --primary-active: #2A4A3C;
+  --primary-ghost: var(--color-agent-soft);
+  --accent-ghost: var(--color-knowledge-soft);
+  --bg-card: var(--color-surface-raised);
+  --bg-sidebar: var(--color-surface);
+  --bg-topbar: rgba(252, 251, 248, 0.94);
+  --bg-overlay: rgba(20, 23, 26, 0.44);
 }
 
-// 暗色主题
 [data-theme='dark'] {
-  --primary: #F59E0B;
-  --primary-hover: #D97706;
-  --primary-active: #B45309;
-  --primary-ghost: rgba(245, 158, 11, 0.15);
+  color-scheme: dark;
 
-  --accent: #F59E0B;
-  --accent-ghost: rgba(245, 158, 11, 0.20);
+  --color-canvas: #14171A;
+  --color-surface: #1C2024;
+  --color-surface-raised: #24282D;
+  --color-surface-muted: #24282D;
+  --color-text: #EDEBE4;
+  --color-text-muted: #A8ABA3;
+  --color-text-subtle: #787C75;
+  --color-text-inverse: #14171A;
+  --color-border: #33383E;
+  --color-border-subtle: #33383E;
+  --color-focus: #7DA58E;
 
-  --bg-main: #0f172a;
-  --bg-card: rgba(30, 41, 59, 0.95);
-  --bg-sidebar: rgba(30, 41, 59, 0.95);
-  --bg-topbar: rgba(51, 65, 85, 0.9);
-  --bg-overlay: rgba(15, 23, 42, 0.7);
+  --color-action: #EDEBE4;
+  --color-action-hover: #FFFFFF;
+  --color-action-soft: #2C3137;
+  --color-agent: #7DA58E;
+  --color-agent-soft: #263830;
+  --color-knowledge: #7DA59E;
+  --color-knowledge-soft: #233331;
+  --color-review: #C9A86A;
+  --color-review-soft: #3A2F20;
+  --color-success: #7DB89C;
+  --color-success-soft: #26382E;
+  --color-warning: #C9A86A;
+  --color-warning-soft: #3A2F20;
+  --color-danger: #D48A78;
+  --color-danger-soft: #3A2622;
+  --color-info: #7DA59E;
+  --color-info-soft: #233331;
+  --color-graph: #0F1214;
+  --color-graph-surface: #1A1E21;
 
-  --text-primary: #FFFFFF;
-  --text-secondary: rgba(255, 255, 255, 0.70);
-  --text-tertiary: rgba(255, 255, 255, 0.45);
-
-  --border-default: rgba(255, 255, 255, 0.25);
-  --border-light: rgba(255, 255, 255, 0.15);
-  --border-subtle: rgba(255, 255, 255, 0.10);
-
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
-  --shadow-glow: 0 0 30px rgba(245, 158, 11, 0.25);
+  --primary: var(--color-agent);
+  --primary-hover: #92B8A2;
+  --primary-active: #6C947A;
+  --primary-ghost: var(--color-agent-soft);
+  --accent-ghost: var(--color-knowledge-soft);
+  --bg-card: var(--color-surface-raised);
+  --bg-sidebar: var(--color-surface);
+  --bg-topbar: rgba(28, 32, 36, 0.94);
+  --bg-overlay: rgba(0, 0, 0, 0.60);
 }

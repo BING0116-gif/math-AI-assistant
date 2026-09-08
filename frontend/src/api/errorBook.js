@@ -15,3 +15,11 @@ export function updateErrorBook(id, data) {
 export function deleteErrorBook(id) {
   return api.delete(`/error-book/${id}`)
 }
+
+export function recordErrorReview(id, data) {
+  return api.post(`/error-book/${id}/review`, data)
+}
+
+export function createVariantSession(id, data) {
+  return api.post(`/error-book/${id}/variant-sessions`, data)
+}

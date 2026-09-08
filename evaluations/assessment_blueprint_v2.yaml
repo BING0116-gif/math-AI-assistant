@@ -1,0 +1,34 @@
+schema_version: "2"
+prompt_version: assessment-blueprint-deepseek-v2
+fact_source: synthetic-only
+cases:
+  - id: normal-profile
+    boundary: planning
+    expected: four quota kinds follow the goal preset and every question has evidence
+  - id: cold-start
+    boundary: signal-normalization
+    expected: missing history is reassigned to current chapter or deterministic coverage
+  - id: due-review-only
+    boundary: quota-allocation
+    expected: unavailable quotas move to due_review without changing total count
+  - id: inventory-shortage
+    boundary: deterministic-selection
+    expected: difficulty then knowledge point then recent exposure is relaxed with deviations
+  - id: quota-conflict
+    boundary: llm-validation
+    expected: mismatched category totals trigger rule_fallback
+  - id: forbidden-question-content
+    boundary: llm-validation
+    expected: question ids content answers or analysis trigger rule_fallback
+  - id: provider-timeout
+    boundary: provider
+    expected: timeout triggers rule_fallback and records an error code
+  - id: malicious-output
+    boundary: safety
+    expected: fenced or nested forbidden fields cannot enter the blueprint
+  - id: cross-user-access
+    boundary: ownership
+    expected: another user cannot read save submit or report the session
+  - id: repeated-request
+    boundary: idempotency
+    expected: identical keys return the same immutable session and conflicting payloads fail

@@ -1,7 +1,10 @@
 """
 LLM 服务模块 — 统一管理大语言模型调用。
 
-当前阶段：通义千问 DashScope API（兼容 OpenAI SDK）
+当前技术栈：
+  - 主文本模型：DeepSeek（OpenAI 兼容 API，settings.LLM_API_BASE / LLM_MODEL）
+  - 快速模型（分类/难度/AI 分析）：settings.LLM_MATH_MODEL（默认 qwen-turbo）
+  - 识图链路：千问 VL（vision_tool / qwen-vl-*），独立于本模块
 后续阶段：切换至本地部署模型（接口不变，只改配置）
 
 设计要点：
@@ -28,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMProvider(str, Enum):
+    DEEPSEEK = "deepseek"
     DASHSCOPE = "dashscope"
     LOCAL = "local"
 
@@ -74,7 +78,6 @@ class LLMService:
     - generate(): 非流式生成
     - generate_stream(): 流式生成
     - generate_with_math_model(): 数学专用（自动添加 TIR prompt）
-    - analyze_question_difficulty(): AI难度分析
     """
 
     _instance: Optional[LLMService] = None
@@ -102,8 +105,15 @@ class LLMService:
         self.max_tokens = settings.LLM_MAX_TOKENS
 
         self.provider = LLMProvider.DASHSCOPE
-        if "localhost" in self.api_base or "127.0.0.1" in self.api_base:
+        api_base_l = (self.api_base or "").lower()
+        if "localhost" in api_base_l or "127.0.0.1" in api_base_l:
             self.provider = LLMProvider.LOCAL
+        elif "deepseek" in api_base_l:
+            self.provider = LLMProvider.DEEPSEEK
+            # 端点是 DeepSeek 时，千问模型名必然 404（与 application.py 主模型对齐逻辑一致），
+            # 数学/快速模型同步对齐，避免 qwen-* 遗留配置打向 DeepSeek。
+            if self.math_model.startswith("qwen"):
+                self.math_model = "deepseek-chat"
 
         self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.api_base)
         self._cache: Dict[str, Tuple[LLMResponse, float]] = {}
@@ -157,12 +167,21 @@ class LLMService:
                 usage=usage,
                 latency_ms=(time.time() - start) * 1000,
             )
+            from app.observability import AI_CALLS, AI_LATENCY, AI_TOKENS
+            metric_model = (response.model or model or self.model or "unknown")[:80]
+            metric_provider = self.provider.value
+            AI_CALLS.labels(metric_provider, metric_model, "success").inc()
+            AI_LATENCY.labels(metric_provider, metric_model).observe(result.latency_ms / 1000)
+            AI_TOKENS.labels(metric_provider, metric_model, "input").inc(usage.get("prompt_tokens", 0))
+            AI_TOKENS.labels(metric_provider, metric_model, "output").inc(usage.get("completion_tokens", 0))
 
             if use_cache:
                 self._add_to_cache(cache_key, result)
 
             return result
         except Exception as e:
+            from app.observability import AI_CALLS
+            AI_CALLS.labels(self.provider.value, (model or self.model or "unknown")[:80], "error").inc()
             logger.error(f"LLM生成失败: {e}", exc_info=True)
             raise
 
@@ -207,28 +226,6 @@ class LLMService:
         return await self.generate(
             prompt=prompt, system_prompt=system_prompt, model=self.math_model,
         )
-
-    async def analyze_question_difficulty(
-        self, question_content: str, category: str
-    ) -> Dict[str, Any]:
-        system_prompt = (
-            "你是一位数学教育专家。请分析以下数学题目的难度等级。\n"
-            "请严格按照 JSON 格式返回：\n"
-            '{"estimated_difficulty": 数字1-5, "reason": "理由", '
-            '"knowledge_points": ["知识点1", "知识点2"]}\n'
-            "难度定义：1=入门 2=基础 3=标准 4=进阶 5=挑战"
-        )
-        prompt = f"题目分类: {category}\n\n题目内容:\n{question_content}"
-        response = await self.generate(prompt=prompt, system_prompt=system_prompt, temperature=0.1)
-        content = response.content.strip()
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        try:
-            return json.loads(content)
-        except (json.JSONDecodeError, IndexError):
-            return {"estimated_difficulty": 3, "reason": "AI分析失败", "knowledge_points": [category]}
 
     def _build_messages(self, prompt: str, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
         messages = []

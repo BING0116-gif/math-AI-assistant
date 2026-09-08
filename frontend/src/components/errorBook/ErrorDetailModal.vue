@@ -2,7 +2,7 @@
   <div class="detail-overlay" @click.self="$emit('close')">
     <div class="detail-container">
       <div class="detail-header">
-        <h2>📋 错题详情</h2>
+        <h2>错题详情</h2>
         <button class="close-btn" @click="$emit('close')">✕</button>
       </div>
 
@@ -14,7 +14,7 @@
 
       <div class="detail-body">
         <section class="d-section">
-          <h3>📝 题目</h3>
+          <h3>题目</h3>
           <div class="d-content">
             <template v-if="isImage">
               <img :src="error.question" class="d-image" @click="viewerOpen = true" />
@@ -25,31 +25,31 @@
         </section>
 
         <section v-if="error.error_reason" class="d-section">
-          <h3>❌ 错误原因</h3>
+          <h3>错误原因</h3>
           <div class="d-content reason-box">
             <p>{{ error.error_reason }}</p>
           </div>
         </section>
 
         <section class="d-section">
-          <h3>✅ 正确解答</h3>
+          <h3>正确解答</h3>
           <div class="d-content answer-box math-area" ref="answerBox" v-html="answerHtml"></div>
         </section>
 
         <section v-if="error.notes" class="d-section">
-          <h3>📝 学习笔记</h3>
+          <h3>学习笔记</h3>
           <div class="d-content notes-box"><p>{{ error.notes }}</p></div>
         </section>
 
         <section v-if="error.categories?.length" class="d-section">
-          <h3>🏷️ 分类标签</h3>
+          <h3>分类标签</h3>
           <div class="tag-row">
             <span v-for="cat in error.categories" :key="cat" class="tag">{{ cat }}</span>
           </div>
         </section>
 
         <section class="d-section">
-          <h3>📊 元信息</h3>
+          <h3>元信息</h3>
           <div class="meta-grid">
             <div class="meta-cell"><strong>添加时间：</strong>{{ error.added_at || '-' }}</div>
             <div class="meta-cell">
@@ -58,7 +58,7 @@
               ({{ error.mastery_level || 3 }}/5)
             </div>
             <div class="meta-cell" :class="{ mastered: error.is_mastered }">
-              <strong>状态：</strong>{{ error.is_mastered ? '✅ 已掌握' : '⏳ 待复习' }}
+              <strong>状态：</strong>{{ error.is_mastered ? '已掌握' : '待复习' }}
             </div>
           </div>
         </section>
@@ -66,9 +66,35 @@
 
       <div class="detail-footer">
         <button class="ft-btn primary" @click="$emit('toggleMastery')">✓ {{ error.is_mastered ? '取消掌握' : '标记为已掌握' }}</button>
-        <button class="ft-btn danger" @click="$emit('delete')">🗑️ 删除此错题</button>
+        <button class="ft-btn danger" @click="$emit('delete')">删除此错题</button>
       </div>
     </div>
+
+    <!-- ═══ AI 错题笔记（折叠区）═══ -->
+    <section class="d-section">
+      <div class="notes-toggle" @click="notesOpen = !notesOpen">
+        <h3>AI 错题笔记</h3>
+        <span class="toggle-icon">{{ notesOpen ? '▾' : '▸' }}</span>
+      </div>
+      <div v-if="notesOpen" class="d-content notes-box">
+        <div class="note-item">
+          <span class="note-label">知识点：</span>
+          <span class="note-value">{{ notesData.knowledgePoints }}</span>
+        </div>
+        <div class="note-item">
+          <span class="note-label">你的错误：</span>
+          <span class="note-value">{{ notesData.myError }}</span>
+        </div>
+        <div class="note-item">
+          <span class="note-label">正确思路：</span>
+          <span class="note-value">{{ notesData.correctApproach }}</span>
+        </div>
+        <div class="note-item">
+          <span class="note-label">以后注意：</span>
+          <span class="note-value">{{ notesData.futureTip }}</span>
+        </div>
+      </div>
+    </section>
 
     <Teleport to="body">
       <div v-if="viewerOpen" class="img-viewer" @click="viewerOpen = false">
@@ -93,6 +119,7 @@ defineEmits(['close', 'prev', 'next', 'toggleMastery', 'delete'])
 
 const viewerOpen = ref(false)
 const answerBox = ref(null)
+const notesOpen = ref(false)
 
 const isImage = computed(() =>
   props.error?.question_type === 'image' ||
@@ -106,6 +133,51 @@ const displayQuestion = computed(() =>
 const answerHtml = computed(() =>
   renderMarkdown(props.error?.correct_answer || '')
 )
+
+/**
+ * AI 错题笔记数据
+ *
+ * 当前使用已有的 error_reason、categories、correct_answer 字段生成笔记。
+ * 未来接入 AI 接口后，可以返回更精准的 structured 错题分析笔记。
+ */
+const notesData = computed(() => {
+  const e = props.error
+  const cats = (e.categories || []).join('、') || '待分析'
+  const errorReason = e.error_reason || '暂无分析'
+  const answer = e.correct_answer || ''
+
+  // 从 correct_answer 中提取简短思路摘要
+  const approach = answer.length > 80
+    ? answer.substring(0, 80) + '…'
+    : answer || '查看正确解答了解详细思路'
+
+  // 以后注意的提示——基于错误类型生成
+  const futureTip = computeFutureTip(e.error_reason || '', cats)
+
+  return {
+    knowledgePoints: cats,
+    myError: errorReason,
+    correctApproach: approach,
+    futureTip
+  }
+})
+
+function computeFutureTip(errorReason, categories) {
+  if (!errorReason) return '建议在 AI 对话中向系统询问针对本知识点的学习建议'
+  if (errorReason.includes('定义域') || errorReason.includes('定义')) {
+    return '看到根式、对数、分式、反三角函数时，优先检查定义域是否满足条件'
+  }
+  if (errorReason.includes('概念') || errorReason.includes('混淆')) {
+    return `重新梳理「${categories}」相关概念的定义和适用条件，做题时先确认题目考察的知识点`
+  }
+  if (errorReason.includes('计算') || errorReason.includes('公式')) {
+    return '计算时要逐步推导，避免跳步。关键公式建议先默写再代入'
+  }
+  if (errorReason.includes('条件') || errorReason.includes('遗漏')) {
+    return '做题前先标出题目中的已知条件和隐含条件，再选择解题方法'
+  }
+  return '建议针对本知识点多做同类练习，巩固解题思路'
+}
 
 onMounted(() => {
   // 公式已由 markdown.js 中的 @mdit/plugin-katex 在渲染阶段完成
@@ -195,6 +267,26 @@ onMounted(() => {
 
 .math-area :deep(.katex) { font-size: 1.05em !important; }
 .math-area :deep(.katex-display) { margin: 12px 0 !important; }
+
+.notes-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; padding: 4px 0; user-select: none;
+  h3 { margin: 0; }
+  &:hover { opacity: 0.8; }
+}
+.toggle-icon { font-size: 14px; color: var(--text-tertiary); }
+
+.note-item {
+  display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
+  &:last-child { margin-bottom: 0; }
+}
+.note-label {
+  font-size: 12px; font-weight: 700; color: var(--text-secondary);
+  flex-shrink: 0; min-width: 72px;
+}
+.note-value {
+  font-size: 13px; color: var(--text-primary); line-height: 1.5;
+}
 
 .tag-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .tag {

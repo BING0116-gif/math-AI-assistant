@@ -15,7 +15,7 @@ class ErrorBookSkillSyncService:
 
     功能:
     1. 错题本新增/更新时 → 写入 learning_records + 触发 SkillAggregator 重算
-    2. 错题本"标记已掌握"时 → 更新对应 user_skills.status
+    2. 错题本状态变化时 → 更新学习事实并重算 UserKnowledgeState
     3. 批量同步：将历史错题本数据一次性导入 skill 系统
     """
 
@@ -65,31 +65,23 @@ class ErrorBookSkillSyncService:
         self, user_id: str, error_id: str, is_mastered: bool
     ) -> Dict[str, Any]:
         async with get_db_session() as db:
-            from sqlalchemy import text
+            from sqlalchemy import select
+            from app.data.models import LearningRecord
 
-            await db.execute(
-                text("""
-                    UPDATE learning_records
-                    SET metadata_ = json_set(
-                        COALESCE(metadata_, '{}'),
-                        '$.error_book_mastery', :mastery
-                    )
-                    WHERE user_id = :uid
-                      AND json_extract(metadata_, '$.error_book_id') = :eid
-                """),
-                {"uid": user_id, "eid": error_id, "mastery": str(is_mastered)},
-            )
-
-            if is_mastered:
-                await db.execute(
-                    text("""
-                        UPDATE learning_records
-                        SET is_correct = 1, event_type = 'review_mastered'
-                        WHERE user_id = :uid
-                          AND json_extract(metadata_, '$.error_book_id') = :eid
-                    """),
-                    {"uid": user_id, "eid": error_id},
+            result = await db.execute(
+                select(LearningRecord).where(
+                    LearningRecord.user_id == user_id,
+                    LearningRecord.metadata_["error_book_id"].as_string() == error_id,
                 )
+            )
+            records = result.scalars().all()
+
+            for record in records:
+                metadata = dict(record.metadata_ or {})
+                metadata["error_book_mastery"] = str(is_mastered)
+                record.metadata_ = metadata
+
+                # 手动自评只更新元数据，不改写历史答题结果或事件类型。
 
             await db.commit()
 

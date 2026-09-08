@@ -1,0 +1,110 @@
+[
+  {
+    "external_id": "demo_001",
+    "subject": "数学",
+    "grade": "高中",
+    "chapter": "函数",
+    "difficulty": "简单",
+    "question_type": "选择题",
+    "stem_markdown": "已知函数 $f(x)=\\frac{x^2-1}{x-1}$（$x\\ne1$），则 $f(2)$ 的值为（ ）。",
+    "answer_markdown": "A",
+    "solution_markdown": "因为 $x^2-1=(x-1)(x+1)$，所以 $f(x)=x+1$。因此 $f(2)=3$。",
+    "formulas": [
+      "f(x)=\\frac{x^2-1}{x-1}",
+      "x^2-1=(x-1)(x+1)",
+      "f(2)=3"
+    ],
+    "options": [
+      "A. 3",
+      "B. 2",
+      "C. 1",
+      "D. 4"
+    ],
+    "source_document": "demo.pdf",
+    "source_page": 1,
+    "review_status": "已审核"
+  },
+  {
+    "external_id": "demo_002",
+    "subject": "数学",
+    "grade": "高中",
+    "chapter": "二次函数",
+    "difficulty": "中等",
+    "question_type": "解答题",
+    "stem_markdown": "已知二次函数 $y=x^2-4x+3$，求其顶点坐标以及最小值。",
+    "answer_markdown": "顶点为 $(2,-1)$，最小值为 $-1$。",
+    "solution_markdown": "配方得 $y=(x-2)^2-1$，所以当 $x=2$ 时函数取得最小值 $-1$。",
+    "formulas": [
+      "y=x^2-4x+3",
+      "y=(x-2)^2-1"
+    ],
+    "options": [],
+    "source_document": "demo.pdf",
+    "source_page": 1,
+    "review_status": "已审核"
+  },
+  {
+    "external_id": "demo_003",
+    "subject": "数学",
+    "grade": "高中",
+    "chapter": "三角函数",
+    "difficulty": "中等",
+    "question_type": "填空题",
+    "stem_markdown": "若 $\\sin\\theta=\\frac{3}{5}$，且 $\\theta$ 为第一象限角，则 $\\cos\\theta=$ ______。",
+    "answer_markdown": "$\\frac{4}{5}$",
+    "solution_markdown": "由 $\\sin^2\\theta+\\cos^2\\theta=1$，且第一象限余弦为正，得 $\\cos\\theta=\\frac{4}{5}$。",
+    "formulas": [
+      "\\sin\\theta=\\frac{3}{5}",
+      "\\sin^2\\theta+\\cos^2\\theta=1",
+      "\\cos\\theta=\\frac{4}{5}"
+    ],
+    "options": [],
+    "source_document": "demo_word.docx",
+    "source_page": 2,
+    "review_status": "待复核"
+  },
+  {
+    "external_id": "demo_004",
+    "subject": "数学",
+    "grade": "高中",
+    "chapter": "数列",
+    "difficulty": "困难",
+    "question_type": "解答题",
+    "stem_markdown": "等差数列 $\\{a_n\\}$ 中，$a_1=2$，$a_5=14$。求通项公式 $a_n$ 与前 $n$ 项和 $S_n$。",
+    "answer_markdown": "$a_n=3n-1$，$S_n=\\frac{n(3n+1)}{2}$。",
+    "solution_markdown": "由 $a_5=a_1+4d$ 得 $14=2+4d$，所以 $d=3$。于是 $a_n=2+3(n-1)=3n-1$；再由等差数列求和公式得到 $S_n=\\frac{n(a_1+a_n)}{2}=\\frac{n(3n+1)}{2}$。",
+    "formulas": [
+      "a_5=a_1+4d",
+      "a_n=3n-1",
+      "S_n=\\frac{n(3n+1)}{2}"
+    ],
+    "options": [],
+    "source_document": "demo.pdf",
+    "source_page": 3,
+    "review_status": "待复核"
+  },
+  {
+    "external_id": "demo_005",
+    "subject": "数学",
+    "grade": "初中",
+    "chapter": "一元二次方程",
+    "difficulty": "简单",
+    "question_type": "选择题",
+    "stem_markdown": "方程 $x^2-5x+6=0$ 的两个根是（ ）。",
+    "answer_markdown": "B",
+    "solution_markdown": "因式分解：$x^2-5x+6=(x-2)(x-3)$，所以两根为 $2,3$。",
+    "formulas": [
+      "x^2-5x+6=0",
+      "x^2-5x+6=(x-2)(x-3)"
+    ],
+    "options": [
+      "A. 1, 6",
+      "B. 2, 3",
+      "C. -2, -3",
+      "D. 0, 5"
+    ],
+    "source_document": "demo_word.docx",
+    "source_page": 4,
+    "review_status": "已审核"
+  }
+]

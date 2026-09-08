@@ -6,9 +6,7 @@ from main import app
 
 def test_csp_header_in_debug_mode():
     """验证DEBUG模式下CSP头始终存在"""
-    with patch('main.settings') as mock_settings:
-        mock_settings.DEBUG = True
-        
+    with patch('app.middleware.security_headers.settings.DEBUG', True):
         client = TestClient(app)
         response = client.get("/")
         
@@ -26,9 +24,7 @@ def test_csp_header_in_debug_mode():
 
 def test_csp_header_in_production_mode():
     """验证生产模式下CSP头更严格"""
-    with patch('main.settings') as mock_settings:
-        mock_settings.DEBUG = False
-        
+    with patch('app.middleware.security_headers.settings.DEBUG', False):
         client = TestClient(app)
         response = client.get("/")
         
@@ -45,9 +41,7 @@ def test_csp_header_in_production_mode():
 def test_permissions_policy_always_set():
     """验证Permissions-Policy始终设置"""
     for debug_mode in [True, False]:
-        with patch('main.settings') as mock_settings:
-            mock_settings.DEBUG = debug_mode
-            
+        with patch('app.middleware.security_headers.settings.DEBUG', debug_mode):
             client = TestClient(app)
             response = client.get("/")
             
@@ -65,9 +59,7 @@ def test_permissions_policy_always_set():
 
 def test_other_security_headers_always_present():
     """验证其他安全头始终存在"""
-    with patch('main.settings') as mock_settings:
-        mock_settings.DEBUG = True
-        
+    with patch('app.middleware.security_headers.settings.DEBUG', True):
         client = TestClient(app)
         response = client.get("/")
         
@@ -87,8 +79,7 @@ def test_other_security_headers_always_present():
 
 def test_csp_connect_src_debug_vs_production():
     """验证DEBUG和生产模式的connect-src差异"""
-    with patch('main.settings') as mock_settings:
-        mock_settings.DEBUG = True
+    with patch('app.middleware.security_headers.settings.DEBUG', True):
         client = TestClient(app)
         response = client.get("/")
         debug_csp = response.headers["Content-Security-Policy"]
@@ -96,8 +87,7 @@ def test_csp_connect_src_debug_vs_production():
         assert "http://localhost:" in debug_csp or "https://localhost:" in debug_csp, \
             "✅ 通过: DEBUG模式允许localhost HTTP连接（便于开发调试）"
     
-    with patch('main.settings') as mock_settings:
-        mock_settings.DEBUG = False
+    with patch('app.middleware.security_headers.settings.DEBUG', False):
         client = TestClient(app)
         response = client.get("/")
         prod_csp = response.headers["Content-Security-Policy"]

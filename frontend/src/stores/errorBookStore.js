@@ -9,6 +9,7 @@ const STORAGE_KEY = 'math_ai_error_book'
 export const useErrorBookStore = defineStore('errorBook', () => {
   const errors = ref(loadFromStorage(STORAGE_KEY, []))
   const loading = ref(false)
+  const lastError = ref('')
   const currentDetailId = ref(null)
 
   const filter = reactive({
@@ -70,6 +71,7 @@ export const useErrorBookStore = defineStore('errorBook', () => {
 
   async function loadErrors() {
     loading.value = true
+    lastError.value = ''
     try {
       const response = await errorBookApi.getErrorBook()
       const data = Array.isArray(response.data) ? response.data : (response.data.data || [])
@@ -77,69 +79,59 @@ export const useErrorBookStore = defineStore('errorBook', () => {
       persist()
     } catch (err) {
       console.error('加载错题本失败:', err)
-      errors.value = loadFromStorage(STORAGE_KEY, [])
+      lastError.value = err?.response?.data?.detail || err?.message || '加载错题本失败'
+      throw err
     } finally {
       loading.value = false
     }
   }
 
   async function addError(errorData) {
-    try {
-      const response = await errorBookApi.addErrorBook(errorData)
-      const data = response.data
-      const newError = {
-        id: data.id || data.data?.id || generateUUID(),
-        ...errorData,
-        ...(data.data || {}),
-        added_at: data.data?.added_at || new Date().toLocaleString()
-      }
-      errors.value.unshift(newError)
-      persist()
-      return newError
-    } catch (err) {
-      console.error('添加错题失败:', err)
-      const fallback = {
-        id: generateUUID(),
-        ...errorData,
-        added_at: new Date().toLocaleString()
-      }
-      errors.value.unshift(fallback)
-      persist()
-      return fallback
+    lastError.value = ''
+    const response = await errorBookApi.addErrorBook(errorData)
+    const data = response.data
+    const newError = {
+      id: data.id || data.data?.id,
+      ...errorData, ...(data.data || {}),
+      added_at: data.data?.added_at || new Date().toISOString()
     }
+    if (!newError.id) throw new Error('服务端未返回错题标识')
+    errors.value.unshift(newError)
+    persist()
+    return newError
   }
 
   async function updateError(errorId, updates) {
     const idx = errors.value.findIndex(e => e.id === errorId)
     if (idx === -1) return
 
+    await errorBookApi.updateErrorBook(errorId, updates)
     Object.assign(errors.value[idx], updates)
     persist()
-
-    try {
-      await errorBookApi.updateErrorBook(errorId, updates)
-    } catch (err) {
-      console.error('更新错题失败:', err)
-    }
   }
 
   async function deleteError(errorId) {
+    await errorBookApi.deleteErrorBook(errorId)
     errors.value = errors.value.filter(e => e.id !== errorId)
     persist()
-
-    try {
-      await errorBookApi.deleteErrorBook(errorId)
-    } catch (err) {
-      console.error('删除错题失败:', err)
-    }
   }
 
-  function toggleMastery(errorId) {
+  async function toggleMastery(errorId) {
     const error = errors.value.find(e => e.id === errorId)
-    if (error) {
-      error.is_mastered = !error.is_mastered
-      persist()
+    if (!error) return
+    // Automatic attempt-backed items can only graduate from server-verified
+    // original, variant and spaced-review evidence.
+    if (error.source === 'attempt') return error
+    error.is_mastered = !error.is_mastered
+    error.review_state = error.is_mastered ? 'mastered' : 'new'
+    persist()
+    try {
+      await errorBookApi.updateErrorBook(errorId, { is_mastered: error.is_mastered })
+    } catch (err) {
+      console.error('更新错题状态失败:', err)
+      await loadErrors()
     }
+    return error
   }
 
   function setFilter(newFilter) {
@@ -245,6 +237,7 @@ export const useErrorBookStore = defineStore('errorBook', () => {
   return {
     errors,
     loading,
+    lastError,
     filter,
     currentDetailId,
     totalErrors,

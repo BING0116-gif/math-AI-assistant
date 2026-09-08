@@ -82,7 +82,6 @@ class TestTaskType:
         assert TaskType.CONCEPT_TEACHING.value == "concept"
         assert TaskType.MULTIMODAL.value == "multimodal"
         assert TaskType.FULL_SOLUTION.value == "solution"
-        assert TaskType.PLANNED_SOLUTION.value == "planned"
         assert TaskType.DEFAULT.value == "solution"
 
     def test_from_chinese_label(self):
@@ -114,7 +113,6 @@ class TestTaskType:
         assert TaskType.KNOWLEDGE_QUERY.max_output_length == 200
         assert TaskType.CONCEPT_TEACHING.max_output_length == 500
         assert TaskType.FULL_SOLUTION.max_output_length == 2000
-        assert TaskType.PLANNED_SOLUTION.max_output_length == 4000
 
     def test_needs_tools(self):
         """测试各任务类型是否需要工具。"""
@@ -124,7 +122,6 @@ class TestTaskType:
         assert not TaskType.QUICK_ANSWER.needs_tools
         assert TaskType.FULL_SOLUTION.needs_tools
         assert TaskType.MULTIMODAL.needs_tools
-        assert TaskType.PLANNED_SOLUTION.needs_tools
 
     def test_max_history_turns(self):
         """测试各任务类型的历史轮数限制。"""
@@ -132,7 +129,6 @@ class TestTaskType:
 
         assert TaskType.QUICK_ANSWER.max_history_turns == 1
         assert TaskType.FULL_SOLUTION.max_history_turns == 5
-        assert TaskType.PLANNED_SOLUTION.max_history_turns == 10
 
 
 class TestTaskParamsMap:
@@ -170,13 +166,6 @@ class TestTaskParamsMap:
         params = get_params_for_task(TaskType.FULL_SOLUTION)
         assert params.temperature == 0.0
         assert params.max_tokens == 4096
-
-    def test_planned_solution_params(self):
-        """复杂规划 — 最大Token容量。"""
-        from prompts.dynamic_params import get_params_for_task, TaskType
-
-        params = get_params_for_task(TaskType.PLANNED_SOLUTION)
-        assert params.max_tokens == 8192
 
     def test_default_fallback(self):
         """未知类型回退到默认配置。"""
@@ -628,6 +617,43 @@ class TestMathAgentIntegration:
         intent = agent._classify_intent("这道题考什么知识点？")
         from prompts.dynamic_params import TaskType
         assert intent.task_type == TaskType.KNOWLEDGE_QUERY
+
+    @pytest.mark.asyncio
+    async def test_react_is_the_only_strategy_without_complexity_llm(self):
+        """简单题和复杂题都只按规则意图参数创建 ReAct。"""
+        from agent_core.agent import MathAgent
+        from prompts.dynamic_params import TaskType
+
+        agent = MathAgent.create(api_key="test-key", enable_dynamic_params=True)
+        agent._dynamic_llm_factory.get_llm = Mock(return_value=agent._llm)
+        react_strategy = Mock()
+        agent._create_langchain_react_strategy = Mock(return_value=react_strategy)
+
+        simple = await agent._select_strategy("2+2等于多少？", "simple")
+        complex_problem = await agent._select_strategy(
+            "证明一个多阶段极限结论并调用工具验证每一步", "complex"
+        )
+
+        assert simple is react_strategy
+        assert complex_problem is react_strategy
+        assert agent._dynamic_llm_factory.get_llm.call_args_list == [
+            ((TaskType.QUICK_ANSWER,), {}),
+            ((TaskType.FULL_SOLUTION,), {}),
+        ]
+        assert not hasattr(agent, "_classifier")
+
+    def test_removed_complexity_classifier_arguments_are_not_public(self):
+        """旧的内部复杂度分类参数不再留兼容空壳。"""
+        import inspect
+        from agent_core.agent import MathAgent, MathAgentConfig
+
+        create_parameters = inspect.signature(MathAgent.create).parameters
+        config_fields = MathAgentConfig.__dataclass_fields__
+
+        assert "enable_classifier" not in create_parameters
+        assert "classifier_model" not in create_parameters
+        assert "classifier_config" not in create_parameters
+        assert "classifier" not in config_fields
 
     def test_get_task_params(self):
         """测试 _get_task_params 返回正确的参数。"""

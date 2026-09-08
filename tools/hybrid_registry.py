@@ -76,6 +76,12 @@ class HybridToolRegistry:
     """
 
     def __init__(self):
+        # Registry diagnostics are operationally important and must remain
+        # visible even if another test/app lifecycle previously disabled this
+        # module logger. Keep propagation on so host logging/caplog can observe
+        # duplicate and missing-tool warnings.
+        logger.disabled = False
+        logger.propagate = True
         self._custom_tools: Dict[str, BaseTool] = {}
         self._langchain_tools: Dict[str, Any] = {}
         self._execution_history: List[Dict[str, Any]] = []

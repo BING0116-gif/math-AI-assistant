@@ -8,32 +8,32 @@ class MiddlewareConfig(BaseSettings):
     RATE_LIMIT_WINDOW_SECONDS: int = Field(default=60, alias="RATE_LIMIT_WINDOW_SECONDS")
     RATE_LIMIT_MAX_REQUESTS: int = Field(default=30, alias="RATE_LIMIT_PER_MINUTE")
 
+    RATE_LIMIT_SKIP_PATHS: Set[str] = Field(
+        default={"/api/admin/"},
+        alias="RATE_LIMIT_SKIP_PATHS",
+    )
+
     NO_AUTH_PATHS: Set[str] = Field(
         default={
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/refresh",
-            "/api/chat",
-            "/api/chat/react",
-            "/api/chat/multimodal",
-            "/api/recognize",
-            "/api/error-book",
             "/api/tools",
             "/api/tools/stats",
             "/api/tools/search",
             "/api/tools/",
-            "/api/agent/thought/",
             "/api/agent/stats",
             "/api/health",
             "/api/health/detailed",
-            "/api/health/db",
-            "/api/health/cache",
+            "/api/health/ready",
             "/api/recommend/health",
+            "/api/internal/",
             "/",
             "/error_book",
             "/docs",
             "/redoc",
             "/openapi.json",
+            "/metrics",
         },
         alias="NO_AUTH_PATHS",
     )

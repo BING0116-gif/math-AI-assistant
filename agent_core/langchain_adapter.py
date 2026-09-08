@@ -59,7 +59,10 @@ class LangChainToolConverter:
 
             # ===== 强制输出：验证LangChain工具调用链 =====
             tool_name = getattr(custom_tool, 'name', '?')
-            print(f"\n[LANGCHAIN_ADAPTER] 工具被调用: name={tool_name}, query={query[:50]}...", flush=True)
+            print(f"\n[LANGCHAIN_ADAPTER] 工具被调用: name={tool_name}, query={repr(query[:80])}", flush=True)
+            print(f"[LANGCHAIN_ADAPTER] kwargs keys={list(kwargs.keys())}", flush=True)
+            if 'category' in kwargs:
+                print(f"[LANGCHAIN_ADAPTER] kwargs.category={repr(kwargs.get('category'))}", flush=True)
             # ============================================
 
             try:

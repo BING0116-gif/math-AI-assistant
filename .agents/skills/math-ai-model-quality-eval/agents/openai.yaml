@@ -1,0 +1,4 @@
+interface:
+  display_name: "Math AI Model Quality Eval"
+  short_description: "Evaluate vision, RAG, Agent, and math quality"
+  default_prompt: "Use $math-ai-model-quality-eval to evaluate this AI learning flow."

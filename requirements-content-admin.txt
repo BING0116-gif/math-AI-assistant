@@ -1,0 +1,6 @@
+# Step 1.1-D 内容审核工具依赖（与 FastAPI 主 runtime 隔离）
+# 安装：pip install -r requirements-content-admin.txt
+# 仅包含 internal Content Review Tool 真正需要的轻量依赖。
+# 明确排除：mineru / torch / transformers（MinerU dedicated runtime 独立安装）。
+streamlit>=1.32,<2
+httpx>=0.27,<1

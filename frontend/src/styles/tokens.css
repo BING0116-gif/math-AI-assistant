@@ -1,0 +1,277 @@
+/* ============================================================
+   知微 Math AI — Design System Tokens (V3.0)
+   视觉方向：高级 · 克制 · 学术 · 温和
+   色彩体系：暖米白 × 墨色文字 × 松绿主色 × 青绿/琥珀状态色
+   ============================================================ */
+
+/* ---- 浅色主题 ---- */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* 背景层级 — 暖米白系 */
+  --canvas: #F7F6F1;
+  --surface: #FCFBF8;
+  --surface-muted: #F1F2EC;
+  --surface-hover: #ECEAE0;
+
+  /* 文字层级 — 墨色系，避免纯黑 */
+  --text-primary: #20231F;
+  --text-secondary: #72766F;
+  --text-tertiary: #9A9D96;
+
+  /* 边框 — 统一 token，1px */
+  --border-subtle: #E6E3DA;
+  --border-strong: #D3CFC4;
+
+  /* 语义色 — 松绿主色 */
+  --accent: #416B56;
+  --accent-hover: #355B49;
+  --accent-soft: #E8EFE9;
+
+  /* 知识/教育域 — 青绿 */
+  --knowledge: #417E7A;
+  --knowledge-soft: #E3EEE9;
+
+  /* 学习状态 */
+  --mastered: #5F947C;
+  --learning: #C8913D;
+  --weak: #C9674C;
+
+  /* 状态色 */
+  --info: #417E7A;
+  --success: #5F947C;
+  --warning: #C8913D;
+  --danger: #C9674C;
+
+  /* 阴影 — 非常克制 */
+  --shadow-sm: 0 1px 2px rgba(32, 35, 31, 0.04);
+  --shadow-md: 0 2px 8px rgba(32, 35, 31, 0.06);
+  --shadow-lg: 0 4px 16px rgba(32, 35, 31, 0.08);
+  --shadow-focus: 0 0 0 3px rgba(65, 107, 86, 0.18);
+
+  /* 圆角 — 4px 基础网格，按语义分级 */
+  --radius-xs: 4px;
+  --radius-sm: 10px;   /* 按钮 */
+  --radius-md: 12px;   /* 输入框 */
+  --radius-lg: 16px;   /* 卡片 */
+  --radius-pill: 9999px;
+
+  /* 排版 */
+  --font-sans: 'Inter', 'Noto Sans SC', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'DM Mono', 'Consolas', 'Monaco', monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 28px;
+  --line-height-base: 1.7;
+  --line-height-tight: 1.4;
+
+  /* 间距 — 4px 基础网格 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* 动效 */
+  --transition-fast: 140ms ease-out;
+  --transition-base: 200ms ease-out;
+  --transition-slow: 320ms ease-out;
+
+  /* 布局 */
+  --sidebar-width: 250px;
+  --sidebar-collapsed: 56px;
+  --topbar-height: 56px;
+  --content-max-width: 820px;
+  --content-padding: 32px;
+  --inspector-width: 360px;
+
+  /* Element Plus 兼容 */
+  --el-color-primary: var(--accent);
+  --el-color-danger: var(--danger);
+  --el-color-warning: var(--warning);
+  --el-color-success: var(--success);
+  --el-bg-color: var(--surface);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-border-color: var(--border-subtle);
+  --el-border-radius-base: var(--radius-sm);
+  --el-border-radius-medium: var(--radius-md);
+  --el-fill-color-light: var(--surface-muted);
+  --el-fill-color-blank: var(--surface);
+}
+
+/* ---- 深色主题 ---- */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --canvas: #14171A;
+  --surface: #1C2024;
+  --surface-muted: #24282D;
+  --surface-hover: #2C3137;
+
+  --text-primary: #EDEBE4;
+  --text-secondary: #A8ABA3;
+  --text-tertiary: #787C75;
+
+  --border-subtle: #33383E;
+  --border-strong: #454B52;
+
+  --accent: #7DA58E;
+  --accent-hover: #92B8A2;
+  --accent-soft: #263830;
+
+  --knowledge: #7DA59E;
+  --knowledge-soft: #233331;
+
+  --mastered: #7DB89C;
+  --learning: #C9A86A;
+  --weak: #D48A78;
+
+  --info: #7DA59E;
+  --success: #7DB89C;
+  --warning: #C9A86A;
+  --danger: #D48A78;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.40);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.50);
+  --shadow-focus: 0 0 0 3px rgba(125, 165, 142, 0.30);
+
+  --el-color-primary: var(--accent);
+  --el-color-danger: var(--danger);
+  --el-color-warning: var(--warning);
+  --el-color-success: var(--success);
+  --el-bg-color: var(--surface);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-border-color: var(--border-subtle);
+  --el-fill-color-light: var(--surface-muted);
+  --el-fill-color-blank: var(--surface);
+}
+
+/* ---- 全局重置 ---- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background: var(--canvas);
+}
+
+#app {
+  height: 100%;
+}
+
+/* ---- 滚动条 ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(114, 118, 111, 0.28);
+  border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(114, 118, 111, 0.44);
+}
+
+/* ---- 焦点 ---- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---- 无障碍辅助 ---- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- 动效减敏 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- 排版 ---- */
+h1, h2, h3, h4, h5, h6 {
+  line-height: var(--line-height-tight);
+  font-weight: 600;
+}
+
+.page-title {
+  font-size: var(--font-size-2xl);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+}
+
+.section-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+}
+
+/* ---- 链接 ---- */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* ---- 按钮重置 ---- */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+/* ---- 输入重置 ---- */
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+}

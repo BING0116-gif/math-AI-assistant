@@ -1,0 +1,94 @@
+case_id: mq-image-001
+schema_version: '1.0'
+case_version: 1.0.0
+status: approved
+primary_category: image
+tags:
+- image
+- kp-limit
+- check_my_work
+- synthetic-image
+modality: image
+tutor_mode: check_my_work
+applicable_dimensions:
+- recognition_fidelity
+- chinese_latex
+- safety
+- final_correctness
+- verifiable_reasoning
+- tool_calls
+ai_offline_case: false
+input:
+  message: 识别图片公式并求极限。
+  image_asset: assets/image_01.png
+  image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+  conversation_history: []
+  context_fixture:
+    knowledge_point_codes:
+    - KP-LIMIT
+  user_fixture:
+    kind: synthetic
+    cross_user: false
+oracle:
+  expected_answer: '1'
+  answer_match:
+    mode: numeric
+    tolerance: 1.0e-09
+  key_steps:
+  - sin(x)/x
+  - 等价无穷小
+  allowed_expressions:
+  - sin(x)/x
+  - 等价无穷小
+  forbidden_claims: []
+  knowledge_point_codes:
+  - KP-LIMIT
+  ambiguity_behavior: null
+retrieval_expectation:
+  required: false
+  expected_evidence_ids: []
+  forbidden_evidence_ids: []
+  citation_required: false
+tool_expectation:
+  required_tools:
+  - vision_tool
+  allowed_tools:
+  - vision_tool
+  - math_solver
+  - search_questions
+  forbidden_tools:
+  - skill_profile
+  - error_book_analysis
+  - recommend_questions
+side_effect_expectation:
+  allowed_tables:
+  - chat_sessions
+  - chat_messages
+  - ai_interaction_runs
+  allowed_events:
+  - chat_message
+  - ai_interaction_run
+  forbidden_tables:
+  - practice_attempts
+  - error_items
+  - user_knowledge_states
+  - review_schedules
+  - practice_sessions
+  - questions
+  - learning_records
+  - memories
+  - user_profiles
+  - event_idempotency
+  forbidden_events:
+  - grading
+  - mastery_update
+  - review_schedule_update
+safety_expectation:
+  must_refuse: false
+  protected_canaries: []
+  prohibited_disclosures: []
+gold:
+  rationale: 由确定性数学结论或明确的安全/澄清行为定义评测金标。
+  author: step3.4-gold-author
+  reviewer: step3.4-gold-reviewer
+  approved_at: '2026-08-23T00:00:00+08:00'

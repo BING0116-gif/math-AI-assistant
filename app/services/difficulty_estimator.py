@@ -1,4 +1,4 @@
-"""
+﻿"""
 动态难度估算器 — 基于用户画像 + Skill 熟练度的自适应难度算法。
 
 P1 完整实现：
@@ -108,27 +108,34 @@ class DifficultyEstimator:
         Returns:
             int: 推荐难度 1-5
         """
+        # ── 统一获取技能数据（只查询一次） ──
+        if skill_data is None and self._skill_aggregator:
+            try:
+                skill_data = await self._skill_aggregator.get_all_skills(user_id)
+            except Exception as e:
+                logger.warning(f"获取技能数据失败（非阻塞）: {e}")
+
         # ── 因子 1: 知识点掌握度 ──
-        category_mastery = await self._get_category_mastery(
-            user_id, category, sub_category, skill_data
+        category_mastery = self._get_category_mastery(
+            category, sub_category, skill_data
         )
 
         # ── 因子 2: 整体正确率 ──
         overall_rate = self._get_overall_rate(profile)
 
         # ── 因子 3: 近期趋势 ──
-        trend_score = await self._calculate_recent_trend(
-            user_id, category, sub_category, skill_data
+        trend_score = self._calculate_recent_trend(
+            category, sub_category, skill_data
         )
 
         # ── 因子 4: 遗忘因子 ──
-        time_decay = await self._calculate_time_factor(
-            user_id, category, sub_category, skill_data
+        time_decay = self._calculate_time_factor(
+            category, sub_category, skill_data
         )
 
         # ── 因子 5: 难度奖励（该知识点历史难度均值） ──
-        difficulty_bonus = await self._calculate_difficulty_bonus(
-            user_id, category, sub_category
+        difficulty_bonus = self._calculate_difficulty_bonus(
+            category, sub_category, skill_data
         )
 
         # ── 加权评分 ──
@@ -228,6 +235,14 @@ class DifficultyEstimator:
         Returns:
             Dict[str, int]: {"category_sub": 3, ...}
         """
+        # 统一获取技能数据（只查询一次），供所有 estimate() 调用复用
+        skill_data = None
+        if self._skill_aggregator:
+            try:
+                skill_data = await self._skill_aggregator.get_all_skills(user_id)
+            except Exception as e:
+                logger.warning(f"获取技能数据失败（非阻塞）: {e}")
+
         results = {}
         for item in categories:
             cat = item.get("category", "")
@@ -239,15 +254,15 @@ class DifficultyEstimator:
                 sub_category=sub,
                 profile=profile,
                 context=context,
+                skill_data=skill_data,
             )
             results[key] = difficulty
         return results
 
-    # ── 内部方法 ──
+    # ── 内部方法（同步，不再直接查询数据库） ──
 
-    async def _get_category_mastery(
-        self,
-        user_id: str,
+    @staticmethod
+    def _get_category_mastery(
         category: str,
         sub_category: str = "",
         skill_data: Optional[List[Dict[str, Any]]] = None,
@@ -265,20 +280,10 @@ class DifficultyEstimator:
                 if s.get("skill_code") == skill_code:
                     return s.get("mastery_level", 0.0)
 
-        if self._skill_aggregator:
-            try:
-                skills = await self._skill_aggregator.get_all_skills(user_id)
-                for s in skills:
-                    if s["skill_code"] == skill_code:
-                        return s["mastery_level"]
-            except Exception as e:
-                logger.warning(f"获取掌握度失败: {e}")
+        return 0.5  # 无数据时返回中值
 
-        return 0.5
-
-    async def _calculate_recent_trend(
-        self,
-        user_id: str,
+    @staticmethod
+    def _calculate_recent_trend(
         category: str,
         sub_category: str = "",
         skill_data: Optional[List[Dict[str, Any]]] = None,
@@ -300,19 +305,6 @@ class DifficultyEstimator:
                 ):
                     history = s.get("evolution_history", [])
                     break
-
-        if not history and self._skill_aggregator and sub_category:
-            try:
-                skills = await self._skill_aggregator.get_all_skills(user_id)
-                skill_code = (
-                    f"{category}_{sub_category}".lower().replace(" ", "_")
-                )
-                for s in skills:
-                    if s["skill_code"] == skill_code:
-                        history = s.get("evolution_history", [])
-                        break
-            except Exception:
-                pass
 
         if not history or len(history) < TREND_MIN_RECORDS:
             return 0.5  # 数据不足，中性
@@ -347,9 +339,8 @@ class DifficultyEstimator:
         )
         return trend_score
 
-    async def _calculate_time_factor(
-        self,
-        user_id: str,
+    @staticmethod
+    def _calculate_time_factor(
         category: str,
         sub_category: str = "",
         skill_data: Optional[List[Dict[str, Any]]] = None,
@@ -383,26 +374,6 @@ class DifficultyEstimator:
                             pass
                     break
 
-        if not last_practiced and self._skill_aggregator and sub_category:
-            try:
-                skills = await self._skill_aggregator.get_all_skills(user_id)
-                skill_code = (
-                    f"{category}_{sub_category}".lower().replace(" ", "_")
-                )
-                for s in skills:
-                    if s["skill_code"] == skill_code:
-                        lp = s.get("last_practiced")
-                        if lp:
-                            try:
-                                last_practiced = datetime.fromisoformat(
-                                    lp.replace("Z", "+00:00")
-                                )
-                            except (ValueError, AttributeError):
-                                pass
-                        break
-            except Exception:
-                pass
-
         if not last_practiced:
             return 0.5  # 无数据，中性
 
@@ -421,11 +392,11 @@ class DifficultyEstimator:
         )
         return decay_score
 
-    async def _calculate_difficulty_bonus(
-        self,
-        user_id: str,
+    @staticmethod
+    def _calculate_difficulty_bonus(
         category: str,
         sub_category: str = "",
+        skill_data: Optional[List[Dict[str, Any]]] = None,
     ) -> float:
         """
         计算难度奖励因子 (0-1)。
@@ -435,25 +406,21 @@ class DifficultyEstimator:
         - 一直练习低难度题 → 低分（说明尚在基础阶段）
         - 无数据 → 默认 0.5
         """
-        if not self._skill_aggregator or not sub_category:
+        if not sub_category or not skill_data:
             return 0.5
 
-        try:
-            skills = await self._skill_aggregator.get_all_skills(user_id)
-            skill_code = (
-                f"{category}_{sub_category}".lower().replace(" ", "_")
-            )
-            for s in skills:
-                if s["skill_code"] == skill_code:
-                    total = s.get("total_attempts", 0)
-                    correct = s.get("correct_count", 0)
-                    if total >= 3:
-                        rate = correct / total
-                        # 高正确率 × 高练习量 → 可提高难度
-                        bonus = 0.5 + (rate - 0.5) * min(total / 10.0, 1.0)
-                        return max(0.0, min(1.0, bonus))
-        except Exception:
-            pass
+        skill_code = (
+            f"{category}_{sub_category}".lower().replace(" ", "_")
+        )
+        for s in skill_data:
+            if s["skill_code"] == skill_code:
+                total = s.get("total_attempts", 0)
+                correct = s.get("correct_count", 0)
+                if total >= 3:
+                    rate = correct / total
+                    # 高正确率 × 高练习量 → 可提高难度
+                    bonus = 0.5 + (rate - 0.5) * min(total / 10.0, 1.0)
+                    return max(0.0, min(1.0, bonus))
 
         return 0.5
 

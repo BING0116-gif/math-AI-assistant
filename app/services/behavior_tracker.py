@@ -89,10 +89,8 @@ class LearningBehaviorTracker:
             "sub_categories": None,
             "source": source,
             "difficulty": None,
-            # 聊天/问答场景无法判断"对错"，但用户通过交互获得了知识
-            # source=chat 时视为有效学习事件（is_correct=True）
-            # source=quiz/exam 时由调用方传入实际判定结果
-            "is_correct": True if source == "chat" else None,
+            # 提问只证明参与，不能伪装成独立答题正确；正式答题由判分服务记录。
+            "is_correct": None,
             "time_spent": None,
             "metadata_": metadata or {},
             "_classification_source": None,

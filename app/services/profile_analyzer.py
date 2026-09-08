@@ -4,7 +4,7 @@ from collections import defaultdict
 import statistics
 import logging
 
-from sqlalchemy import select, func, and_, Integer, desc, extract, cast, Float
+from sqlalchemy import select, func, and_, Integer, desc, extract, cast, case, Float
 
 from app.data.models import LearningRecord, ChatSession
 
@@ -225,7 +225,10 @@ class UserProfileAnalyzer:
                 select(
                     LearningRecord.difficulty,
                     func.count().label("count"),
-                    func.avg(cast(LearningRecord.is_correct == True, Float)).label(
+                    func.avg(cast(
+                        case((LearningRecord.is_correct == True, 1), else_=0),
+                        Float,
+                    )).label(
                         "accuracy"
                     ),
                 )

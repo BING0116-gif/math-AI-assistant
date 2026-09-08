@@ -207,7 +207,7 @@ def test_dynamic_params():
     print(SEPARATOR)
 
     # 测试参数映射表完整性
-    assert len(TASK_PARAMS_MAP) >= 6, f"参数映射表不完整: {len(TASK_PARAMS_MAP)} 条目"
+    assert len(TASK_PARAMS_MAP) == 5, f"规则意图参数表应只包含 T1-T5: {len(TASK_PARAMS_MAP)} 条目"
     print(f"{PASS} 参数映射表完整 ({len(TASK_PARAMS_MAP)} 条目)")
 
     # 测试各场景参数

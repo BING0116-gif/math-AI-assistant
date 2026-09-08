@@ -1,0 +1,107 @@
+name: Model Quality Evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: Candidate model or prompt label
+        required: true
+        default: candidate
+      baseline:
+        description: Optional committed baseline JSON path
+        required: false
+        default: ""
+  schedule:
+    - cron: "20 18 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-quality-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  live-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: model-evaluation
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: mathai_eval
+          POSTGRES_PASSWORD: evaluation-only-password
+          POSTGRES_DB: math_ai_eval
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mathai_eval -d math_ai_eval"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      AI_ENABLED: "true"
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      EVAL_DATABASE_URL: postgresql://mathai_eval:evaluation-only-password@localhost:5432/math_ai_eval
+      DATABASE_URL: postgresql://unused:unused@localhost:5432/math_ai_runtime
+      RAG_ENABLED: "false"
+      LABEL: ${{ inputs.label || 'scheduled-drift' }}
+      EVAL_INPUT_COST_PER_MILLION: ${{ vars.EVAL_INPUT_COST_PER_MILLION }}
+      EVAL_OUTPUT_COST_PER_MILLION: ${{ vars.EVAL_OUTPUT_COST_PER_MILLION }}
+      EVAL_MODEL_PROVIDER: dashscope
+      EVAL_ENVIRONMENT_ID: github-${{ github.run_id }}
+      APPROVED_BASELINE: ${{ inputs.baseline || vars.MODEL_QUALITY_BASELINE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate approved dataset offline
+        run: python -m scripts.model_quality_eval validate --dataset evaluations/model_quality/v1
+
+      - name: Run live evaluation through Tutor and Agent boundary
+        run: >-
+          python -m scripts.model_quality_eval run
+          --dataset evaluations/model_quality/v1
+          --mode live
+          --label "$LABEL"
+          --output artifacts/model-quality/live
+
+      - name: Generate human review worksheet
+        if: always()
+        shell: bash
+        run: |
+          if test -f artifacts/model-quality/live/results.json; then
+            python -m scripts.model_quality_eval review-template \
+              --report artifacts/model-quality/live/results.json \
+              --output artifacts/model-quality/live/review.yaml
+          fi
+
+      - name: Compare with approved baseline
+        if: ${{ env.APPROVED_BASELINE != '' }}
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        run: >-
+          python -m scripts.model_quality_eval compare
+          --baseline "$APPROVED_BASELINE"
+          --candidate artifacts/model-quality/live/results.json
+          --output artifacts/model-quality/comparison
+
+      - name: Upload redacted evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-quality-${{ github.run_id }}
+          path: artifacts/model-quality/
+          retention-days: 90
+          if-no-files-found: warn

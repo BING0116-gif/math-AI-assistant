@@ -13,17 +13,17 @@ async def main():
     await init_db()
 
     # Register test user
-    user = register_user("testuser", "test123456")
+    user = await register_user("testuser", "test123456")
     if user:
-        print(f"User registered: {user.user_id}")
+        print(f"User registered: {user.id}")
     else:
         print("User already exists, trying to authenticate...")
 
     # Authenticate
-    user = authenticate_user("testuser", "test123456")
+    user = await authenticate_user("testuser", "test123456")
     if user:
-        tokens = create_token_pair(
-            user.user_id,
+        tokens = await create_token_pair(
+            user.id,
             settings.JWT_SECRET_KEY,
             settings.JWT_ALGORITHM,
             settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES,

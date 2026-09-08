@@ -1,0 +1,4 @@
+interface:
+  display_name: "Math AI Change Safety"
+  short_description: "Safely change contracts, data, and workflows"
+  default_prompt: "Use $math-ai-change-safety to implement this cross-layer change safely."

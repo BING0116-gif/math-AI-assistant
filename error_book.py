@@ -1,21 +1,25 @@
 """
 错题本模块 - 管理数学错题的收集、存储和复习
+
+使用数据库存储，支持用户隔离。
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import os
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+from sqlalchemy import select, delete, update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.data.database import get_db_session
+from app.data.models import ErrorItem as ErrorItemModel
 
 
 @dataclass
 class ErrorItem:
-    """错题数据模型"""
+    """错题数据模型（DTO，与数据库模型解耦）"""
     id: str
     question: str
     question_type: str  # "text" | "image"
@@ -28,191 +32,273 @@ class ErrorItem:
     added_at: str = ""
     mastery_level: int = 3  # 1-5, 默认3
     is_mastered: bool = False
-    
+    question_id: Optional[str] = None
+    source: str = "manual"
+    structure_confidence: float = 0.5
+    review_state: str = "new"
+    knowledge_point_codes: List[str] = None
+    wrong_attempt_count: int = 0
+    last_attempt_id: Optional[str] = None
+    last_reviewed_at: Optional[str] = None
+    variant_supported: bool = False
+
     def __post_init__(self):
         if not self.id:
             self.id = str(uuid.uuid4())[:8]
         if self.categories is None:
             self.categories = []
+        if self.knowledge_point_codes is None:
+            self.knowledge_point_codes = []
         if not self.added_at:
             self.added_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ErrorItem":
         return cls(**data)
 
+    @classmethod
+    def from_db_model(cls, model: ErrorItemModel) -> "ErrorItem":
+        """从数据库模型创建 DTO"""
+        return cls(
+            id=model.item_id,
+            question=model.question,
+            question_type=model.question_type,
+            image_path=model.image_path,
+            error_reason=model.error_reason or "",
+            categories=list(model.categories) if model.categories else [],
+            original_answer=model.original_answer or "",
+            correct_answer=model.correct_answer or "",
+            notes=model.notes or "",
+            added_at=model.added_at or "",
+            mastery_level=model.mastery_level or 3,
+            is_mastered=model.is_mastered or False,
+            question_id=model.question_id,
+            source=model.source or "manual",
+            structure_confidence=model.structure_confidence if model.structure_confidence is not None else 0.5,
+            review_state=model.review_state or "new",
+            knowledge_point_codes=list(model.knowledge_point_codes or []),
+            wrong_attempt_count=model.wrong_attempt_count or 0,
+            last_attempt_id=model.last_attempt_id,
+            last_reviewed_at=model.last_reviewed_at.isoformat() if model.last_reviewed_at else None,
+        )
+
 
 class ErrorBookManager:
-    """错题本管理器 - 处理数据的持久化和操作"""
-    
-    DEFAULT_DATA_DIR = Path("data")
-    DEFAULT_FILE = "error_book.json"
-    
-    def __init__(self, data_file: Optional[str] = None):
-        self.data_dir = self.DEFAULT_DATA_DIR
-        self.data_file = self.data_dir / (data_file or self.DEFAULT_FILE)
-        self._ensure_data_dir()
-        self._items: List[ErrorItem] = []
-        self._load()
-    
-    def _ensure_data_dir(self) -> None:
-        """确保数据目录存在"""
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-    
-    def _load(self) -> None:
-        """从文件加载数据（同步，仅在初始化时调用）"""
-        if self.data_file.exists():
-            try:
-                with open(self.data_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self._items = [ErrorItem.from_dict(item) for item in data]
-            except (json.JSONDecodeError, KeyError):
-                self._items = []
-        else:
-            self._items = []
-    
-    def _save(self) -> None:
-        """保存数据到文件（同步版本）"""
-        with open(self.data_file, "w", encoding="utf-8") as f:
-            json.dump([item.to_dict() for item in self._items], f, ensure_ascii=False, indent=2)
+    """错题本管理器 - 使用数据库存储，按 user_id 实现用户隔离"""
 
-    async def _async_save(self) -> None:
-        """异步保存数据到文件（避免阻塞事件循环）"""
-        await asyncio.to_thread(self._save)
-    
-    def add(self, item: ErrorItem) -> str:
-        """添加错题（同步接口，FastAPI 自动在线程池运行）"""
+    def __init__(self):
+        pass
+
+    # ------------------------------------------------------------------
+    # 内部辅助
+    # ------------------------------------------------------------------
+
+    async def _row_to_item(self, row: ErrorItemModel) -> ErrorItem:
+        """将数据库行转为 ErrorItem DTO"""
+        return ErrorItem.from_db_model(row)
+
+    async def _rows_to_items(self, rows: List[ErrorItemModel]) -> List[ErrorItem]:
+        items = [await self._row_to_item(r) for r in rows]
+        question_ids = {row.question_id for row in rows if row.question_id}
+        if question_ids:
+            from app.data.models import Question
+            from app.services.variant_generation import is_variant_supported
+            async with get_db_session() as db:
+                questions = list((await db.execute(select(Question).where(Question.id.in_(question_ids)))).scalars())
+            supported = {question.id for question in questions if is_variant_supported(question)}
+            for item in items:
+                item.variant_supported = bool(item.question_id in supported)
+        return items
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    async def add(self, user_id: str, item: ErrorItem) -> str:
+        """添加错题（异步）"""
         if not item.id:
             item.id = str(uuid.uuid4())[:8]
-        self._items.insert(0, item)
-        self._save()
+
+        async with get_db_session() as db:
+            db_item = ErrorItemModel(
+                user_id=user_id,
+                item_id=item.id,
+                question=item.question,
+                question_type=item.question_type,
+                image_path=item.image_path,
+                error_reason=item.error_reason,
+                categories=item.categories,
+                original_answer=item.original_answer,
+                correct_answer=item.correct_answer,
+                notes=item.notes,
+                added_at=item.added_at,
+                mastery_level=item.mastery_level,
+                is_mastered=item.is_mastered,
+                question_id=item.question_id,
+                source=item.source,
+                structure_confidence=item.structure_confidence,
+                review_state=item.review_state,
+                knowledge_point_codes=item.knowledge_point_codes,
+                wrong_attempt_count=item.wrong_attempt_count,
+                last_attempt_id=item.last_attempt_id,
+            )
+            db.add(db_item)
+            await db.flush()  # 让数据库生成 id，但不提交（get_db_session 会提交）
         return item.id
 
-    async def add_async(self, item: ErrorItem) -> str:
-        """添加错题（异步接口）"""
-        if not item.id:
-            item.id = str(uuid.uuid4())[:8]
-        self._items.insert(0, item)
-        await self._async_save()
-        return item.id
-    
-    def remove(self, item_id: str) -> bool:
-        """删除错题（同步接口）"""
-        original_len = len(self._items)
-        self._items = [item for item in self._items if item.id != item_id]
-        if len(self._items) < original_len:
-            self._save()
-            return True
-        return False
+    async def remove(self, user_id: str, item_id: str) -> bool:
+        """删除错题（异步）"""
+        async with get_db_session() as db:
+            result = await db.execute(
+                delete(ErrorItemModel).where(
+                    ErrorItemModel.user_id == user_id,
+                    ErrorItemModel.item_id == item_id,
+                )
+            )
+            return result.rowcount > 0
 
-    async def remove_async(self, item_id: str) -> bool:
-        """删除错题（异步接口）"""
-        original_len = len(self._items)
-        self._items = [item for item in self._items if item.id != item_id]
-        if len(self._items) < original_len:
-            await self._async_save()
-            return True
-        return False
-    
-    def update(self, item_id: str, **kwargs) -> bool:
-        """更新错题（同步接口）"""
-        for item in self._items:
-            if item.id == item_id:
-                for key, value in kwargs.items():
-                    if hasattr(item, key):
-                        setattr(item, key, value)
-                self._save()
-                return True
-        return False
+    async def update(self, user_id: str, item_id: str, **kwargs) -> bool:
+        """更新错题（异步）"""
+        # 过滤掉 None 值，只更新提供的字段
+        update_data = {k: v for k, v in kwargs.items() if v is not None}
+        if not update_data:
+            return False
 
-    async def update_async(self, item_id: str, **kwargs) -> bool:
-        """更新错题（异步接口）"""
-        for item in self._items:
-            if item.id == item_id:
-                for key, value in kwargs.items():
-                    if hasattr(item, key):
-                        setattr(item, key, value)
-                await self._async_save()
-                return True
-        return False
-    
-    def get(self, item_id: str) -> Optional[ErrorItem]:
+        async with get_db_session() as db:
+            result = await db.execute(
+                sa_update(ErrorItemModel)
+                .where(
+                    ErrorItemModel.user_id == user_id,
+                    ErrorItemModel.item_id == item_id,
+                )
+                .values(**update_data)
+            )
+            return result.rowcount > 0
+
+    async def get(self, user_id: str, item_id: str) -> Optional[ErrorItem]:
         """获取单个错题"""
-        for item in self._items:
-            if item.id == item_id:
-                return item
-        return None
-    
-    def get_all(self) -> List[ErrorItem]:
-        """获取所有错题（按添加时间倒序）"""
-        return sorted(self._items, key=lambda x: x.added_at, reverse=True)
-    
-    def filter(
+        async with get_db_session() as db:
+            result = await db.execute(
+                select(ErrorItemModel).where(
+                    ErrorItemModel.user_id == user_id,
+                    ErrorItemModel.item_id == item_id,
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                return None
+            return await self._row_to_item(row)
+
+    async def get_all(self, user_id: str) -> List[ErrorItem]:
+        """获取用户的所有错题（按添加时间倒序）"""
+        async with get_db_session() as db:
+            result = await db.execute(
+                select(ErrorItemModel)
+                .where(ErrorItemModel.user_id == user_id)
+                .order_by(ErrorItemModel.added_at.desc())
+            )
+            rows = result.scalars().all()
+            return await self._rows_to_items(rows)
+
+    async def filter(
         self,
+        user_id: str,
         categories: Optional[List[str]] = None,
         search_text: Optional[str] = None,
         mastered: Optional[bool] = None,
-        mastery_level: Optional[int] = None
+        mastery_level: Optional[int] = None,
     ) -> List[ErrorItem]:
         """筛选错题"""
-        results = self._items
-        
-        if categories:
-            results = [item for item in results 
-                      if any(cat in item.categories for cat in categories)]
-        
-        if search_text:
-            search_lower = search_text.lower()
-            results = [item for item in results
-                      if search_lower in item.question.lower()
-                      or search_lower in item.error_reason.lower()
-                      or search_lower in item.correct_answer.lower()]
-        
-        if mastered is not None:
-            results = [item for item in results if item.is_mastered == mastered]
-        
-        if mastery_level is not None:
-            results = [item for item in results if item.mastery_level == mastery_level]
-        
-        return sorted(results, key=lambda x: x.added_at, reverse=True)
-    
-    def get_all_categories(self) -> List[str]:
-        """获取所有已使用的分类标签"""
-        categories_set = set()
-        for item in self._items:
-            categories_set.update(item.categories)
-        return sorted(categories_set)
-    
-    def get_statistics(self) -> Dict[str, Any]:
+        async with get_db_session() as db:
+            query = select(ErrorItemModel).where(
+                ErrorItemModel.user_id == user_id
+            )
+
+            if categories:
+                # SQLite 的 JSON 数组包含判断：用 JSON_EACH 或 LIKE
+                # 此处使用一个简单策略：对每个 category 做 LIKE 匹配
+                from sqlalchemy import or_
+                category_filters = [
+                    ErrorItemModel.categories.like(f'%"{cat}"%')
+                    for cat in categories
+                ]
+                query = query.where(or_(*category_filters))
+
+            if search_text:
+                search_lower = search_text.lower()
+                from sqlalchemy import or_
+                text_filters = []
+                for col in [ErrorItemModel.question, ErrorItemModel.error_reason, ErrorItemModel.correct_answer]:
+                    text_filters.append(col.ilike(f"%{search_lower}%"))
+                query = query.where(or_(*text_filters))
+
+            if mastered is not None:
+                query = query.where(ErrorItemModel.is_mastered == mastered)
+
+            if mastery_level is not None:
+                query = query.where(ErrorItemModel.mastery_level == mastery_level)
+
+            query = query.order_by(ErrorItemModel.added_at.desc())
+            result = await db.execute(query)
+            rows = result.scalars().all()
+            return await self._rows_to_items(rows)
+
+    async def get_all_categories(self, user_id: str) -> List[str]:
+        """获取用户已使用的所有分类标签"""
+        async with get_db_session() as db:
+            result = await db.execute(
+                select(ErrorItemModel.categories).where(
+                    ErrorItemModel.user_id == user_id
+                )
+            )
+            categories_set: set[str] = set()
+            for row in result.scalars().all():
+                if row:
+                    categories_set.update(row)
+            return sorted(categories_set)
+
+    async def get_statistics(self, user_id: str) -> Dict[str, Any]:
         """获取错题统计数据"""
-        total = len(self._items)
-        mastered = sum(1 for item in self._items if item.is_mastered)
-        not_mastered = total - mastered
-        
+        async with get_db_session() as db:
+            result = await db.execute(
+                select(ErrorItemModel).where(
+                    ErrorItemModel.user_id == user_id
+                )
+            )
+            rows = result.scalars().all()
+
+        total = len(rows)
+        mastered_count = sum(1 for r in rows if r.is_mastered)
+        not_mastered = total - mastered_count
+
         categories_count: Dict[str, int] = {}
-        for item in self._items:
-            for cat in item.categories:
-                categories_count[cat] = categories_count.get(cat, 0) + 1
-        
+        for r in rows:
+            if r.categories:
+                for cat in r.categories:
+                    categories_count[cat] = categories_count.get(cat, 0) + 1
+
         mastery_dist = {i: 0 for i in range(1, 6)}
-        for item in self._items:
-            mastery_dist[item.mastery_level] = mastery_dist.get(item.mastery_level, 0) + 1
-        
+        for r in rows:
+            level = r.mastery_level or 3
+            mastery_dist[level] = mastery_dist.get(level, 0) + 1
+
         return {
             "total": total,
-            "mastered": mastered,
+            "mastered": mastered_count,
             "not_mastered": not_mastered,
             "categories_count": categories_count,
-            "mastery_distribution": mastery_dist
+            "mastery_distribution": mastery_dist,
         }
-    
-    def export_to_dict(self) -> Dict[str, Any]:
-        """导出所有数据为字典"""
+
+    async def export_to_dict(self, user_id: str) -> Dict[str, Any]:
+        """导出用户的所有数据为字典"""
+        items = await self.get_all(user_id)
+        stats = await self.get_statistics(user_id)
         return {
-            "items": [item.to_dict() for item in self._items],
+            "items": [item.to_dict() for item in items],
             "exported_at": datetime.now().isoformat(),
-            "statistics": self.get_statistics()
+            "statistics": stats,
         }

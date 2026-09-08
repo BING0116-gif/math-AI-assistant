@@ -191,6 +191,9 @@ class RAGRecommender:
             return result
         except Exception as e:
             logger.error(f"━━━ 推荐异常: {e} ━━━", exc_info=True)
+            print(f"[RAG_DIAG] !!! 推荐异常 !!! error={e}", flush=True)
+            import traceback
+            traceback.print_exc()
             fallback = await self._get_fallback_recommendation(request)
             fallback.processing_time_ms = (time.time() - start_time) * 1000
             fallback.meta["error"] = str(e)
@@ -200,8 +203,8 @@ class RAGRecommender:
         from agent_core.memory_persistence import MemoryPersistenceFacade
         try:
             facade = MemoryPersistenceFacade(self._session_factory)
-            profile = await facade.get_profile(user_id)
-            return profile.to_dict()
+            snapshot = await facade.get_profile_snapshot(user_id)
+            return snapshot.to_dict()
         except Exception:
             return {"correct_rate": 0.5, "total_questions": 0}
 
@@ -239,21 +242,24 @@ class RAGRecommender:
     async def _sql_retrieval(
         self, category: str, difficulty: int, exclude_ids: List[str], count: int
     ) -> List[Question]:
+        print(f"[RAG_DIAG] SQL检索参数 | category={repr(category)} | difficulty={difficulty} | exclude_count={len(exclude_ids)} | count={count}", flush=True)
         async with self._session_factory() as db:
             query = select(Question).where(
-                and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True)
+                and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True, Question.review_status == "published")
             )
             if exclude_ids:
                 query = query.where(Question.id.notin_(exclude_ids))
             query = query.order_by(Question.usage_count.asc()).limit(count * 2)
             result = await db.execute(query)
             questions = list(result.scalars().all())
+            print(f"[RAG_DIAG] SQL精确匹配返回 {len(questions)} 题", flush=True)
 
             if len(questions) < count:
                 relaxed = select(Question).where(
                     and_(Question.category == category,
                          Question.difficulty.between(max(1, difficulty - 1), min(5, difficulty + 1)),
-                         Question.is_active == True)
+                         Question.is_active == True,
+                         Question.review_status == "published")
                 )
                 if exclude_ids:
                     relaxed = relaxed.where(Question.id.notin_(exclude_ids))
@@ -318,7 +324,7 @@ class RAGRecommender:
 
     async def _fetch_vector_questions(self, vector_ids: List[str], final: List[Question], seen_ids: set):
         async with self._session_factory() as db:
-            result = await db.execute(select(Question).where(Question.id.in_(vector_ids)))
+            result = await db.execute(select(Question).where(Question.id.in_(vector_ids), Question.review_status == "published"))
             for q in result.scalars().all():
                 if q.id not in seen_ids:
                     final.append(q)
@@ -340,11 +346,11 @@ class RAGRecommender:
             f"### 推荐题目\n共{len(questions)}道{target_category}题目：\n" + "\n".join(question_summaries)
         )
         try:
-            # AI分析使用快速模型(qwen-turbo)，不需要最强推理能力
+            # AI分析使用快速模型（settings.LLM_MATH_MODEL，默认 qwen-turbo），不需要最强推理能力
             response = await self._llm.generate(
                 prompt=prompt, system_prompt=system_prompt,
                 temperature=0.3,
-                model=settings.LLM_MATH_MODEL or "qwen-turbo",  # 用快速模型
+                model=settings.LLM_MATH_MODEL or "qwen-turbo",  # 快速模型：可切换 DeepSeek 轻量模型降本
                 max_tokens=512,  # 限制输出长度加速
             )
             content = response.content.strip()
@@ -369,7 +375,7 @@ class RAGRecommender:
         logger.info(f"[降级推荐] user={request.user_id}")
         try:
             async with self._session_factory() as db:
-                query = select(Question).where(and_(Question.is_active == True, Question.difficulty == 3))
+                query = select(Question).where(and_(Question.is_active == True, Question.difficulty == 3, Question.review_status == "published"))
                 if request.exclude_ids:
                     query = query.where(Question.id.notin_(request.exclude_ids))
                 query = query.limit(request.count)
@@ -387,12 +393,12 @@ class RAGRecommender:
 
     @staticmethod
     def _question_to_dict(q: Question) -> Dict[str, Any]:
+        # Step 1.1 P0：学生可见接口不得提前返回标准答案与完整解析
         return {
             "id": q.id, "content": q.content, "question_type": q.question_type,
-            "options": q.options, "answer": q.answer, "analysis": q.analysis,
-            "category": q.category, "sub_categories": q.sub_categories,
+            "options": q.options, "category": q.category, "sub_categories": q.sub_categories,
             "knowledge_points": q.knowledge_points, "difficulty": q.difficulty,
-            "estimated_time": q.estimated_time, "source": q.source,
+            "estimated_time": q.estimated_time,
         } if q else {}
 
 

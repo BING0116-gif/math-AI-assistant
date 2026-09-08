@@ -111,7 +111,7 @@ class TestErrorBookValidator:
 
     def test_field_length_validation(self):
         """测试字段长度限制"""
-        long_text = "a" * 10001  # 超过限制
+        long_text = "a" * 30001  # 超过题目文本限制
 
         data = {
             "question": long_text,
@@ -141,10 +141,10 @@ class TestErrorBookValidator:
         assert error == ""
 
         # 分类数量过多
-        many_cats = ["cat"] * 11
+        many_cats = ["cat"] * 16
         is_valid, error = ErrorBookValidator.validate_categories(many_cats)
         assert is_valid is False
-        assert "10" in error
+        assert "15" in error
 
         # 非法字符
         is_valid, error = ErrorBookValidator.validate_categories(["正常标签", "<script>"])
@@ -378,8 +378,8 @@ class TestIntegration:
     def test_edge_cases(self):
         """边界情况测试"""
 
-        # 1. 超长题目（超过10000字符限制）
-        long_question = "a" * 10001
+        # 1. 超长题目（超过30000字符限制）
+        long_question = "a" * 30001
         data_long = {
             "question": long_question,
             "correct_answer": "答案",

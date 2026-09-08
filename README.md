@@ -1,325 +1,192 @@
-# 数学AI助手 - 智能高等数学学习系统
+# 知微 · 智能数学学习系统
 
-基于阿里云通义千问（Qwen-Max）和 Qwen-VL 的智能高等数学学习助手，为学生提供专业的数学解题服务。
+面向大学高等数学的 AI 学习助手。首批内容聚焦**函数、极限与连续**，提供智能问答、错题本、知识目录、学习分析和推荐能力。
 
-## 功能特性
-
-### 核心功能
-
-- **智能解题**：输入高等数学题目，AI 助手提供详细的分步解答
-  - 基础解法：适合入门学习
-  - 进阶解法：提供更多技巧
-  - 步骤依据：每个步骤都有原理说明
-  - 易错点提醒：帮助避免常见错误
-
-- **图片识别**：支持粘贴截图题目
-  - Ctrl+V 直接粘贴图片
-  - Qwen-VL 多模态模型识别图片中的数学公式
-  - 自动提取题目内容进行解答
-  - 多模型自动切换：提高识别成功率
-
-- **错题本**：帮助管理和复习错题
-  - 一键将题目添加到错题本
-  - 支持分类标签（极限、连续、导数、微分、积分等）
-  - 掌握度跟踪（1-5 级）
-  - 支持重新生成解答
-  - 统计分析：学习进度和薄弱环节分析
-
-- **多会话管理**
-  - 支持创建多个会话
-  - 会话历史自动保存
-  - 随时切换不同话题
-  - 本地存储：数据持久化到本地
-
-- **流式响应**
-  - 实时打字效果
-  - 快速响应，无需等待完整解答
-  - 支持中途停止生成
-
-### 支持的题型
-
-- 极限计算
-- 函数连续性
-- 导数与微分
-- 不定积分与定积分
-- 多元函数微分
-- 微分方程
-- 级数收敛性
-- 向量与空间几何
-
-## 技术架构
-
-### 核心技术栈
-
-| 组件 | 技术 | 版本要求 | 用途 |
-|------|------|---------|------|
-| 后端框架 | FastAPI | >=0.104.0 | 提供高性能异步API服务 |
-| AI 模型 | 阿里云通义千问 (Qwen-Max) | - | 文本理解与数学解题 |
-| 多模态 | Qwen-VL | - | 图片识别与数学公式提取 |
-| 对话框架 | LangChain | >=0.1.0 | LLM应用开发工具链 |
-| 前端 | HTML5 + CSS3 + JavaScript | - | 用户界面实现 |
-| 服务器 | Uvicorn | >=0.24.0 | ASGI服务器 |
-| 数据验证 | Pydantic | >=2.0.0 | API请求响应验证 |
-| HTTP客户端 | httpx | >=0.25.0 | 异步API通信 |
-| 图像处理 | Pillow | >=9.0.0 | 图片处理与转换 |
-
-### 技术亮点
-
-1. **多模态融合**：结合Qwen-Max文本模型和Qwen-VL多模态模型，实现文本和图片的综合处理
-2. **流式响应**：使用Server-Sent Events (SSE)技术，实现实时的流式输出，提升用户体验
-3. **多模型自动切换**：在图片识别模块实现多模型自动切换机制，提高识别成功率
-5. **异步处理**：充分利用FastAPI的异步特性和httpx的异步请求，提高系统响应速度和并发处理能力
-6. **模块化设计**：清晰的模块划分，便于维护和扩展
-7. **完整的错误处理**：全面的错误捕获和处理机制，确保系统稳定运行
-
-### 项目结构
+## 当前架构
 
 ```
-math AI assistant/
-├── main.py                # 主应用入口（FastAPI）
-├── agent_core/
-│   └── agent.py          # AI Agent 核心逻辑
-├── tools/
-│   └── vision_tool.py     # 图片识别工具
-├── error_book.py          # 错题本管理模块
-├── data_processing/
-│   ├── validators.py      # 数据验证模块
-│   └── formatters.py      # 数据格式化模块
-├── config/
-│   └── prompts.py         # 系统提示词配置
-├── static/
-│   ├── index.html         # 主界面
-│   └── error_book.html    # 错题本界面
-├── data/
-│   └── error_book.json    # 错题数据存储
-├── requirements.txt       # 依赖配置
-└── README.md              # 项目文档
+frontend/                 Vue 3 + Vite 学生端（7 个视图页面）
+app/application.py        FastAPI 应用组装入口（正式 ASGI 入口）
+app/api/                  HTTP API 路由（13 个路由模块）
+app/services/             业务服务（20+ 服务模块）
+app/data/                 SQLAlchemy 模型、仓储和 Alembic 迁移
+agent_core/               MathAgent、记忆、任务规划和策略
+tools/                    Agent 工具注册与实现（7 个工具）
+prompts/                  模型提示词（系统、ReAct、规划、分类器）
+scripts/                  导入、迁移、检查和验证脚本
+tests/                    自动化测试（34 个测试文件）
+docs/                     当前开发文档和功能状态基线
 ```
 
-## 快速开始
+## 数据存储职责
 
-### 环境要求
+- **PostgreSQL**：用户、课程、知识点、题目、错题、记忆、画像等所有业务数据的唯一正式事实来源。后续所有 Schema 设计、迁移和约束必须以 PostgreSQL 为准。
+- **SQLite**：仅作为本地开发兼容模式和测试兼容路径存在。代码层仍支持 SQLite，但 SQLite 不保证所有 PostgreSQL 特性可用。不建议将 SQLite 作为正式业务数据存储。
+- **Qdrant**：只保存可重建的题目和记忆向量索引，用于语义搜索与推荐。不保存权威业务状态。
+- **Redis**：只用于缓存、限流和短期任务状态，不作为永久学习数据源。
+- 不使用 Chroma（已移除）。
+
+## 本地开发启动
+
+后端和前端是两个独立进程。
+
+### 前置依赖
 
 - Python 3.10+
-- 阿里云 DashScope API Key
+- Node.js 18+
+- PostgreSQL（生产推荐，Docker Compose 默认使用）
+- Redis（可选，缓存降级可用）
+- Qdrant（可选，向量搜索降级可用）
+- SQLite（本地开发兼容，默认使用）
 
-### 安装步骤
+### 环境变量
 
-1. **克隆项目**
-```bash
-git clone <repository-url>
-cd "math AI assistant"
-```
+复制 `.env.example` 或创建 `.env` 文件，至少需要：
 
-2. **创建虚拟环境（推荐）**
-```bash
-python -m venv venv
-# Windows
-.env\Scripts\activate
-# Linux/Mac
-source venv/bin/activate
-```
-
-3. **安装依赖**
-```bash
-pip install -r requirements.txt
-```
-
-4. **配置 API Key**
-
-在项目根目录创建 `.env` 文件：
 ```env
-DASHSCOPE_API_KEY=你的API密钥
+# 必需：JWT 签名密钥（生产环境必须替换）
+JWT_SECRET_KEY=your-strong-secret-key
+
+# 必需：数据加密密钥（生产环境必须设置）
+ENCRYPTION_KEY=your-encryption-key
+
+# AI 功能开关（默认 true，false 强制关闭 AI 功能）
+AI_ENABLED=true
+
+# 可选：DashScope API Key（无 Key 时聊天和 AI 功能不可用）
+DASHSCOPE_API_KEY=your-api-key
+
+# 可选：LLM 配置
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-max
+
+# 可选：数据库（本地开发默认 SQLite，生产必须使用 PostgreSQL）
+DATABASE_URL=sqlite:///./data/math_ai.db
+# DATABASE_URL=postgresql://user:pass@localhost:5432/math_ai
+
+# 可选：Redis
+REDIS_URL=redis://localhost:6379/0
 ```
 
-或设置环境变量：
-```bash
-# Windows
-define DASHSCOPE_API_KEY=你的API密钥
-# Linux/Mac
-export DASHSCOPE_API_KEY=你的API密钥
+### 启动后端
+
+```powershell
+.\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8100 --reload
 ```
 
-5. **启动应用**
-```bash
-python main.py
+### 启动前端
+
+```powershell
+cd frontend
+npm run dev
 ```
 
-应用将在浏览器中打开（默认地址：http://localhost:8000）
+### 访问
 
-### API文档
+- **学生端**：`http://127.0.0.1:5173`
+- **API 文档**：`http://127.0.0.1:8100/docs`（当 `DEBUG=true` 时）
+- **API 基础地址**：`http://127.0.0.1:8100`
 
-启动应用后，可以访问以下地址查看API文档：
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+### 兼容入口
 
-## 使用指南
+根目录 `main.py` 保留为兼容入口，`python main.py` 仍可运行。新部署统一使用 `app.application:app`。
 
-### 基本使用
+## Docker 启动
 
-1. 在底部输入框输入数学题目
-2. 按 Enter 或点击发送按钮
-3. 等待 AI 生成详细解答（实时流式输出）
-4. 查看解答后，可选择将题目加入错题本
+```powershell
+# 必须设置以下环境变量
+$env:DB_PASSWORD="your_db_password"
+$env:ENCRYPTION_KEY="your-encryption-key"
+$env:JWT_SECRET_KEY="your-jwt-secret"
 
-### 图片输入
+docker compose up --build
+```
 
-1. 截图数学题目
-2. 在输入框中按 `Ctrl+V` 粘贴图片
-3. 系统会自动显示图片预览
-4. 点击发送，AI 将自动识别并解答
+访问：`http://127.0.0.1:3000`
 
-### 错题本使用
+Docker 服务包括：Vue/Nginx、FastAPI、PostgreSQL 15、Redis 7、Qdrant。
 
-1. 在 AI 解答后，点击「加入错题本」按钮
-2. 在弹出的对话框中：
-   - 选择相关分类标签
-   - 填写错误原因（可选）
-   - 添加笔记（可选）
-   - 点击确认添加
+## 数据库迁移
 
-3. 查看错题：
-   - 点击左侧边栏的「📚 错题本」按钮
-   - 使用筛选功能按分类或关键词搜索
-   - 点击错题卡片查看详情
-   - 调整掌握度滑块跟踪学习进度
-   - 点击「重新解答」获取新的解题思路
+正式结构迁移使用 Alembic：
 
-### 多会话管理
+```powershell
+alembic -c app/data/alembic.ini upgrade head
+```
 
-1. 点击左侧边栏的「+ 新对话」按钮创建新会话
-2. 点击历史对话列表切换不同会话
-3. 右键点击会话可进行重命名或删除操作
+当前有 5 个迁移文件，覆盖初始表结构、记忆外键、知识目录、学习内容和资源。
 
-## 开发说明
+## 测试
 
-### 修改解题风格
+### 后端测试
 
-编辑 `config/prompts.py` 中的系统提示词来自定义 AI 的解题风格和格式要求。
+```powershell
+.\venv\Scripts\python.exe -m pytest tests -q
+```
 
-### 数据存储
+**全量 pytest suite**：当前未成功完整执行。存在测试初始化 / fixture / 事件循环相关错误（`ValueError: I/O operation on closed file`），导致 suite 无法正常结束。
 
-- 对话历史：存储在浏览器本地存储（localStorage）中
-- 错题数据：持久化到 `data/error_book.json` 文件
+**分文件执行累计结果**（逐文件运行后加总）：675 passed, 5 skipped, 6 failed。6 个失败全部来自 `test_api_integration.py`，因认证中间件要求 token 但测试未传入。归属 Step 0.3。
 
-### 前端开发
+### 前端测试
 
-前端文件位于 `static/` 目录，使用纯 HTML、CSS 和 JavaScript 实现。主要文件：
-- `index.html`：主聊天界面
-- `error_book.html`：错题本界面
+```powershell
+cd frontend
+npm test
+```
 
-### 后端开发
+当前有 5 个测试文件、38 个测试用例，覆盖：
 
-- **API端点**：
-  - POST `/api/chat`：处理文本对话请求
-  - POST `/api/recognize`：处理图片识别请求
-  - GET `/api/error-book`：获取所有错题
-  - POST `/api/error-book`：添加错题
-  - PUT `/api/error-book/{error_id}`：更新错题
-  - DELETE `/api/error-book/{error_id}`：删除错题
+- **Auth Store**：登录/注册/登出、token 刷新、会话恢复、session 清理
+- **API Interceptor**：Authorization 统一注入、401 刷新重放、刷新失败清理
+- **Router Guard**：受保护路由未登录重定向、已登录放行
+- **AgentComposer**：AI 离线状态组件行为
+- **MathRenderer**：普通文本 / 合法 LaTeX / 异常输入渲染
 
-## 部署指南
+所有测试自包含，不依赖实际后端服务或 dev server。
 
-### 本地部署
+### 前端构建
 
-按照「快速开始」部分的步骤进行部署。
+```powershell
+cd frontend
+npm run build
+```
 
-### 服务器部署
+当前状态：通过（含 Dart Sass 弃用警告和 chunk 大小警告）
 
-1. **准备服务器**：
-   - 安装 Python 3.10+
-   - 安装依赖：`pip install -r requirements.txt`
+### 前端工程入口
 
-2. **配置环境变量**：
-   - 设置 `DASHSCOPE_API_KEY` 环境变量
+- **Application entry**：`frontend/src/main.js`
+- **Router**：`frontend/src/router/index.js`（唯一正式 Router，含认证守卫）
+- **Tests**：`npm test`（Vitest）
+- **Production build**：`npm run build`（Vite）
+- **Build artifact**：`frontend/dist/`（不提交 Git，构建时生成）
 
-3. **启动服务**：
-   ```bash
-   # 使用uvicorn启动，支持多进程
-   uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-   ```
+## 当前产品范围
 
-4. **配置反向代理**（可选）：
-   - 使用 Nginx 或 Apache 作为反向代理
-   - 配置 SSL 证书，启用 HTTPS
+- **课程**：大学高等数学
+- **首批内容**：函数、极限与连续（已通过启动种子数据加载）
+- **题型**：选择题、判断题、数值填空题（暂未实现判题引擎）
+- **高中数学**：属于旧产品方案中的早期规划，不作为当前 MVP 开发范围
 
-## 故障排除
+## 功能状态摘要
 
-### 常见问题
+详见 [docs/当前功能状态基线_V1.0.md](docs/当前功能状态基线_V1.0.md)
 
-1. **API Key 错误**：
-   - 检查 `.env` 文件中的 API Key 是否正确
-   - 确保 API Key 有足够的调用额度
-
-2. **图片识别失败**：
-   - 确保图片清晰，数学公式和文字清晰可见
-   - 尝试使用不同角度或更清晰的截图
-
-3. **解答不正确**：
-   - 检查题目描述是否清晰
-   - 对于复杂题目，尝试分步提问
-
-4. **服务器启动失败**：
-   - 检查端口是否被占用
-   - 确保所有依赖已正确安装
-
-### 日志和调试
-
-- 应用启动时会在控制台输出日志
-- API 请求和响应会在控制台显示
-- 前端控制台（F12）可查看网络请求和错误信息
-
-## 性能优化
-
-1. **缓存策略**：
-   - 对话历史缓存到本地存储
-   - 图片识别结果缓存
-
-2. **异步处理**：
-   - 充分利用 FastAPI 的异步特性
-   - 使用 httpx 进行异步 HTTP 请求
-
-3. **资源管理**：
-   - 正确关闭异步迭代器和网络连接
-   - 及时清理临时文件
-
-## 未来规划
-
-1. **功能扩展**：
-   - 支持更多学科（线性代数、概率统计等）
-   - 增加学习计划和进度跟踪
-   - 实现题目自动生成和练习功能
-
-2. **技术升级**：
-   - 集成更多 AI 模型，提供模型选择
-   - 优化图片识别算法，提高识别准确率
-   - 实现更智能的错题推荐系统
-
-3. **用户体验**：
-   - 响应式设计，支持移动端
-   - 深色模式
-   - 个性化设置
-
-## 贡献指南
-
-欢迎贡献代码和提出建议！
-
-1. **Fork 项目**
-2. **创建分支**：`git checkout -b feature/your-feature`
-3. **提交更改**：`git commit -m 'Add some feature'`
-4. **推送分支**：`git push origin feature/your-feature`
-5. **创建 Pull Request**
-
-## 许可证
-
-MIT License
-
-## 联系方式
-
-- 项目维护者：[Your Name]
-- 邮箱：[your-email@example.com]
-- 项目地址：[GitHub Repository URL]
-
----
-
-**声明**：本项目仅供学习和教育目的使用，请勿用于商业用途。
+| 模块 | 状态 |
+|------|------|
+| 认证（注册/登录/Token） | 已贯通 |
+| 课程与知识目录 | 已贯通 |
+| 聊天与 AI Agent | 已贯通（AI Enabled 条件下） |
+| 错题本 | 已贯通 |
+| 记忆系统 | 已贯通 |
+| 用户画像与技能 | 已贯通 |
+| 推荐系统 | 已贯通 |
+| 数据管理与安全 | 已贯通 |
+| 前端页面 | 已贯通 |
+| 练习会话 | 仅骨架 |
+| 判题引擎 | 未实现 |
+| 练习页面 | 未实现 |
+| 间隔复习计划 | 未实现 |
+| 今日任务 | 未实现 |
+| 考试/组卷/变式 | 暂缓 |
