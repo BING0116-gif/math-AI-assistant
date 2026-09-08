@@ -34,6 +34,10 @@ services:
       # JSON 配置；阈值待真实历史数据校准。空值使用 settings 默认。
       - MASTERY_CONFIDENCE_CAP=${MASTERY_CONFIDENCE_CAP:-{"1":0.50,"2":0.80}}
       - MASTERY_CONFIDENCE_LEVELS=${MASTERY_CONFIDENCE_LEVELS:-{"insufficient":[0,0],"low":[1,1],"medium":[2,2],"high":[3,null]}}
+      # T02 间隔复习阈值（天/倍数）；待真实复习数据校准。
+      - REVIEW_FIRST_INTERVAL_DAYS=${REVIEW_FIRST_INTERVAL_DAYS:-1}
+      - REVIEW_CORRECT_MULTIPLIER=${REVIEW_CORRECT_MULTIPLIER:-2}
+      - REVIEW_MAX_INTERVAL_DAYS=${REVIEW_MAX_INTERVAL_DAYS:-30}
       - RAG_ENABLED=${RAG_ENABLED:-true}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333

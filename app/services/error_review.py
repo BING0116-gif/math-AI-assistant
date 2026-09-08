@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.models import ErrorItem, ErrorReviewEvent, PracticeAttempt
+from app.services.review_scheduler import schedule_after_review, schedule_new_error
 
 STATES = ("new", "understanding", "consolidating", "mastered")
 EVENTS = ("original_correct", "variant_correct", "spaced_correct")
@@ -63,6 +64,9 @@ async def capture_wrong_attempt(
         item.error_reason = (classification or {}).get("reason") or item.error_reason
         item.review_state = "new"
         item.is_mastered = False
+    # T02：无论新错还是再错，都（重）置错题级复习排期——答错回到最短间隔并置顶，
+    # 练习答错后自动进入明确的首次复习排期，不再依赖前端兜底。
+    schedule_new_error(item, now=now)
     event_id = f"wrong_attempt:{attempt.id}"
     exists = await db.scalar(select(ErrorReviewEvent.id).where(ErrorReviewEvent.event_id == event_id))
     if not exists:
@@ -102,6 +106,13 @@ async def record_review_evidence(
     item.review_state = new
     item.is_mastered = new == "mastered"
     item.last_reviewed_at = datetime.now(timezone.utc)
+    # T02：复习事件非重放（上方 existing 检查已返回）才走到这里，因此同一 attempt
+    # 重放不会重复推进状态，也不会重复延后排期（幂等复用 event_id 唯一约束）。
+    schedule_after_review(item, correct=True, now=datetime.now(timezone.utc))
+    details = dict(details or {})
+    details["review_interval_days"] = item.review_interval_days
+    details["review_streak"] = item.review_streak
+    details["next_review_at"] = item.next_review_at.isoformat() if item.next_review_at else None
     db.add(ErrorReviewEvent(
         event_id=event_id, error_item_id=item.id, user_id=user_id, attempt_id=attempt_id,
         event_type=event_type, from_state=old, to_state=new, details=details or {},

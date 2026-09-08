@@ -621,7 +621,11 @@ class MemoryPersistenceFacade:
                                     await db.flush()
                                 db.add(LearningRecord(**{
                                     k: v for k, v in data.items()
-                                    if k in LearningRecord.__table__.columns
+                                    # 注意：必须按模型属性名过滤。metadata_ 列显式命名为
+                                    # "metadata"，列 key 也随之变成 "metadata"，直接用
+                                    # `k in columns`（按列名/列 key 匹配）会把 metadata_
+                                    # 静默丢弃（T02 修复；event_id 不是模型属性，同样被过滤）。
+                                    if hasattr(LearningRecord, k)
                                 }))
                                 inserted += 1
                             except IntegrityError:
@@ -630,7 +634,7 @@ class MemoryPersistenceFacade:
                         else:
                             db.add(LearningRecord(**{
                                 k: v for k, v in data.items()
-                                if k in LearningRecord.__table__.columns
+                                if hasattr(LearningRecord, k)
                             }))
                             inserted += 1
                 logger.info(f"批量写入成功: {len(batch)}条队列, {inserted}条实际落库")

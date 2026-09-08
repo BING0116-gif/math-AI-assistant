@@ -42,6 +42,25 @@ def _schedule_payload(row: ReviewSchedule, name: str | None = None) -> dict[str,
     }
 
 
+_ERROR_STAGE_BY_STATE = {"new": 0, "understanding": 1, "consolidating": 2, "mastered": 3}
+
+
+def _error_schedule_payload(item, name: str | None = None) -> dict[str, Any]:
+    """错题级到期复习项（T02 ReviewScheduler），字段形状与知识点级 payload 兼容。"""
+    code = (item.knowledge_point_codes or [item.question_id or "error"])[0]
+    return {
+        "id": f"error-{item.id}", "knowledge_point_code": code,
+        "knowledge_point_name": name or code,
+        "due_at": item.next_review_at.isoformat() if item.next_review_at else "",
+        "interval_days": item.review_interval_days,
+        "review_count": item.review_streak,
+        "stage": _ERROR_STAGE_BY_STATE.get(item.review_state or "new", 0),
+        "algorithm_version": item.scheduler_version or "error-review-scheduler-v1",
+        "source": "error_item", "error_item_id": item.item_id,
+        "question_id": item.question_id,
+    }
+
+
 async def due_reviews(user_id: str, *, limit: int = 20, include_upcoming: bool = False) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     async with get_db_session() as db:
@@ -51,10 +70,20 @@ async def due_reviews(user_id: str, *, limit: int = 20, include_upcoming: bool =
                 or_(ReviewSchedule.deferred_until.is_(None), ReviewSchedule.deferred_until <= now)
             )
         rows = list((await db.execute(stmt.order_by(ReviewSchedule.due_at, ReviewSchedule.id).limit(limit))).scalars())
-        codes = [row.knowledge_point_code for row in rows]
+        # T02：合并错题级到期项（ReviewScheduler），错题本"今日复习计划"不再依赖前端兜底。
+        from app.services.review_scheduler import get_due_reviews as due_error_items
+        error_rows = await due_error_items(
+            db, user_id=user_id, now=now, limit=limit, include_upcoming=include_upcoming,
+        )
+        codes = [row.knowledge_point_code for row in rows] + [
+            (item.knowledge_point_codes or [item.question_id or "error"])[0] for item in error_rows
+        ]
         points = list((await db.execute(select(KnowledgePoint).where(KnowledgePoint.code.in_(codes or ["__none__"])))).scalars())
         names = {point.code: point.name for point in points}
-    return {"generated_at": now, "items": [_schedule_payload(row, names.get(row.knowledge_point_code)) for row in rows]}
+    items = [_schedule_payload(row, names.get(row.knowledge_point_code)) for row in rows]
+    items += [_error_schedule_payload(item, names.get((item.knowledge_point_codes or ["error"])[0])) for item in error_rows]
+    items.sort(key=lambda entry: entry.get("due_at") or "")
+    return {"generated_at": now, "items": items}
 
 
 async def defer_review(user_id: str, schedule_id: int, *, hours: int, idempotency_key: str) -> dict[str, Any]:

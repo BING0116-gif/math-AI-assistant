@@ -332,6 +332,8 @@ const todayReviewCount = computed(() => {
   const due = canonicalReviews.value.filter(item => new Date(item.due_at).getTime() <= now).length
   if (due) return due
   // 与 todayReviewPlan 的兜底口径一致：无排期时未毕业错题计入今日待解决。
+  // 【T02 注】ReviewScheduler 上线后本兜底可移除（后端已合并错题级到期项）；
+  // 仅当后端一个到期项都没有（如全是 T02 之前入库的历史错题）时才会走到这里。
   return store.errors.filter(e => !e.is_mastered && e.review_state !== 'graduated').length
 })
 
@@ -454,9 +456,14 @@ const patternSummary = computed(() => {
 const todayReviewPlan = computed(() => {
   const now = Date.now()
   const scheduled = canonicalReviews.value.filter(item => new Date(item.due_at).getTime() <= now).slice(0, 5).flatMap(review => {
-    const e = store.errors.find(error =>
-      (error.knowledge_point_codes || error.categories || []).includes(review.knowledge_point_code)
-    )
+    // T02 ReviewScheduler 上线后，后端 /learning/reviews/due 已合并错题级到期项
+    // （source=error_item 携带 error_item_id），优先按 id 直连错题；知识点级排期
+    // 保持原有的 KP 码模糊匹配。
+    const e = review.error_item_id
+      ? store.errors.find(error => error.id === review.error_item_id)
+      : store.errors.find(error =>
+          (error.knowledge_point_codes || error.categories || []).includes(review.knowledge_point_code)
+        )
     if (!e) return []
     return {
       error: e,
@@ -468,7 +475,10 @@ const todayReviewPlan = computed(() => {
   if (scheduled.length) return scheduled
   // 兜底：知识点复习排期尚未生成时（如新学生首次练习答错），未毕业错题直接进入
   // 今日复习，避免"错题有统计但复习计划永远为空"的闭环断点。
-  // 排期系统（间隔重复）完善后此分支自然退化为空。
+  // 【T02 注】ReviewScheduler 上线后本兜底可移除：练习答错已自动写入错题级排期
+  // （error_items.next_review_at），到期项会经 /learning/reviews/due 返回。
+  // 暂保留仅用于 T02 之前入库、从未被排期的历史错题降级展示；一旦后端返回了
+  // 任何到期项（scheduled.length > 0），本分支不会被触发。
   return store.errors
     .filter(e => !e.is_mastered && e.review_state !== 'graduated')
     .slice(0, 5)
@@ -709,6 +719,13 @@ function navigateDetail(dir) {
 function startDailyReview() {
   const first = canonicalReviews.value.find(item => new Date(item.due_at).getTime() <= Date.now())
   if (first) {
+    // T02：错题级到期项（source=error_item）不是知识点级 ReviewSchedule 行，
+    // 不带 review_schedule_id（complete_review 只接受整型排期 id）；
+    // 学生重做该知识点练习后，作答经练习链路回流（LearningRecord + 复习排期更新）。
+    if (first.source === 'error_item') {
+      router.push({ path: '/apply/practice', query: { knowledge_point: first.knowledge_point_code } })
+      return
+    }
     router.push({ path: '/apply/practice', query: {
       knowledge_point: first.knowledge_point_code,
       review_schedule_id: first.id,
@@ -717,7 +734,9 @@ function startDailyReview() {
     return
   }
   // 兜底：无到期排期时，从第一道未毕业错题出发做巩固练习（未知 review_kind
-  // 在后端按 regular 处理，契约安全）。排期系统完善后此分支自然退化。
+  // 在后端按 regular 处理，契约安全）。
+  // 【T02 注】ReviewScheduler 上线后本兜底可移除：新错题都会被自动排期，
+  // 到期项由 /learning/reviews/due 返回；本分支仅覆盖历史未排期错题。
   const error = store.errors.find(e => !e.is_mastered && e.review_state !== 'graduated')
   if (!error) return ElMessage.info('今天没有到期复习任务')
   const kp = (error.knowledge_point_codes && error.knowledge_point_codes[0]) || (error.categories && error.categories[0])

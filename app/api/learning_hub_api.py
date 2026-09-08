@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.services.learning_activity import ActivityError, end_activity, heartbeat_activity, start_activity
 from app.services.learning_hub import LearningHubError, complete_review, defer_review, due_reviews, today_hub, unified_dashboard, unified_profile
@@ -10,7 +10,8 @@ from app.services.learning_hub import LearningHubError, complete_review, defer_r
 router = APIRouter(prefix="/api/learning", tags=["学习闭环"])
 
 class ReviewItem(BaseModel):
-    id: int
+    # T02：错题级排期项的 id 是 "error-{error_items.id}" 字符串，知识点级仍是整型排期 id。
+    id: int | str
     knowledge_point_code: str
     knowledge_point_name: str
     due_at: datetime
@@ -18,6 +19,15 @@ class ReviewItem(BaseModel):
     review_count: int
     stage: int
     algorithm_version: str
+    # T02 错题级排期附加字段（知识点级项上为 None）
+    source: Literal["knowledge_point", "error_item"] | None = None
+    error_item_id: str | None = None
+    question_id: str | None = None
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def default_source(cls, v):
+        return v or "knowledge_point"
 
 class ReviewListResponse(BaseModel):
     generated_at: datetime

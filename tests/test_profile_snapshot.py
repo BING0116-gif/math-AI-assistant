@@ -127,6 +127,52 @@ class ProfileTestBase:
             )
             await db.commit()
 
+    async def _seed_attempt_evidence(self, user_id, question_id, session_id, row_id, attempt_id, correct):
+        """按 T01 口径落一条 PracticeAttempt，使 LearningRecord 事件可被引用为答题证据。"""
+        from app.data.database import get_db_session
+        from app.data.models import (
+            Course, KnowledgeGraphVersion, Question,
+            PracticeAttempt, PracticeSession, PracticeSessionQuestion,
+        )
+        from sqlalchemy import delete, select
+
+        async with get_db_session() as db:
+            await db.execute(delete(PracticeAttempt).where(PracticeAttempt.id == attempt_id))
+            await db.execute(delete(PracticeSession).where(PracticeSession.id == session_id))
+            if (await db.execute(select(Course).where(Course.id == "psn-course"))).scalar_one_or_none() is None:
+                db.add(Course(id="psn-course", code="psn-calculus", name="高等数学", subject="math"))
+                await db.flush()
+            if (await db.execute(select(KnowledgeGraphVersion).where(KnowledgeGraphVersion.id == "psn-version"))).scalar_one_or_none() is None:
+                db.add(KnowledgeGraphVersion(id="psn-version", course_id="psn-course", version="1", name="V1"))
+                await db.flush()
+            if (await db.execute(select(Question).where(Question.id == question_id))).scalar_one_or_none() is None:
+                db.add(Question(
+                    id=question_id, content="求解 x", question_type="numeric_fill",
+                    answer="x=1", answer_spec={"kind": "numeric_fill"}, category="高数",
+                    course_id="psn-course", version_id="psn-version",
+                ))
+                await db.flush()
+            if (await db.execute(select(PracticeSession).where(PracticeSession.id == session_id))).scalar_one_or_none() is None:
+                db.add(PracticeSession(
+                    id=session_id, user_id=user_id, mode="practice", status="completed",
+                    course_id="psn-course", version_id="psn-version", config_snapshot={},
+                    random_seed=1, idempotency_key=f"{session_id}-key",
+                ))
+                await db.flush()
+                db.add(PracticeSessionQuestion(
+                    id=row_id, session_id=session_id, question_id=question_id,
+                    position=1, snapshot={},
+                ))
+                await db.flush()
+            db.add(PracticeAttempt(
+                id=attempt_id, user_id=user_id, session_id=session_id,
+                session_question_id=row_id, question_id=question_id,
+                user_answer="x=1" if correct else "x=2", correct=correct,
+                grading_snapshot={"correct_answer": "x=1" if correct else "x=2"},
+                idempotency_key=f"{attempt_id}-key",
+            ))
+            await db.commit()
+
     async def _enqueue(self, facade, user_id, event, event_id=None):
         """阻止 worker 懒启动，确定性入队。"""
         with patch.object(
@@ -416,21 +462,37 @@ class TestUserIsolation(ProfileTestBase):
 
         facade = MemoryPersistenceFacade()
         base_a = {
-            "event_type": "answer_correct",
+            # T01 证据口径：只有 practice_answer + 独立作答 + 可溯源 attempt 才计入正确率；
+            # 旧的 answer_correct（聊天侧事件）已被刻意排除在掌握度证据之外。
+            "event_type": "practice_answer",
+            "question_id": "PSN-Q1",
             "question_content": "A 的题目",
             "category": "极限",
             "is_correct": True,
             "difficulty": 3,
+            "user_answer": "x=1",
+            "metadata_": {"session_id": "psn-sess-a", "attempt_id": "psn-att-a1"},
         }
         base_b = {
-            "event_type": "answer_wrong",
+            "event_type": "practice_answer",
+            "question_id": "PSN-Q2",
             "question_content": "B 的题目",
             "category": "导数",
             "is_correct": False,
             "difficulty": 4,
+            "user_answer": "x=2",
+            "metadata_": {"session_id": "psn-sess-b", "attempt_id": "psn-att-b1"},
         }
-        await self._enqueue(facade, user_a, base_a, event_id=f"{user_a}:e1")
-        await self._enqueue(facade, user_a, base_a, event_id=f"{user_a}:e2")
+        await self._seed_attempt_evidence(
+            "psn_user_a", "PSN-Q1", "psn-sess-a", 1, "psn-att-a1", True)
+        await self._seed_attempt_evidence(
+            "psn_user_b", "PSN-Q2", "psn-sess-b", 2, "psn-att-b1", False)
+        import copy
+        event_a1 = copy.deepcopy(base_a)
+        event_a2 = copy.deepcopy(base_a)
+        event_a2["metadata_"] = dict(base_a["metadata_"], attempt_id="psn-att-a2")
+        await self._enqueue(facade, user_a, event_a1, event_id=f"{user_a}:e1")
+        await self._enqueue(facade, user_a, event_a2, event_id=f"{user_a}:e2")
         await self._enqueue(facade, user_b, base_b, event_id=f"{user_b}:e1")
         await facade._flush_batch(_drain_queue(facade))
         await facade.trigger_skill_recalculation(user_a)
@@ -471,6 +533,9 @@ class TestUserIsolation(ProfileTestBase):
         from app.services.skill_aggregator import SkillAggregator
         from app.data.database import get_db_session
         from app.data.models import UserKnowledgeState
+        # T01 后读取路径按 calculation_version 判定新旧；缺当前版本的 state 会被
+        # 视为过期投影并从作答记录重算（本测试无作答 → 状态为空）。
+        from app.services.learning_projection import policy_version
 
         user_a, user_b = "psn_skill_a", "psn_skill_b"
         await self._ensure_users([user_a, user_b])
@@ -479,8 +544,8 @@ class TestUserIsolation(ProfileTestBase):
 
         async with get_db_session() as db:
             db.add_all([
-                UserKnowledgeState(user_id=user_a, knowledge_point_code="limit", attempts_count=2, correct_count=1, mastery=0.45, confidence=0.3),
-                UserKnowledgeState(user_id=user_b, knowledge_point_code="derivative", attempts_count=2, correct_count=1, mastery=0.5, confidence=0.3),
+                UserKnowledgeState(user_id=user_a, knowledge_point_code="limit", attempts_count=2, correct_count=1, mastery=0.45, confidence=0.3, calculation_version=policy_version()),
+                UserKnowledgeState(user_id=user_b, knowledge_point_code="derivative", attempts_count=2, correct_count=1, mastery=0.5, confidence=0.3, calculation_version=policy_version()),
             ])
             await db.commit()
 

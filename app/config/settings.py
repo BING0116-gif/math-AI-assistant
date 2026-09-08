@@ -31,6 +31,21 @@ class Settings(BaseSettings):
             expected = high + 1 if high is not None else low
         return value
 
+    # ---- T02 ReviewScheduler 间隔复习阈值：待真实复习数据校准 ----
+    # 新错题首次排期的间隔（天）
+    REVIEW_FIRST_INTERVAL_DAYS: int = 1
+    # 复习答对后间隔的放大倍数（简单可解释策略，不引入 SM-2 等记忆曲线）
+    REVIEW_CORRECT_MULTIPLIER: int = 2
+    # 间隔上限（天），答对放大后不超过该值
+    REVIEW_MAX_INTERVAL_DAYS: int = 30
+
+    @field_validator("REVIEW_FIRST_INTERVAL_DAYS", "REVIEW_CORRECT_MULTIPLIER", "REVIEW_MAX_INTERVAL_DAYS")
+    @classmethod
+    def validate_review_scheduler_thresholds(cls, value):
+        if value < 1:
+            raise ValueError("间隔复习阈值必须为正整数（天/倍数）")
+        return value
+
     APP_NAME: str = "数学AI助手"
     APP_VERSION: str = "1.6.0"
     APP_ENV: str = Field(default="development", alias="APP_ENV")

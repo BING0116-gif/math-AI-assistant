@@ -758,6 +758,11 @@ class ErrorItem(Base):
     wrong_attempt_count = Column(Integer, nullable=False, default=0)
     last_attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="SET NULL"), nullable=True)
     last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    # ---- T02 ReviewScheduler：错题级间隔复习排期（知识点级 ReviewSchedule 无法表达，见审计结论）----
+    next_review_at = Column(DateTime(timezone=True), nullable=True, comment="下次到期复习时间；NULL 表示未排期或已毕业")
+    review_interval_days = Column(Integer, nullable=False, default=0, server_default="0", comment="当前复习间隔（天）；0 表示尚未排期")
+    review_streak = Column(Integer, nullable=False, default=0, server_default="0", comment="连续答对的复习次数；答错重置为 0")
+    scheduler_version = Column(String(40), nullable=False, default="", server_default="", comment="排期算法版本标识")
 
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -775,6 +780,7 @@ class ErrorItem(Base):
         Index("idx_error_items_user_item", "user_id", "item_id", unique=True),
         UniqueConstraint("user_id", "question_id", name="uq_error_item_owner_question"),
         Index("ix_error_items_owner_state", "user_id", "review_state"),
+        Index("ix_error_item_owner_next_review", "user_id", "next_review_at"),
     )
 
 

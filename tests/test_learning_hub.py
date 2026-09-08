@@ -20,6 +20,9 @@ def database():
 async def _seed():
     from app.data.database import get_db_session
     from app.data.models import ReviewSchedule, User, UserKnowledgeState
+    # T01 后读取路径按 calculation_version 判定新旧：seed 必须带当前策略版本，
+    # 否则 read_learning_states 会视为过期投影并从作答记录重算（本测试无作答 → 状态为空）。
+    from app.services.learning_projection import policy_version
     async with get_db_session() as db:
         db.add_all([
             User(id="hub-user-a", username="hub-a", email="a@hub.test", password_hash="x"),
@@ -27,7 +30,7 @@ async def _seed():
         ])
         await db.flush()
         db.add_all([
-            UserKnowledgeState(user_id="hub-user-a", knowledge_point_code="CALC", attempts_count=3, correct_count=1, mastery=.31, memory_strength=.22, confidence=.42, mistake_count=2, error_type_counts={"KNOWLEDGE_GAP": 2}),
+            UserKnowledgeState(user_id="hub-user-a", knowledge_point_code="CALC", attempts_count=3, correct_count=1, mastery=.31, memory_strength=.22, confidence=.42, mistake_count=2, error_type_counts={"KNOWLEDGE_GAP": 2}, calculation_version=policy_version()),
             ReviewSchedule(user_id="hub-user-a", knowledge_point_code="CALC", due_at=datetime.now(timezone.utc) - timedelta(hours=1), interval_days=1),
         ])
 
