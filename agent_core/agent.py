@@ -353,6 +353,8 @@ class MathAgent:
             "chat_history": chat_history_dicts,
             "registry": self._registry,
             "user_id": user_id,
+            # T03: 会话 ID 注入工具上下文，ask_student 等工具据此隔离澄清记录
+            "session_id": session_id,
         }
         if tutor_context is not None:
             from app.services.tutor_service import tutor_instruction

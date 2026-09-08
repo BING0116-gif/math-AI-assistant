@@ -54,6 +54,23 @@ export function sendMultimodalRequest(message, imageData, sessionId, signal, opt
   })
 }
 
+// T03: 学生回答 ask_student 澄清问题（返回 SSE 流，与 /api/chat 同构）
+export function answerClarification({ sessionId, clarificationId, pendingTurnId, answer }, signal, options = {}) {
+  return fetch('/api/chat/clarification/answer', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      session_id: sessionId,
+      clarification_id: clarificationId,
+      pending_turn_id: pendingTurnId,
+      answer,
+      tutor_mode: options.tutorMode || 'step_by_step',
+      context: options.context || {},
+    }),
+    signal,
+  })
+}
+
 export const unwrapChat = (response) => response?.data?.data ?? response?.data
 export const listChatSessions = () => api.get('/chat/sessions')
 export const getChatSession = (id) => api.get(`/chat/sessions/${id}`)
@@ -129,7 +146,8 @@ export function parseSSEStream(response, onData, onDone, onError, onEvent) {
         onError(new Error(parsed.content || '服务器错误'))
         return
       }
-      if (eventType === 'follow_up' && typeof onEvent === 'function') {
+      if (eventType && typeof onEvent === 'function') {
+        // 命名事件（follow_up / ask_student 等）统一交给 onEvent 处理
         onEvent(eventType, parsed)
         return
       }

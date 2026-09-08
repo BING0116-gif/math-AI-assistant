@@ -61,6 +61,17 @@ class UpdateChatSessionRequest(BaseModel):
     archive: bool = False
 
 
+class ClarificationAnswerRequest(BaseModel):
+    """T03: 学生回答 ask_student 澄清问题的请求。"""
+    model_config = ConfigDict(extra="ignore")
+    session_id: str = Field(..., min_length=1, max_length=128)
+    clarification_id: str = Field(..., min_length=8, max_length=64)
+    pending_turn_id: str = Field(..., min_length=8, max_length=64)
+    answer: str = Field(..., min_length=1, max_length=2000)
+    tutor_mode: Literal["hint_only", "step_by_step", "check_my_work"] = "step_by_step"
+    context: TutorContextRequest = Field(default_factory=TutorContextRequest)
+
+
 def _user_id(request: Request) -> str:
     value = getattr(request.state, "user_id", None)
     if not value: raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "请先登录"})
@@ -113,6 +124,9 @@ async def chat(request: ChatRequest, http_request: Request):
         raise HTTPException(status_code=400, detail="请输入消息")
 
     user_id, tutor_context, run_id = await _tutor_run(http_request, validated_session, request.tutor_mode, request.context, validated_message)
+    # T03: 学生忽略待答卡片直接发新消息时，放弃 pending 澄清，避免阻塞下一次反问
+    from app.services.clarification_store import get_clarification_store
+    await get_clarification_store().abandon(user_id, validated_session)
     return StreamingResponse(
         stream_agent_response(
             get_agent(),
@@ -210,6 +224,82 @@ async def chat_multimodal(request: MultimodalChatRequest, http_request: Request)
             get_agent(),
             validated_message, request.image, validated_session,
             user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=tutor_context, ai_run_id=run_id,
+        ),
+        media_type="text/event-stream",
+    )
+
+
+@router.post("/api/chat/clarification/answer", responses={
+    409: {"description": "澄清标识校验失败（串线/重复提交/记录不存在）"},
+    503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
+})
+async def answer_clarification(request: ClarificationAnswerRequest, http_request: Request):
+    """T03: 学生回答 ask_student 澄清问题。
+
+    校验 clarification_id / pending_turn_id / session_id / user_id 四重标识，
+    任一不匹配即拒绝续接（HTTP 409 CLARIFICATION_MISMATCH），要求重新提问。
+    校验通过后把回答组装为语义续接消息，走与 /api/chat 相同的流式链路。
+
+    注意：第一版为"语义续接"实现——回答作为新一轮用户消息 + 系统提示注入
+    "你刚才问了 X，学生答 Y，请继续"，不等价于同轮 checkpoint/resume，
+    待 T11（恢复流）完成后升级。
+    """
+    user_id = _user_id(http_request)
+
+    try:
+        validated_session = validate_input(
+            request.session_id, "session_id", max_length=128
+        )
+        validated_answer = validate_input(
+            request.answer, "message", max_length=2000
+        )
+    except SecurityValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not validated_answer.strip():
+        raise HTTPException(status_code=400, detail="请填写回答内容")
+
+    from app.services.clarification_store import (
+        ClarificationMismatchError,
+        build_continuation_message,
+        get_clarification_store,
+    )
+
+    try:
+        record = await get_clarification_store().resolve(
+            user_id=user_id,
+            session_id=validated_session,
+            clarification_id=request.clarification_id,
+            pending_turn_id=request.pending_turn_id,
+            answer=validated_answer,
+        )
+    except ClarificationMismatchError:
+        # 业务校验失败，明确返回 409 而非包装成"后端故障"（红线 9）
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "CLARIFICATION_MISMATCH",
+                "message": "澄清信息校验失败，请让老师重新提问",
+            },
+        )
+
+    _check_ai_available("chat")
+    continuation = build_continuation_message(record.question_summary, validated_answer)
+    clean_context = request.context.model_dump(exclude_none=True)
+    from app.services.tutor_service import resolve_tutor_context, start_ai_run
+    try:
+        resolved, internal_id = await resolve_tutor_context(
+            user_id, validated_session, request.tutor_mode, clean_context, query=continuation
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail={"code": "TUTOR_CONTEXT_FORBIDDEN", "message": str(error)})
+    run_id = await start_ai_run(user_id, internal_id, request.tutor_mode, resolved)
+
+    return StreamingResponse(
+        stream_agent_response(
+            get_agent(),
+            continuation, validated_session,
+            user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=resolved, ai_run_id=run_id,
         ),
         media_type="text/event-stream",
     )

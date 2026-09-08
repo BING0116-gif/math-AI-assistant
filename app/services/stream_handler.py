@@ -31,6 +31,7 @@ async def stream_agent_response(
     if not user_id:
         raise ValueError("user_id is required")
     logger.info(f"[SSE] 开始流式响应: session={session_id}, label={context_label}, user={user_id}")
+    turn_started = time.time()
     try:
         chunk_idx = 0
         started = time.perf_counter()
@@ -43,6 +44,32 @@ async def stream_agent_response(
                     yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
                 except (TypeError, ValueError) as json_error:
                     yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
+
+        # [T03] ask_student 结构化反问事件：本轮内工具创建了 pending 澄清时下发，
+        # 前端据此渲染结构化问题卡片（选项按钮 + 自由输入）。此时跳过跟进推荐，
+        # 避免在等待学生澄清回答时继续推荐练习。
+        ask_student_payload = None
+        try:
+            from app.services.clarification_store import get_clarification_store
+            record = await get_clarification_store().get_pending_created_after(
+                user_id, session_id, turn_started
+            )
+            if record is not None:
+                ask_student_payload = {"type": "ask_student", **record.to_payload()}
+        except Exception as clarify_error:
+            logger.warning(f"[SSE] ask_student 澄清事件检查失败（非阻塞）: {clarify_error}")
+
+        if ask_student_payload:
+            yield f"event: ask_student\ndata: {json.dumps(ask_student_payload, ensure_ascii=False)}\n\n"
+            logger.info(f"[SSE] ask_student事件已推送 | session={session_id}")
+            yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+            if ai_run_id:
+                from app.services.tutor_service import complete_ai_run
+                metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
+                metadata["latency_ms"] = int((time.perf_counter() - started) * 1000)
+                metadata["ask_student"] = True
+                await complete_ai_run(ai_run_id, status="completed", metadata=metadata)
+            return
 
         # [P0-03] 流式推送 follow_up 事件（推荐内容）
         follow_up = getattr(agent, '_follow_up_text', None)

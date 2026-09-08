@@ -5,10 +5,11 @@ import { ElMessage } from 'element-plus'
 import AppShell from '@/components/shell/AppShell.vue'
 import MessageItem from '@/components/chat/MessageItem.vue'
 import AgentComposer from '@/components/conversation/AgentComposer.vue'
+import AskStudentCard from '@/components/chat/AskStudentCard.vue'
 import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
-import { sendChatMessage, sendMultimodalRequest, parseSSEStream } from '@/api/chat'
+import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
 import { useAiCapability } from '@/composables/useAiCapability'
@@ -26,6 +27,7 @@ const streamingCharCount = ref(0)
 const abortController = ref<AbortController | null>(null)
 const reasonInput = ref<HTMLTextAreaElement | null>(null)
 const followUpQuestions = ref<any[]>([])
+const askCard = ref<any>(null)
 const showErrorModal = ref(false)
 const autoScroll = ref(true)
 const tutorMode = ref(String(route.query.tutor_mode || store.currentChat?.defaultTutorMode || 'step_by_step'))
@@ -151,7 +153,7 @@ function processTyping(msgId: string) {
   }
 }
 
-// SSE follow_up 事件处理
+// SSE 事件处理（命名事件：follow_up / ask_student）
 function handleEvent(eventType: string, data: any) {
   if (eventType === 'follow_up' && data.type === 'recommendation') {
     const content = data.content || ''
@@ -160,6 +162,12 @@ function handleEvent(eventType: string, data: any) {
       followUpQuestions.value = questions
       nextTick(() => scrollToBottom())
     }
+  }
+  // T03: ask_student 结构化反问事件 → 渲染澄清问题卡片
+  if (eventType === 'ask_student' && data.clarification_id) {
+    askCard.value = data
+    followUpQuestions.value = []
+    nextTick(() => scrollToBottom())
   }
 }
 
@@ -200,20 +208,13 @@ function handleFollowUpSelect(question: any) {
   }
 }
 
-async function handleTextSend(text: string) {
-  if (!text || streaming.value) return
-  if (!isAiAvailable.value) return
-  followUpQuestions.value = []
-
-  const chatId = store.currentChatId
-  store.addMessage(chatId, { content: text, sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
-  store.persistChats()
-  nextTick(() => scrollToBottom())
-
-  const msgId = generateUUID()
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text' }
-  store.addMessage(chatId, placeholder)
-
+// 共享的 SSE 流式处理：负责流式状态、打字机渲染、错误兜底。
+// fetchFn 接收 AbortSignal 并返回 Response（/api/chat 与澄清回答端点同构）。
+async function streamAgentReply(
+  fetchFn: (signal: AbortSignal) => Promise<Response>,
+  chatId: string,
+  msgId: string,
+) {
   streaming.value = true
   streamingMessageId.value = msgId
   streamingCharCount.value = 0
@@ -229,8 +230,17 @@ async function handleTextSend(text: string) {
   }
 
   try {
-    const response = await sendChatMessage(text, chatId, abortController.value.signal, { tutorMode: tutorMode.value, context: tutorContext })
-    if (response.status < 200 || response.status >= 300) throw new Error('API请求失败 (' + response.status + ')')
+    const response = await fetchFn(abortController.value.signal)
+    if (response.status < 200 || response.status >= 300) {
+      // 业务校验错误（如 409 CLARIFICATION_MISMATCH）透出后端 message，
+      // 不包装成"后端故障"（红线 9）
+      let detail = ''
+      try {
+        const j = await response.json()
+        detail = j?.detail?.message || (typeof j?.detail === 'string' ? j.detail : '')
+      } catch { /* 非 JSON 响应体时忽略 */ }
+      throw new Error(detail || 'API请求失败 (' + response.status + ')')
+    }
 
     const handleData = (data: any) => {
       if (data.type === 'content' && data.content) {
@@ -273,6 +283,61 @@ async function handleTextSend(text: string) {
       })
     }
   }
+}
+
+async function handleTextSend(text: string) {
+  if (!text || streaming.value) return
+  if (!isAiAvailable.value) return
+  followUpQuestions.value = []
+  // 学生忽略卡片直接发新消息时，收起待答卡片
+  askCard.value = null
+
+  const chatId = store.currentChatId
+  store.addMessage(chatId, { content: text, sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
+  store.persistChats()
+  nextTick(() => scrollToBottom())
+
+  const msgId = generateUUID()
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text' }
+  store.addMessage(chatId, placeholder)
+
+  await streamAgentReply(
+    (signal) => sendChatMessage(text, chatId, signal, { tutorMode: tutorMode.value, context: tutorContext }),
+    chatId,
+    msgId,
+  )
+}
+
+// T03: 学生提交澄清回答 → 校验标识并语义续接对话
+async function handleClarificationSubmit({ answer }: { answer: string; optionLabel?: string }) {
+  const card = askCard.value
+  if (!card || streaming.value) return
+  if (!answer || !answer.trim()) return
+  askCard.value = null
+
+  const chatId = store.currentChatId
+  store.addMessage(chatId, { content: answer.trim(), sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
+  store.persistChats()
+  nextTick(() => scrollToBottom())
+
+  const msgId = generateUUID()
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text' }
+  store.addMessage(chatId, placeholder)
+
+  await streamAgentReply(
+    (signal) => answerClarification(
+      {
+        sessionId: chatId,
+        clarificationId: card.clarification_id,
+        pendingTurnId: card.pending_turn_id,
+        answer: answer.trim(),
+      },
+      signal,
+      { tutorMode: tutorMode.value, context: tutorContext },
+    ),
+    chatId,
+    msgId,
+  )
 }
 
 async function handleSendWithImage(text: string, imageData: string) {
@@ -439,6 +504,12 @@ function handleSkip(msgId: string) {
             v-if="followUpQuestions.length > 0"
             :questions="followUpQuestions"
             @select="handleFollowUpSelect"
+          />
+          <AskStudentCard
+            v-if="askCard"
+            :card="askCard"
+            :disabled="streaming"
+            @submit="handleClarificationSubmit"
           />
           <div v-if="streaming && streamingCharCount === 0" class="loading-indicator">
             <span class="loading-text">正在组织推导…</span>

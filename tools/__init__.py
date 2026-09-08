@@ -12,6 +12,7 @@ from tools.skill_profile_tool import SkillProfileTool
 from tools.explain_tool import ExplainTool
 from tools.search_tool import SearchTool
 from tools.error_book_tool import ErrorBookTool
+from tools.ask_student_tool import AskStudentTool
 
 _registry: HybridToolRegistry = None
 
@@ -49,6 +50,7 @@ def _register_builtin_tools(registry: HybridToolRegistry, api_key: str = None) -
     registry.register(ExplainTool())
     registry.register(SearchTool())
     registry.register(ErrorBookTool())
+    registry.register(AskStudentTool())
 
 
 ToolRegistry = HybridToolRegistry
