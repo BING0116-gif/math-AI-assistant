@@ -80,6 +80,9 @@ class LangChainToolConverter:
                 from app.services.mode_gating import is_tool_allowed, tool_denied_payload
 
                 current_context = self._get_context()
+                # 请求级列表由 ContextVar 隔离；可视化纯数据经它回传给 SSE，
+                # 不混入 Markdown，也不会跨学生会话共享。
+                current_context.setdefault("visualizations", [])
                 mode = current_context.get("tutor_mode", "tutor_free")
                 try:
                     allowed = is_tool_allowed(mode, custom_tool.name)
@@ -211,6 +214,9 @@ class LangChainToolConverter:
         return "\n".join(description_parts)
 
     def _create_args_schema(self, tool: BaseTool) -> type[BaseModel]:
+        custom_schema = getattr(tool, "args_schema", None)
+        if isinstance(custom_schema, type) and issubclass(custom_schema, BaseModel):
+            return custom_schema
         fields = {
             'query': (
                 str,

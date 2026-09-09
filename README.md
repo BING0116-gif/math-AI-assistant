@@ -11,7 +11,7 @@ app/api/                  HTTP API 路由（13 个路由模块）
 app/services/             业务服务（20+ 服务模块）
 app/data/                 SQLAlchemy 模型、仓储和 Alembic 迁移
 agent_core/               MathAgent、记忆、任务规划和策略
-tools/                    Agent 工具注册与实现（7 个工具）
+tools/                    Agent 工具注册与实现（9 个内置工具）
 prompts/                  模型提示词（系统、ReAct、规划、分类器）
 scripts/                  导入、迁移、检查和验证脚本
 tests/                    自动化测试（34 个测试文件）
@@ -178,6 +178,7 @@ npm run build
 | 认证（注册/登录/Token） | 已贯通 |
 | 课程与知识目录 | 已贯通 |
 | 聊天与 AI Agent | 已贯通（AI Enabled 条件下） |
+| 数学静态可视化 | 已贯通（六类受控 MathVisualSpec、T05 关键数据复核、原生 SVG） |
 | 错题本 | 已贯通 |
 | 记忆系统 | 已贯通 |
 | 用户画像与技能 | 已贯通 |

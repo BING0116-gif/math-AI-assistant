@@ -39,6 +39,9 @@ class ReActPromptTemplate:
         math_verify_rules = """\n7. math_verify：可程序验证的根、方程组解、导数、定积分、极限、函数值、矩阵或简单概率，发布前调用
    只传“结论 + 检查事实”，禁止传私有推理；failed 时最多重推并再验证 1 次，仍失败不得发布为已验证
    inconclusive 可保留答案但必须提示“未完全验证”，绝不能声称 verified""" if "math_verify" in names else ""
+        math_visualize_rules = """\n8. math_visualize：用户明确要求画图/可视化，或曲线、切线、积分面积能显著帮助理解时调用
+   只传已采样坐标的 MathVisualSpec；禁止 JavaScript、HTML、事件属性或让前端求值的表达式
+   切线/积分图必须附 verification_request；工具失败时继续给出文字解释，不中断主回答""" if "math_visualize" in names else ""
 
         return f"""【工具调用规范 — 必须严格遵守】
 
@@ -53,7 +56,7 @@ Action Input: {{"query": "具体问题", "parameters": {{}}}}
 2. 简单问答（T1-T3场景）→ 直接回答，不使用工具
 3. 计算/画图/识别（T4-T5场景）→ 按需使用工具
 4. 工具失败时手动推导，不重复调用同一工具
-5. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}"""
+5. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}{math_visualize_rules}"""
 
     @staticmethod
     def build_observation(result_text: str) -> str:

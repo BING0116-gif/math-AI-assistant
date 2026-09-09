@@ -54,6 +54,13 @@ async def stream_agent_response(
             }
             yield f"event: mode_guard\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
+        visualizations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("visualizations") or [])
+        for visualization in visualizations:
+            yield (
+                "event: visualization\ndata: "
+                f"{json.dumps(visualization, ensure_ascii=False, allow_nan=False)}\n\n"
+            )
+
         # [T03] ask_student 结构化反问事件：本轮内工具创建了 pending 澄清时下发，
         # 前端据此渲染结构化问题卡片（选项按钮 + 自由输入）。此时跳过跟进推荐，
         # 避免在等待学生澄清回答时继续推荐练习。
@@ -188,6 +195,10 @@ async def stream_multimodal_response(
                     payload = {"type": "mode_tool_denied", "message": "该模式下此操作不可用", "denials": mode_denials}
                     yield f"event: mode_guard\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
+                visualizations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("visualizations") or [])
+                for visualization in visualizations:
+                    yield "event: visualization\ndata: " + json.dumps(visualization, ensure_ascii=False, allow_nan=False) + "\n\n"
+
                 yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
                 if ai_run_id:
                     from app.services.tutor_service import complete_ai_run
@@ -210,6 +221,10 @@ async def stream_multimodal_response(
             if mode_denials:
                 payload = {"type": "mode_tool_denied", "message": "该模式下此操作不可用", "denials": mode_denials}
                 yield f"event: mode_guard\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+            visualizations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("visualizations") or [])
+            for visualization in visualizations:
+                yield "event: visualization\ndata: " + json.dumps(visualization, ensure_ascii=False, allow_nan=False) + "\n\n"
 
             yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
             if ai_run_id:

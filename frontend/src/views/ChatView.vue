@@ -157,7 +157,7 @@ function processTyping(msgId: string) {
 }
 
 // SSE 事件处理（命名事件：follow_up / ask_student）
-function handleEvent(eventType: string, data: any) {
+function handleEvent(eventType: string, data: any, messageId?: string) {
   if (eventType === 'follow_up' && data.type === 'recommendation') {
     const content = data.content || ''
     const questions = parseFollowUpContent(content)
@@ -175,6 +175,14 @@ function handleEvent(eventType: string, data: any) {
   if (eventType === 'mode_guard' && data.type === 'mode_tool_denied') {
     modeGuardNotice.value = data.message || '该模式下此操作不可用'
     ElMessage.warning(modeGuardNotice.value)
+    nextTick(() => scrollToBottom())
+  }
+  if (eventType === 'visualization' && messageId) {
+    store.updateMessage(store.currentChatId, messageId, {
+      visualization: data.spec || null,
+      visualizationStatus: data.visualization_status || 'failed',
+      visualizationVerification: data.verification || null,
+    })
     nextTick(() => scrollToBottom())
   }
 }
@@ -280,7 +288,13 @@ async function streamAgentReply(
       })
     }
 
-    await parseSSEStream(response, handleData, handleDone, handleError, handleEvent)
+    await parseSSEStream(
+      response,
+      handleData,
+      handleDone,
+      handleError,
+      (eventType: string, data: any) => handleEvent(eventType, data, msgId),
+    )
   } catch (err: any) {
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
@@ -419,7 +433,13 @@ async function handleSendWithImage(text: string, imageData: string) {
       })
     }
 
-    await parseSSEStream(response, handleData, handleDone, handleError, handleEvent)
+    await parseSSEStream(
+      response,
+      handleData,
+      handleDone,
+      handleError,
+      (eventType: string, data: any) => handleEvent(eventType, data, msgId),
+    )
   } catch (err: any) {
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false

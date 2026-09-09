@@ -9,6 +9,19 @@
         </div>
         <div v-else class="msg-content" v-html="renderedContent"></div>
 
+        <MathVisualCard
+          v-if="message.visualization"
+          :spec="message.visualization"
+          :verification="message.visualizationVerification"
+        />
+        <p
+          v-else-if="message.visualizationStatus === 'failed'"
+          class="visual-fallback"
+          role="status"
+        >
+          图形暂时不可用，文字解答不受影响。
+        </p>
+
         <!-- 流式状态指示 -->
         <div v-if="isStreaming && (!message.content || message.content.length === 0)" class="msg-loading">
           <span class="msg-loading-dot"></span>
@@ -55,6 +68,7 @@
 <script setup>
 import { computed } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
+import MathVisualCard from '@/components/math/MathVisualCard.vue'
 
 const props = defineProps({
   message: { type: Object, required: true },
@@ -133,6 +147,15 @@ const renderedContent = computed(() => {
 }
 
 .msg-body--user .msg-content {
+  font-size: var(--font-size-sm);
+}
+
+.visual-fallback {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--warning);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
   font-size: var(--font-size-sm);
 }
 

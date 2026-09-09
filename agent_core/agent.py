@@ -911,6 +911,7 @@ class MathAgent:
             "estimated_cost": None,
             "tutor_mode": canonical_mode,
             "mode_tool_denials": list(context.get("mode_tool_denials") or []),
+            "visualizations": list(context.get("visualizations") or []),
             "mode_output_guard": {
                 "allowed": guard_result.allowed,
                 "rewritten": guard_result.rewritten,
