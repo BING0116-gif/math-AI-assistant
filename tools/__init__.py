@@ -13,6 +13,7 @@ from tools.explain_tool import ExplainTool
 from tools.search_tool import SearchTool
 from tools.error_book_tool import ErrorBookTool
 from tools.ask_student_tool import AskStudentTool
+from tools.math_verify_tool import MathVerifyTool
 
 _registry: HybridToolRegistry = None
 
@@ -51,6 +52,7 @@ def _register_builtin_tools(registry: HybridToolRegistry, api_key: str = None) -
     registry.register(SearchTool())
     registry.register(ErrorBookTool())
     registry.register(AskStudentTool())
+    registry.register(MathVerifyTool())
 
 
 ToolRegistry = HybridToolRegistry
@@ -65,6 +67,7 @@ __all__ = [
     "ToolRegistry",
     "ToolNotFoundError",
     "ToolExecutionError",
+    "MathVerifyTool",
     "get_registry",
     "init_registry",
 ]
