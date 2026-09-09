@@ -6,12 +6,14 @@ import AppShell from '@/components/shell/AppShell.vue'
 import MessageItem from '@/components/chat/MessageItem.vue'
 import AgentComposer from '@/components/conversation/AgentComposer.vue'
 import AskStudentCard from '@/components/chat/AskStudentCard.vue'
+import ModeGuardNotice from '@/components/chat/ModeGuardNotice.vue'
 import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
+import { DEFAULT_TUTOR_MODE, TUTOR_MODES, normalizeTutorMode } from '@/utils/tutorModes'
 import { useAiCapability } from '@/composables/useAiCapability'
 
 const route = useRoute()
@@ -28,9 +30,10 @@ const abortController = ref<AbortController | null>(null)
 const reasonInput = ref<HTMLTextAreaElement | null>(null)
 const followUpQuestions = ref<any[]>([])
 const askCard = ref<any>(null)
+const modeGuardNotice = ref('')
 const showErrorModal = ref(false)
 const autoScroll = ref(true)
-const tutorMode = ref(String(route.query.tutor_mode || store.currentChat?.defaultTutorMode || 'step_by_step'))
+const tutorMode = ref(normalizeTutorMode(route.query.tutor_mode || store.currentChat?.defaultTutorMode || DEFAULT_TUTOR_MODE))
 const tutorContext = {
   source_session_id: route.query.source_session_id ? String(route.query.source_session_id) : undefined,
   question_id: route.query.question_id ? String(route.query.question_id) : undefined,
@@ -79,7 +82,7 @@ onMounted(async () => {
     }
   }
   if (!route.query.tutor_mode) {
-    tutorMode.value = store.currentChat?.defaultTutorMode || 'step_by_step'
+    tutorMode.value = normalizeTutorMode(store.currentChat?.defaultTutorMode)
   }
 
   // 首页带问题进入：自动触发首次回答（文本走 query，图片走 store 暂存）
@@ -167,6 +170,11 @@ function handleEvent(eventType: string, data: any) {
   if (eventType === 'ask_student' && data.clarification_id) {
     askCard.value = data
     followUpQuestions.value = []
+    nextTick(() => scrollToBottom())
+  }
+  if (eventType === 'mode_guard' && data.type === 'mode_tool_denied') {
+    modeGuardNotice.value = data.message || '该模式下此操作不可用'
+    ElMessage.warning(modeGuardNotice.value)
     nextTick(() => scrollToBottom())
   }
 }
@@ -289,6 +297,7 @@ async function handleTextSend(text: string) {
   if (!text || streaming.value) return
   if (!isAiAvailable.value) return
   followUpQuestions.value = []
+  modeGuardNotice.value = ''
   // 学生忽略卡片直接发新消息时，收起待答卡片
   askCard.value = null
 
@@ -314,6 +323,7 @@ async function handleClarificationSubmit({ answer }: { answer: string; optionLab
   if (!card || streaming.value) return
   if (!answer || !answer.trim()) return
   askCard.value = null
+  modeGuardNotice.value = ''
 
   const chatId = store.currentChatId
   store.addMessage(chatId, { content: answer.trim(), sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
@@ -344,6 +354,7 @@ async function handleSendWithImage(text: string, imageData: string) {
   if (streaming.value) return
   if (!isAiAvailable.value) return
   followUpQuestions.value = []
+  modeGuardNotice.value = ''
 
   const chatId = store.currentChatId
   const userMessageContent = text && text.trim() ? text.trim() : ''
@@ -527,9 +538,10 @@ function handleSkip(msgId: string) {
       </div>
 
       <div class="composer-area">
+        <ModeGuardNotice :message="modeGuardNotice" />
         <div class="tutor-modes" aria-label="AI Tutor 辅导方式">
           <span>辅导方式</span>
-          <button v-for="item in [{value:'hint_only',label:'只给提示'},{value:'step_by_step',label:'分步讲解'},{value:'check_my_work',label:'检查我的思路'}]" :key="item.value" :class="{active:tutorMode===item.value}" :aria-pressed="tutorMode===item.value" :disabled="streaming" @click="tutorMode=item.value;store.setTutorMode(store.currentChatId,item.value)">{{item.label}}</button>
+          <button v-for="item in TUTOR_MODES" :key="item.value" :class="{active:tutorMode===item.value}" :aria-pressed="tutorMode===item.value" :disabled="streaming" @click="tutorMode=item.value;store.setTutorMode(store.currentChatId,item.value)">{{item.label}}</button>
         </div>
         <AgentComposer
           :disabled="!isAiAvailable"

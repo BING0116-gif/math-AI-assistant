@@ -68,7 +68,7 @@ async def test_tutor_context_is_owner_scoped_completion_gated_and_audited(monkey
     await complete_ai_run(run_id, status="completed", metadata={"model": "mock-qwen", "tool_names": ["expression_verify"], "latency_ms": 12})
     async with factory() as db:
         run = await db.scalar(select(AIInteractionRun).where(AIInteractionRun.id == run_id))
-        assert run.user_id == "user-1" and run.prompt_version == "tutor-mode-v1"
+        assert run.user_id == "user-1" and run.prompt_version == "tutor-mode-v2-gated"
         assert run.token_usage is None and run.estimated_cost is None
         assert run.tool_names == ["expression_verify"]
     await engine.dispose()

@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
@@ -32,6 +32,7 @@ from agent_core.callbacks import ThoughtRecordingCallbackHandler
 from agent_core.langchain_adapter import get_tool_converter
 from tools.base_tool import BaseTool
 from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
+from app.services.mode_gating import filter_tools_for_mode, normalize_tutor_mode
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ class LangChainReActStrategy(AgentStrategy):
         max_iterations: int = 5,
         timeout_seconds: float = 120.0,
         verbose: bool = False,
+        system_prompt_builder: Optional[Callable[[List[BaseTool]], str]] = None,
     ):
         self._llm = llm
         self._registry = registry
@@ -84,6 +86,7 @@ class LangChainReActStrategy(AgentStrategy):
         self._max_iterations = max_iterations
         self._timeout_seconds = timeout_seconds
         self._verbose = verbose
+        self._system_prompt_builder = system_prompt_builder
         self._last_used_tools: set = set()  # 最近一次 stream 执行中使用的工具集
         self._last_token_usage: Dict[str, int] = {}
 
@@ -91,21 +94,24 @@ class LangChainReActStrategy(AgentStrategy):
 
         self._agent: Any = None
         self._tools: List[Any] = []
+        self._agents_by_mode: Dict[str, Any] = {}
+        self._prompts_by_mode: Dict[str, str] = {}
 
         logger.info(
             f"LangChainReActStrategy初始化完成 "
             f"(max_iterations={max_iterations}, timeout={timeout_seconds}s)"
         )
 
-    def _ensure_agent_initialized(self) -> Any:
-        if self._agent is not None:
-            return self._agent
+    def _ensure_agent_initialized(self, mode: str = "tutor_free") -> Any:
+        canonical_mode = normalize_tutor_mode(mode)
+        if canonical_mode in self._agents_by_mode:
+            return self._agents_by_mode[canonical_mode]
 
         start_init = time.time()
         logger.info("正在初始化LangChain ReAct Agent...")
 
         converter = get_tool_converter()
-        custom_tools = self._registry.get_all_tools()
+        custom_tools = filter_tools_for_mode(self._registry.get_all_tools(), canonical_mode)
         self._tools = converter.convert_batch(custom_tools)
 
         logger.info(f"已转换 {len(self._tools)} 个工具为LangChain格式")
@@ -121,17 +127,25 @@ class LangChainReActStrategy(AgentStrategy):
         # except Exception:
         #     logger.debug("SummarizationMiddleware初始化失败，跳过")
 
-        self._agent = create_agent(
+        system_prompt = (
+            self._system_prompt_builder(custom_tools)
+            if self._system_prompt_builder is not None
+            else self._system_prompt
+        )
+        agent = create_agent(
             model=self._llm,
             tools=self._tools,
-            system_prompt=self._system_prompt,
+            system_prompt=system_prompt,
             middleware=middleware,
         )
+        self._agent = agent
+        self._agents_by_mode[canonical_mode] = agent
+        self._prompts_by_mode[canonical_mode] = system_prompt
 
         elapsed = (time.time() - start_init) * 1000
         logger.info(f"LangChain ReAct Agent初始化完成 ({elapsed:.1f}ms)")
 
-        return self._agent
+        return agent
 
     def _get_recorder(self, session_id: str) -> ThoughtRecordingCallbackHandler:
         if session_id not in self._recorders:
@@ -169,7 +183,8 @@ class LangChainReActStrategy(AgentStrategy):
         session_id: str,
         context: Dict[str, Any],
     ) -> AsyncGenerator[str, None]:
-        agent = self._ensure_agent_initialized()
+        mode = normalize_tutor_mode(context.get("tutor_mode", "tutor_free"))
+        agent = self._ensure_agent_initialized(mode)
         recorder = self._get_recorder(session_id)
 
         # 将 context（含 user_id）注入到工具转换器，让工具执行时能获取用户身份
@@ -180,7 +195,7 @@ class LangChainReActStrategy(AgentStrategy):
 
         chat_history = self._format_chat_history(context.get("chat_history", []))
 
-        messages = [SystemMessage(content=self._system_prompt)]
+        messages = [SystemMessage(content=self._prompts_by_mode.get(mode, self._system_prompt))]
         messages.extend(chat_history)
         messages.append(HumanMessage(content=user_input))
 
@@ -352,6 +367,8 @@ class LangChainReActStrategy(AgentStrategy):
         """
         self._agent = None
         self._tools = []
+        self._agents_by_mode.clear()
+        self._prompts_by_mode.clear()
         get_tool_converter().clear_cache()
         logger.info("Agent工具列表已刷新，将在下次调用时重新初始化")
 

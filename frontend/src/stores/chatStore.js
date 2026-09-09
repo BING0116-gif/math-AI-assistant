@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { generateUUID } from '@/utils/helpers'
 import { loadFromStorage, saveToStorage } from '@/utils/storage'
 import { getChatSession, listChatSessions, unwrapChat, updateChatSession } from '@/api/chat'
+import { DEFAULT_TUTOR_MODE, normalizeTutorMode } from '@/utils/tutorModes'
 
 const STORAGE_KEY = 'math_ai_chats'
 
@@ -48,7 +49,7 @@ export const useChatStore = defineStore('chat', () => {
       title: '新对话',
       lastMessageTime: new Date().toLocaleString(),
       messages: [createWelcomeMessage()],
-      defaultTutorMode: 'step_by_step'
+      defaultTutorMode: DEFAULT_TUTOR_MODE
     }
     chats.value.unshift(newChat)
     currentChatId.value = newChat.id
@@ -145,7 +146,7 @@ export const useChatStore = defineStore('chat', () => {
     const data = unwrapChat(await getChatSession(chatId))
     const mapped = (data.messages || []).map(message => ({ id: `sql-${message.id}`, content: message.content, sender: message.role === 'assistant' ? 'ai' : message.role, timestamp: message.created_at, type: 'text', errorBookStatus: message.role === 'assistant' ? 'pending' : undefined }))
     const existing = chats.value.find(item => item.id === chatId)
-    const chat = { id: data.id, title: data.title || '新对话', lastMessageTime: data.messages?.at(-1)?.created_at || new Date().toISOString(), messages: mapped.length ? mapped : [createWelcomeMessage()], defaultTutorMode: data.default_tutor_mode || 'step_by_step', context: data.context || {} }
+    const chat = { id: data.id, title: data.title || '新对话', lastMessageTime: data.messages?.at(-1)?.created_at || new Date().toISOString(), messages: mapped.length ? mapped : [createWelcomeMessage()], defaultTutorMode: normalizeTutorMode(data.default_tutor_mode), context: data.context || {} }
     if (existing) Object.assign(existing, chat); else chats.value.push(chat)
     currentChatId.value = chatId; persistChats(); return chat
   }
@@ -154,7 +155,7 @@ export const useChatStore = defineStore('chat', () => {
     const rows = unwrapChat(await listChatSessions()) || []
     for (const row of rows) {
       const existing = chats.value.find(item => item.id === row.id)
-      const shell = { id: row.id, title: row.title || '新对话', lastMessageTime: row.updated_at, messages: existing?.messages || [], defaultTutorMode: row.default_tutor_mode || 'step_by_step', context: row.context || {} }
+      const shell = { id: row.id, title: row.title || '新对话', lastMessageTime: row.updated_at, messages: existing?.messages || [], defaultTutorMode: normalizeTutorMode(row.default_tutor_mode), context: row.context || {} }
       if (existing) Object.assign(existing, shell); else chats.value.push(shell)
     }
     chats.value.sort((a,b)=>new Date(b.lastMessageTime)-new Date(a.lastMessageTime))
@@ -164,7 +165,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function setTutorMode(chatId, mode) {
     const chat = chats.value.find(item => item.id === chatId)
-    if (chat) { chat.defaultTutorMode = mode; persistChats(); updateChatSession(chatId, { default_tutor_mode: mode }).catch(() => {}) }
+    if (chat) { chat.defaultTutorMode = normalizeTutorMode(mode); persistChats(); updateChatSession(chatId, { default_tutor_mode: chat.defaultTutorMode }).catch(() => {}) }
   }
 
   init()

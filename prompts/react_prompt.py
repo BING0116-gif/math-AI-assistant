@@ -34,6 +34,11 @@ class ReActPromptTemplate:
         """
         names = tool_names or []
         tools_list = "、".join(names) if names else "无专用工具"
+        ask_student_rules = """\n6. ask_student：仅在题目缺必要条件或需学生选择路径时使用；每轮最多 1 次，调用后停止推理等待回答
+   禁止索要答案/确认计算结果/猜测缺失条件；题目信息完整时不要调用""" if "ask_student" in names else ""
+        math_verify_rules = """\n7. math_verify：可程序验证的根、方程组解、导数、定积分、极限、函数值、矩阵或简单概率，发布前调用
+   只传“结论 + 检查事实”，禁止传私有推理；failed 时最多重推并再验证 1 次，仍失败不得发布为已验证
+   inconclusive 可保留答案但必须提示“未完全验证”，绝不能声称 verified""" if "math_verify" in names else ""
 
         return f"""【工具调用规范 — 必须严格遵守】
 
@@ -48,12 +53,7 @@ Action Input: {{"query": "具体问题", "parameters": {{}}}}
 2. 简单问答（T1-T3场景）→ 直接回答，不使用工具
 3. 计算/画图/识别（T4-T5场景）→ 按需使用工具
 4. 工具失败时手动推导，不重复调用同一工具
-5. 最多进行 3 次工具调用
-6. ask_student：仅在题目缺必要条件或需学生选择路径时使用；每轮最多 1 次，调用后停止推理等待回答
-   禁止索要答案/确认计算结果/猜测缺失条件；题目信息完整时不要调用
-7. math_verify：可程序验证的根、方程组解、导数、定积分、极限、函数值、矩阵或简单概率，发布前调用
-   只传“结论 + 检查事实”，禁止传私有推理；failed 时最多重推并再验证 1 次，仍失败不得发布为已验证
-   inconclusive 可保留答案但必须提示“未完全验证”，绝不能声称 verified"""
+5. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}"""
 
     @staticmethod
     def build_observation(result_text: str) -> str:

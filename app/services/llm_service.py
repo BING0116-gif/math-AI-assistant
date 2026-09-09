@@ -149,8 +149,8 @@ class LLMService:
             response = await self._client.chat.completions.create(
                 model=model or self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=self.temperature if temperature is None else temperature,
+                max_tokens=self.max_tokens if max_tokens is None else max_tokens,
                 stream=False,
             )
             content = response.choices[0].message.content or ""
@@ -198,8 +198,8 @@ class LLMService:
             stream = await self._client.chat.completions.create(
                 model=model or self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
-                max_tokens=max_tokens or self.max_tokens,
+                temperature=self.temperature if temperature is None else temperature,
+                max_tokens=self.max_tokens if max_tokens is None else max_tokens,
                 stream=True,
             )
             async for chunk in stream:

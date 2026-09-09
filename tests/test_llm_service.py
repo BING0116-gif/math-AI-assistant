@@ -279,6 +279,23 @@ class TestLLMServiceGenerate:
             assert result.content == "response with system"
 
     @pytest.mark.asyncio
+    async def test_generate_preserves_explicit_zero_temperature(self, svc):
+        """分类器显式要求 temperature=0 时不能回退到服务默认值。"""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="OK"))]
+        mock_response.usage = None
+        mock_response.model = "test-model"
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch.object(svc, '_client', mock_client):
+            await svc.generate("judge", temperature=0, max_tokens=64, use_cache=False)
+
+        kwargs = mock_client.chat.completions.create.await_args.kwargs
+        assert kwargs["temperature"] == 0
+        assert kwargs["max_tokens"] == 64
+
+    @pytest.mark.asyncio
     async def test_generate_skip_cache(self, svc):
         """测试跳过缓存"""
         mock_response = MagicMock()

@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/stores/authStore'
 import api from './index'
+import { DEFAULT_TUTOR_MODE, normalizeTutorMode } from '@/utils/tutorModes'
 
 function getAuthHeaders() {
   const store = useAuthStore()
@@ -20,7 +21,7 @@ export function sendChatMessage(message, sessionId, signal, options = {}) {
     body: JSON.stringify({
       message,
       session_id: sessionId,
-      tutor_mode: options.tutorMode || 'step_by_step',
+      tutor_mode: normalizeTutorMode(options.tutorMode || DEFAULT_TUTOR_MODE),
       context: options.context || {},
     }),
     signal,
@@ -47,7 +48,7 @@ export function sendMultimodalRequest(message, imageData, sessionId, signal, opt
       message: message || '',
       image: imageData || null,
       session_id: sessionId,
-      tutor_mode: options.tutorMode || 'step_by_step',
+      tutor_mode: normalizeTutorMode(options.tutorMode || DEFAULT_TUTOR_MODE),
       context: options.context || {},
     }),
     signal,
@@ -64,7 +65,7 @@ export function answerClarification({ sessionId, clarificationId, pendingTurnId,
       clarification_id: clarificationId,
       pending_turn_id: pendingTurnId,
       answer,
-      tutor_mode: options.tutorMode || 'step_by_step',
+      tutor_mode: normalizeTutorMode(options.tutorMode || DEFAULT_TUTOR_MODE),
       context: options.context || {},
     }),
     signal,

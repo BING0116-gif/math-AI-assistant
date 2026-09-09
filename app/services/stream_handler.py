@@ -45,6 +45,15 @@ async def stream_agent_response(
                 except (TypeError, ValueError) as json_error:
                     yield f"data: {json.dumps({'content': f'JSON序列化错误: {str(json_error)}', 'type': 'error'})}\n\n"
 
+        mode_denials = list((getattr(agent, "_last_run_metadata", {}) or {}).get("mode_tool_denials") or [])
+        if mode_denials:
+            payload = {
+                "type": "mode_tool_denied",
+                "message": "该模式下此操作不可用",
+                "denials": mode_denials,
+            }
+            yield f"event: mode_guard\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
         # [T03] ask_student 结构化反问事件：本轮内工具创建了 pending 澄清时下发，
         # 前端据此渲染结构化问题卡片（选项按钮 + 自由输入）。此时跳过跟进推荐，
         # 避免在等待学生澄清回答时继续推荐练习。
@@ -174,6 +183,11 @@ async def stream_multimodal_response(
                             chunk = str(chunk)
                         yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
 
+                mode_denials = list((getattr(agent, "_last_run_metadata", {}) or {}).get("mode_tool_denials") or [])
+                if mode_denials:
+                    payload = {"type": "mode_tool_denied", "message": "该模式下此操作不可用", "denials": mode_denials}
+                    yield f"event: mode_guard\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
                 yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
                 if ai_run_id:
                     from app.services.tutor_service import complete_ai_run
@@ -191,6 +205,11 @@ async def stream_multimodal_response(
                     if not isinstance(chunk, str):
                         chunk = str(chunk)
                     yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
+
+            mode_denials = list((getattr(agent, "_last_run_metadata", {}) or {}).get("mode_tool_denials") or [])
+            if mode_denials:
+                payload = {"type": "mode_tool_denied", "message": "该模式下此操作不可用", "denials": mode_denials}
+                yield f"event: mode_guard\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
             yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
             if ai_run_id:

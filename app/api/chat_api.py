@@ -6,8 +6,8 @@
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, Literal
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from typing import Annotated, Any, Literal
 
 from app.config.settings import settings
 from app.middleware.security import (
@@ -17,6 +17,7 @@ from app.middleware.security import (
 )
 from app.models.ai_unavailable import AIUnavailableResponse
 from app.services.ai_capability import get_ai_capability, is_ai_available
+from app.services.mode_gating import normalize_tutor_mode
 from app.services.stream_handler import (
     stream_agent_response,
     stream_recognize_response,
@@ -24,6 +25,11 @@ from app.services.stream_handler import (
 )
 
 router = APIRouter(tags=["chat"])
+
+TutorMode = Annotated[
+    Literal["tutor_free", "hint_only", "guided", "review"],
+    BeforeValidator(normalize_tutor_mode),
+]
 
 
 class TutorContextRequest(BaseModel):
@@ -38,7 +44,7 @@ class TutorContextRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
-    tutor_mode: Literal["hint_only", "step_by_step", "check_my_work"] = "step_by_step"
+    tutor_mode: TutorMode = "guided"
     context: TutorContextRequest = Field(default_factory=TutorContextRequest)
 
 
@@ -51,13 +57,13 @@ class MultimodalChatRequest(BaseModel):
     message: str = ""
     image: str | None = None
     session_id: str = "default"
-    tutor_mode: Literal["hint_only", "step_by_step", "check_my_work"] = "step_by_step"
+    tutor_mode: TutorMode = "guided"
     context: TutorContextRequest = Field(default_factory=TutorContextRequest)
 
 
 class UpdateChatSessionRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    default_tutor_mode: Literal["hint_only", "step_by_step", "check_my_work"] | None = None
+    default_tutor_mode: TutorMode | None = None
     archive: bool = False
 
 
@@ -68,7 +74,7 @@ class ClarificationAnswerRequest(BaseModel):
     clarification_id: str = Field(..., min_length=8, max_length=64)
     pending_turn_id: str = Field(..., min_length=8, max_length=64)
     answer: str = Field(..., min_length=1, max_length=2000)
-    tutor_mode: Literal["hint_only", "step_by_step", "check_my_work"] = "step_by_step"
+    tutor_mode: TutorMode = "guided"
     context: TutorContextRequest = Field(default_factory=TutorContextRequest)
 
 

@@ -352,6 +352,37 @@ class HybridToolRegistry:
         start_time = time.time()
         execution_id = str(uuid.uuid4())[:8]
 
+        # T06 执行时硬门控：即使提示注入猜到未暴露的工具名，也不能绕过。
+        from app.services.mode_gating import (
+            MODE_TOOL_DENIED_CODE,
+            is_tool_allowed,
+            tool_denied_payload,
+        )
+
+        mode = (input_data.context or {}).get("tutor_mode", "tutor_free")
+        try:
+            allowed = is_tool_allowed(mode, tool_name)
+        except ValueError:
+            allowed = False
+        if not allowed:
+            payload = tool_denied_payload(mode if mode else "tutor_free", tool_name)
+            denials = input_data.context.setdefault("mode_tool_denials", [])
+            if payload not in denials:
+                denials.append(payload)
+            logger.warning(
+                "模式工具调用被拒绝: mode=%s tool=%s code=%s",
+                payload["mode"],
+                tool_name,
+                MODE_TOOL_DENIED_CODE,
+            )
+            return ToolOutput(
+                success=False,
+                error=payload["message"],
+                tool_name=tool_name,
+                execution_time_ms=0,
+                metadata=payload,
+            )
+
         try:
             tool = self.get_tool(tool_name)
         except ToolNotFoundError:

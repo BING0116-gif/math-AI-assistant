@@ -10,9 +10,11 @@ LangChain工具转换器 — 将自定义BaseTool转换为LangChain StructuredTo
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 import traceback
+from contextvars import ContextVar, copy_context
 from typing import Any, Dict, List, Optional
 
 from langchain_core.tools import StructuredTool
@@ -38,15 +40,24 @@ class LangChainToolConverter:
     def __init__(self):
         self._conversion_cache: Dict[str, StructuredTool] = {}
         self._metadata_store: Dict[str, Dict[str, Any]] = {}
-        self._current_context: Dict[str, Any] = {}  # 当前请求的上下文（含user_id）
+        # 转换器是进程级单例；请求上下文必须按异步任务隔离，避免并发会话互相
+        # 覆盖 tutor_mode / user_id，造成模式门控绕过或学生数据串线。
+        self._context: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+            f"langchain_tool_context_{id(self)}",
+            default=None,
+        )
 
     def set_context(self, context: Dict[str, Any]) -> None:
         """设置当前请求的上下文，工具执行时可读取其中的 user_id 等信息。"""
-        self._current_context = context or {}
+        self._context.set(context or {})
 
     def clear_context(self) -> None:
         """清除当前上下文。"""
-        self._current_context = {}
+        self._context.set(None)
+
+    def _get_context(self) -> Dict[str, Any]:
+        """返回当前异步任务绑定的请求上下文。"""
+        return self._context.get() or {}
 
     def convert(self, custom_tool: BaseTool) -> StructuredTool:
         if custom_tool.name in self._conversion_cache:
@@ -66,12 +77,32 @@ class LangChainToolConverter:
             # ============================================
 
             try:
+                from app.services.mode_gating import is_tool_allowed, tool_denied_payload
+
+                current_context = self._get_context()
+                mode = current_context.get("tutor_mode", "tutor_free")
+                try:
+                    allowed = is_tool_allowed(mode, custom_tool.name)
+                except ValueError:
+                    allowed = False
+                if not allowed:
+                    payload = tool_denied_payload(mode, custom_tool.name)
+                    denials = current_context.setdefault("mode_tool_denials", [])
+                    if payload not in denials:
+                        denials.append(payload)
+                    logger.warning(
+                        "LangChain 模式工具调用被拒绝: mode=%s tool=%s",
+                        payload["mode"],
+                        custom_tool.name,
+                    )
+                    return "[MODE_TOOL_DENIED] " + json.dumps(payload, ensure_ascii=False)
+
                 input_data = ToolInput(
                     query=query,
                     parameters=kwargs,
                     context={
                         "source": "langchain_agent",
-                        **self._current_context,  # ← 注入 user_id 等上下文信息
+                        **current_context,  # ← 注入当前任务的 user_id 等上下文信息
                     },
                 )
 
@@ -104,9 +135,12 @@ class LangChainToolConverter:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     import concurrent.futures
+                    context = copy_context()
                     with concurrent.futures.ThreadPoolExecutor() as pool:
                         future = pool.submit(
-                            asyncio.run, _execute_async(query, **kwargs)
+                            context.run,
+                            asyncio.run,
+                            _execute_async(query, **kwargs),
                         )
                         return future.result(timeout=30)
                 else:
