@@ -44,6 +44,7 @@ services:
       - VECTOR_EMBEDDING_MODEL=${VECTOR_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
       - VECTOR_SIZE=${VECTOR_SIZE:-512}
       - QUESTION_QDRANT_COLLECTION=${QUESTION_QDRANT_COLLECTION:-math_questions_bge_zh_v1}
+      - QUESTION_DEDUP_THRESHOLD=${QUESTION_DEDUP_THRESHOLD:-0.92}
       - MEMORY_QDRANT_COLLECTION=${MEMORY_QDRANT_COLLECTION:-user_memories_bge_zh_v1}
       - HF_HOME=/app/runtime/model-cache
       - DB_USER=${DB_USER:-mathai}

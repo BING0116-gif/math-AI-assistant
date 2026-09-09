@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import random
 import re
 import secrets
@@ -19,16 +20,23 @@ import sympy as sp
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.config.settings import settings
 from app.data.database import get_db_session
 from app.data.models import (
     ErrorItem, PracticeSession, PracticeSessionQuestion, Question,
     QuestionKnowledgePoint, VariantGeneration,
 )
 from app.services.paper_generator import _grade_one
+from app.services.embedding_service import get_embedding_service
+from app.services.question_dedup import find_similar_questions
+from app.services.vector_store import get_vector_store
 
 SUPPORTED_TEMPLATES = {"function_value_numeric", "polynomial_expand_expression"}
 TEMPLATE_VERSION = "variant-template-v1"
 MAX_ATTEMPTS = 8
+MAX_SEMANTIC_DUPLICATE_ATTEMPTS = 2
+
+logger = logging.getLogger(__name__)
 
 
 class VariantGenerationError(Exception):
@@ -198,6 +206,7 @@ async def create_variant_session(user_id: str, error_item_key: str, idempotency_
         blueprint = validate_blueprint(source)
 
         duplicate_seen = False
+        semantic_duplicate_attempts = 0
         for _ in range(MAX_ATTEMPTS):
             candidate = generate_candidate(blueprint, secrets.randbits(63), variation_dimension)
             report = validate_candidate(candidate)
@@ -212,6 +221,33 @@ async def create_variant_session(user_id: str, error_item_key: str, idempotency_
             exact_question = await db.scalar(select(Question.id).where(Question.content == candidate.content, Question.answer == candidate.answer))
             if prior_variant or exact_question:
                 duplicate_seen = True
+                continue
+
+            try:
+                embedding_service = get_embedding_service()
+                vector_store = await get_vector_store()
+                similar_questions = await find_similar_questions(
+                    embedding_service,
+                    vector_store,
+                    candidate.content,
+                )
+            except Exception as exc:
+                # 依赖获取失败也遵循 T04 的 fail-open 约束；服务内部还会隔离
+                # embedding 编码和向量查询失败。
+                logger.warning("[变式去重] 查重依赖不可用，继续生成: %s", exc)
+                similar_questions = []
+
+            if similar_questions:
+                duplicate_seen = True
+                semantic_duplicate_attempts += 1
+                logger.info(
+                    "[变式去重] 候选已丢弃: source_question_id=%s attempt=%s matches=%s",
+                    source.id,
+                    semantic_duplicate_attempts,
+                    similar_questions,
+                )
+                if semantic_duplicate_attempts >= MAX_SEMANTIC_DUPLICATE_ATTEMPTS:
+                    break
                 continue
 
             question_id = "var-" + uuid.uuid4().hex[:16]
@@ -258,7 +294,12 @@ async def create_variant_session(user_id: str, error_item_key: str, idempotency_
                 generated_question_id=question_id, session_id=session.id,
                 variation_dimensions=candidate.dimensions, template_version=TEMPLATE_VERSION,
                 generation_provider="deterministic-template", generation_model=None, prompt_version=None,
-                review_status="draft", validation_report=report | {"parameters": candidate.parameters, "duplicate_checked": True},
+                review_status="draft", validation_report=report | {
+                    "parameters": candidate.parameters,
+                    "duplicate_checked": True,
+                    "semantic_duplicate_threshold": settings.QUESTION_DEDUP_THRESHOLD,
+                    "semantic_duplicate_matches": [],
+                },
                 duplicate_fingerprint=fingerprint, idempotency_key=idempotency_key,
                 request_fingerprint=request_fingerprint,
             )

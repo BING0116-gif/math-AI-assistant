@@ -146,9 +146,18 @@ class Settings(BaseSettings):
     VECTOR_EMBEDDING_MODEL: str = Field(default="BAAI/bge-small-zh-v1.5", alias="VECTOR_EMBEDDING_MODEL")
     VECTOR_SIZE: int = Field(default=512, alias="VECTOR_SIZE")
     QUESTION_QDRANT_COLLECTION: str = Field(default="math_questions_bge_zh_v1", alias="QUESTION_QDRANT_COLLECTION")
+    # T04：待校准初始值，不是经验常数；应使用版本化校准集随 embedding 模型复核。
+    QUESTION_DEDUP_THRESHOLD: float = Field(default=0.92, alias="QUESTION_DEDUP_THRESHOLD")
     OUTBOX_BATCH_SIZE: int = Field(default=50, alias="OUTBOX_BATCH_SIZE")
     OUTBOX_MAX_RETRIES: int = Field(default=8, alias="OUTBOX_MAX_RETRIES")
     OUTBOX_POLL_SECONDS: int = Field(default=5, alias="OUTBOX_POLL_SECONDS")
+
+    @field_validator("QUESTION_DEDUP_THRESHOLD")
+    @classmethod
+    def validate_question_dedup_threshold(cls, value):
+        if not 0 < value <= 1:
+            raise ValueError("题目向量查重阈值必须在 (0, 1] 范围内")
+        return value
 
     # ── 记忆系统配置 ──
     MEMORY_ENABLED: bool = Field(default=True, alias="MEMORY_ENABLED")
