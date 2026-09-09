@@ -878,6 +878,73 @@ class Memory(Base):
     )
 
 
+class MemoryEvidence(Base):
+    """把策展记忆追溯到同一用户的原始学习事件。"""
+
+    __tablename__ = "memory_evidence"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    memory_id = Column(
+        Integer, ForeignKey("memories.id", ondelete="CASCADE"), nullable=False
+    )
+    learning_record_id = Column(
+        Integer,
+        ForeignKey("learning_records.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "memory_id", "learning_record_id", name="uq_memory_evidence_edge"
+        ),
+        Index("ix_memory_evidence_owner_memory", "user_id", "memory_id"),
+    )
+
+
+class ProfileEvidence(Base):
+    """把不可变画像快照的一个维度追溯到策展记忆。"""
+
+    __tablename__ = "profile_evidence"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    profile_snapshot_id = Column(String(64), nullable=False)
+    dimension = Column(String(100), nullable=False)
+    memory_id = Column(
+        Integer, ForeignKey("memories.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id = Column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_snapshot_id",
+            "dimension",
+            "memory_id",
+            name="uq_profile_evidence_edge",
+        ),
+        Index(
+            "ix_profile_evidence_owner_dimension",
+            "user_id",
+            "dimension",
+            "created_at",
+        ),
+    )
+
+
 class MemoryTag(Base):
     """记忆标签表"""
     __tablename__ = "memory_tags"

@@ -382,7 +382,7 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "b7c8d9e0f1a2"  # T02 错题级复习排期字段
+        assert script.get_current_head() == "b8d9e0f1a2b3"  # T07 画像记忆证据链
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3

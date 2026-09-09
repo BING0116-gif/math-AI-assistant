@@ -17,7 +17,9 @@ from app.data.models import (
     LearningRecord,
     Memory,
     MemoryAccessLog,
+    MemoryEvidence,
     MemoryTag,
+    ProfileEvidence,
     UserProfile,
     UserKnowledgeState,
     ReviewSchedule,
@@ -33,6 +35,8 @@ async def delete_user_data(session: AsyncSession, user_id: str) -> Dict[str, int
 
     statements = (
         ("variant_generations", delete(VariantGeneration).where(VariantGeneration.user_id == user_id)),
+        ("profile_evidence", delete(ProfileEvidence).where(ProfileEvidence.user_id == user_id)),
+        ("memory_evidence", delete(MemoryEvidence).where(MemoryEvidence.user_id == user_id)),
         (
             "memory_access_logs",
             delete(MemoryAccessLog).where(

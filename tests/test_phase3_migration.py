@@ -30,4 +30,4 @@ def test_existing_assessment_draft_survives_phase3_rename(tmp_path, monkeypatch)
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
     assert row == ("user-old", "session-old", 7, '"A"', 3)
-    assert revision == "ae5f60718293"
+    assert revision == "b8d9e0f1a2b3"

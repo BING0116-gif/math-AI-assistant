@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import AppShell from '@/components/shell/AppShell.vue'
 import { getLearningProfile } from '@/api/learning'
+import { getProfileWhy } from '@/api/profileEvidence'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -10,6 +11,9 @@ const router = useRouter()
 const loading = ref(true)
 const canonicalProfile = ref<any>(null)
 const canonicalReviews = ref<any[]>([])
+const evidenceByDimension = ref<Record<string, any>>({})
+const evidenceLoading = ref<Record<string, boolean>>({})
+const evidenceErrors = ref<Record<string, string>>({})
 
 const curveChartEl = ref<HTMLElement | null>(null)
 const donutChartEl = ref<HTMLElement | null>(null)
@@ -155,6 +159,31 @@ const knowledgeMasteryTop10 = computed(() => {
 const aiInsights = computed(() => {
   return (canonicalProfile.value?.insights || []).map((item: any) => ({ label: item.title, value: item.conclusion, evidence: item.evidence, action: item.action }))
 })
+
+function formatEvidenceTime(value: string) {
+  return value ? new Date(value).toLocaleString() : '时间未知'
+}
+
+async function loadDimensionEvidence(dimension: string, force = false) {
+  if (!force && (evidenceByDimension.value[dimension] || evidenceLoading.value[dimension])) return
+  evidenceLoading.value = { ...evidenceLoading.value, [dimension]: true }
+  evidenceErrors.value = { ...evidenceErrors.value, [dimension]: '' }
+  try {
+    const evidence = await getProfileWhy(dimension)
+    evidenceByDimension.value = { ...evidenceByDimension.value, [dimension]: evidence }
+  } catch (error: any) {
+    evidenceErrors.value = {
+      ...evidenceErrors.value,
+      [dimension]: error?.response?.data?.detail || error?.message || '依据加载失败，请稍后重试',
+    }
+  } finally {
+    evidenceLoading.value = { ...evidenceLoading.value, [dimension]: false }
+  }
+}
+
+function handleEvidenceToggle(event: Event, dimension: string) {
+  if ((event.currentTarget as HTMLDetailsElement).open) loadDimensionEvidence(dimension)
+}
 
 // ── Chart initialization ──
 
@@ -590,7 +619,43 @@ watch(knowledgeMasteryTop10, () => {
               <h3 class="card-title">知识点记忆表现</h3>
             </div>
             <div ref="barChartEl" class="chart-container chart--bar"></div>
-            <p v-for="item in knowledgeMasteryTop10" :key="item.category" class="evidence-count">{{ item.category }} · 证据 {{ item.evidenceCount }} 次</p>
+            <div class="evidence-dimensions" aria-label="知识点画像依据">
+              <details
+                v-for="item in knowledgeMasteryTop10"
+                :key="item.category"
+                class="evidence-panel"
+                @toggle="handleEvidenceToggle($event, item.category)"
+              >
+                <summary class="evidence-summary">
+                  <span>{{ item.category }} · 证据 {{ item.evidenceCount }} 次</span>
+                  <span class="evidence-action">依据</span>
+                </summary>
+                <div class="evidence-body" aria-live="polite">
+                  <p v-if="evidenceLoading[item.category]" class="evidence-status">正在追溯学习记录...</p>
+                  <div v-else-if="evidenceErrors[item.category]" class="evidence-status evidence-status--error">
+                    <span>{{ evidenceErrors[item.category] }}</span>
+                    <button type="button" class="evidence-retry" @click="loadDimensionEvidence(item.category, true)">重试</button>
+                  </div>
+                  <template v-else-if="evidenceByDimension[item.category]">
+                    <p class="evidence-conclusion">{{ evidenceByDimension[item.category].conclusion }}</p>
+                    <div
+                      v-for="memory in evidenceByDimension[item.category].supporting_memories"
+                      :key="memory.memory_id"
+                      class="evidence-memory"
+                    >
+                      <p class="evidence-memory-title">支撑记忆 · {{ memory.content }}</p>
+                      <ol class="evidence-events">
+                        <li v-for="event in memory.evidence_events" :key="event.learning_record_id">
+                          <span>{{ event.summary }}</span>
+                          <time :datetime="event.at">{{ formatEvidenceTime(event.at) }}</time>
+                        </li>
+                      </ol>
+                    </div>
+                    <p v-if="!evidenceByDimension[item.category].supporting_memories.length" class="evidence-status">暂无足够的独立作答证据</p>
+                  </template>
+                </div>
+              </details>
+            </div>
           </div>
 
           <!-- Review Timeline -->
@@ -1017,5 +1082,111 @@ watch(knowledgeMasteryTop10, () => {
 </style>
 
 <style scoped>
-.evidence-count { color: var(--text-secondary); font-size: 12px; margin: 4px 0; }
+.evidence-dimensions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.evidence-panel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.evidence-summary {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.evidence-summary:hover,
+.evidence-summary:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.evidence-action {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.evidence-body {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.evidence-conclusion,
+.evidence-memory-title,
+.evidence-status {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.evidence-conclusion {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.evidence-memory {
+  margin-top: var(--space-3);
+}
+
+.evidence-memory-title,
+.evidence-status {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.evidence-events {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.evidence-events li {
+  margin-bottom: var(--space-2);
+  line-height: 1.6;
+}
+
+.evidence-events time {
+  display: block;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-status--error {
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.evidence-retry {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .evidence-summary { transition: none; }
+}
 </style>

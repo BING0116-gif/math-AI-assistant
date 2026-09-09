@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, Query
 from pydantic import BaseModel, Field
@@ -15,6 +16,33 @@ class PreferencesUpdateRequest(BaseModel):
     difficulty_mode: Optional[str] = Field(None, description="难度模式: adaptive | fixed")
     preferred_categories: Optional[list[str]] = None
     daily_goal_minutes: Optional[int] = Field(None, ge=5, le=240)
+
+
+class ProfileEvidenceEventResponse(BaseModel):
+    learning_record_id: int
+    event_type: str
+    at: datetime
+    summary: str
+    is_correct: bool
+
+
+class SupportingMemoryResponse(BaseModel):
+    memory_id: int
+    content: str
+    evidence_events: list[ProfileEvidenceEventResponse]
+
+
+class ProfileWhyResponse(BaseModel):
+    profile_snapshot_id: Optional[str]
+    dimension: str
+    conclusion: str
+    supporting_memories: list[SupportingMemoryResponse]
+
+
+class ProfileWhyEnvelope(BaseModel):
+    code: int = 0
+    data: ProfileWhyResponse
+    message: str = "ok"
 
 
 def _current_user(request: Request) -> str:
@@ -150,6 +178,35 @@ async def get_my_recommendations(http_request: Request):
 async def get_my_skill_profile(http_request: Request):
     user_id = _current_user(http_request)
     return await _build_skill_profile_response(user_id)
+
+
+@router.get("/why", response_model=ProfileWhyEnvelope)
+async def get_profile_reason(
+    http_request: Request,
+    dimension: str = Query(..., min_length=1, max_length=100),
+    user_id: Optional[str] = Query(None, min_length=1, max_length=36),
+    profile_snapshot_id: Optional[str] = Query(None, min_length=1, max_length=64),
+):
+    """解释画像结论；仅本人或管理员可读取，支持指定历史快照。"""
+    target_user_id = user_id or _current_user(http_request)
+    verify_resource_ownership(http_request, target_user_id)
+
+    from app.services.profile_evidence import ProfileEvidenceService
+
+    service = ProfileEvidenceService()
+    if profile_snapshot_id is None:
+        facade = await _get_facade()
+        snapshot = await facade.get_profile_snapshot(target_user_id)
+        # 迁移前生成的旧快照没有审计标识；首次查询时从 SQL 事实修复。
+        if not snapshot.snapshot_id:
+            await facade.refresh_profile_snapshot(target_user_id)
+
+    evidence = await service.explain(
+        target_user_id,
+        dimension,
+        profile_snapshot_id=profile_snapshot_id,
+    )
+    return {"code": 0, "data": evidence, "message": "ok"}
 
 
 @router.put("/me/preferences")

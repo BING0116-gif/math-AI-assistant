@@ -34,6 +34,7 @@ class ProfileSnapshot:
 
     # ── 标识 ──
     user_id: str
+    snapshot_id: str = ""
     version: int = 1
     generated_at: str = ""
 
@@ -92,6 +93,7 @@ class ProfileSnapshot:
         """返回完整可 JSON 序列化的 dict（用于持久化 user_profiles）。"""
         return ProfileSnapshot._sanitize({
             "user_id": self.user_id,
+            "snapshot_id": self.snapshot_id,
             "version": self.version,
             "generated_at": self.generated_at,
             "total_questions": self.total_questions,
@@ -117,6 +119,7 @@ class ProfileSnapshot:
         """从 dict 反序列化（用于从 user_profiles 恢复）。"""
         return cls(
             user_id=user_id,
+            snapshot_id=data.get("snapshot_id", ""),
             version=data.get("version", 1),
             generated_at=data.get("generated_at", ""),
             total_questions=data.get("total_questions", 0),

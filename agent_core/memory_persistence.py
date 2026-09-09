@@ -320,6 +320,11 @@ class MemoryPersistenceFacade:
         """
         snapshot = await self._build_profile_snapshot(user_id)
 
+        # 先为当前事实集产生稳定快照标识，再把 L1→L2→L3 证据边持久化。
+        # 该步骤完全基于 SQL 事实，mock/无模型环境同样可运行。
+        from app.services.profile_evidence import ProfileEvidenceService
+        await ProfileEvidenceService(self._session_factory).record_snapshot(snapshot)
+
         # 持久化到 user_profiles（materialized snapshot，可重建）
         repo = ProfileSnapshotRepository(self._session_factory)
         await repo.upsert(snapshot)
