@@ -28,6 +28,15 @@ def test_function_plot_fixture_is_deterministic_and_renderable():
     assert result["verification"] is None
 
 
+def test_step_sequence_fixture_is_deterministic_and_teaching_bound():
+    result = MathVisualizer().visualize(mock_visual_spec("step_sequence"))
+    interaction = result["spec"]["interaction"]
+    assert result["visualization_status"] == "ok"
+    assert interaction["kind"] == "step_sequence"
+    assert len(interaction["frames"]) == len(interaction["steps"]) == 2
+    assert interaction["steps"][1]["frame_index"] == 1
+
+
 @pytest.mark.parametrize(
     ("visual_type", "series", "extra"),
     [

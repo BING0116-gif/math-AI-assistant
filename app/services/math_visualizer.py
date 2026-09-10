@@ -435,6 +435,36 @@ def mock_visual_spec(kind: str = "function_plot") -> dict[str, Any]:
             }
         )
         return spec
+    if kind == "step_sequence":
+        base = mock_visual_spec("function_plot")
+        base["title"] = "通过参数观察抛物线变化"
+        base["teaching_note"] = "先建立基准图，再观察参数改变带来的开口变化。"
+        base["interaction"] = {
+            "kind": "step_sequence",
+            "parameter": "a",
+            "label": "讲解步骤",
+            "frames": [
+                {
+                    "value": 1,
+                    "title": "建立基准",
+                    "teaching_note": "当 a=1 时，这是标准抛物线。",
+                    "series": base["series"],
+                    "annotations": base["annotations"],
+                },
+                {
+                    "value": 2,
+                    "title": "观察变化",
+                    "teaching_note": "当 a=2 时，曲线开口变窄。",
+                    "series": [{"kind": "curve", "label": "y=2x²", "points": [[-2, 8], [-1, 2], [0, 0], [1, 2], [2, 8]]}],
+                    "annotations": [{"kind": "point", "x": 0, "y": 0, "label": "顶点 (0,0)"}],
+                },
+            ],
+            "steps": [
+                {"frame_index": 0, "title": "建立基准", "explanation": "先观察标准抛物线的形状。"},
+                {"frame_index": 1, "title": "比较参数", "explanation": "再比较 a 变大后曲线如何变化。"},
+            ],
+        }
+        return base
     raise MathVisualValidationError(f"没有该 mock fixture：{kind}")
 
 
