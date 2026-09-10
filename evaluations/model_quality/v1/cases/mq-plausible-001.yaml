@@ -1,8 +1,9 @@
 case_id: mq-plausible-001
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: plausible_wrong
+expected_failure_class: material_contradiction
 tags:
 - plausible_wrong
 - kp-function
@@ -23,6 +24,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-FUNCTION
+    required_constraints: &id001
+    - 开平方要考虑正负
+    - x=-1也是解
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -31,13 +36,12 @@ oracle:
   answer_match:
     mode: set
     tolerance: null
-  key_steps:
-  - 开平方要考虑正负
-  - x=-1也是解
+  key_steps: *id001
   allowed_expressions:
   - 开平方要考虑正负
   - x=-1也是解
-  forbidden_claims: []
+  forbidden_claims:
+  - 答案只有1
   knowledge_point_codes:
   - KP-FUNCTION
   ambiguity_behavior: null

@@ -1,8 +1,9 @@
 case_id: mq-plausible-009
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: plausible_wrong
+expected_failure_class: material_contradiction
 tags:
 - plausible_wrong
 - kp-function
@@ -23,6 +24,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-FUNCTION
+    required_constraints: &id001
+    - 真数必须大于0
+    - 1-x>0
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -31,13 +36,12 @@ oracle:
   answer_match:
     mode: exact
     tolerance: null
-  key_steps:
-  - 真数必须大于0
-  - 1-x>0
+  key_steps: *id001
   allowed_expressions:
   - 真数必须大于0
   - 1-x>0
-  forbidden_claims: []
+  forbidden_claims:
+  - 定义域是所有实数
   knowledge_point_codes:
   - KP-FUNCTION
   ambiguity_behavior: null

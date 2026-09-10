@@ -1,8 +1,9 @@
 case_id: mq-plausible-002
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: plausible_wrong
+expected_failure_class: material_contradiction
 tags:
 - plausible_wrong
 - kp-continuity
@@ -22,6 +23,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-CONTINUITY
+    required_constraints: &id001
+    - 原函数在1未定义
+    - 可去间断
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -30,13 +35,12 @@ oracle:
   answer_match:
     mode: judge
     tolerance: null
-  key_steps:
-  - 原函数在1未定义
-  - 可去间断
+  key_steps: *id001
   allowed_expressions:
   - 原函数在1未定义
   - 可去间断
-  forbidden_claims: []
+  forbidden_claims:
+  - 原函数在x=1连续
   knowledge_point_codes:
   - KP-CONTINUITY
   ambiguity_behavior: null

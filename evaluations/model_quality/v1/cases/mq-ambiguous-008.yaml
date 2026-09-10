@@ -1,8 +1,9 @@
 case_id: mq-ambiguous-008
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: ambiguous
+expected_failure_class: constraint_loss
 tags:
 - ambiguous
 - kp-limit
@@ -22,6 +23,9 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-LIMIT
+    required_constraints: &id001
+    - 信息不足
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -30,8 +34,7 @@ oracle:
   answer_match:
     mode: manual
     tolerance: null
-  key_steps:
-  - 信息不足
+  key_steps: *id001
   allowed_expressions:
   - 信息不足
   forbidden_claims: []

@@ -1,8 +1,9 @@
 case_id: mq-image-008
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: image
+expected_failure_class: material_contradiction
 tags:
 - image
 - kp-function
@@ -25,6 +26,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-FUNCTION
+    required_constraints: &id001
+    - cos(-x)=cos(x)
+    - 偶函数
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -33,9 +38,7 @@ oracle:
   answer_match:
     mode: judge
     tolerance: null
-  key_steps:
-  - cos(-x)=cos(x)
-  - 偶函数
+  key_steps: *id001
   allowed_expressions:
   - cos(-x)=cos(x)
   - 偶函数

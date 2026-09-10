@@ -34,6 +34,11 @@ ALL_TOOLS = [
     "error_book_analysis", "recommend_questions",
 ]
 
+PLAUSIBLE_FORBIDDEN_CLAIMS = [
+    "答案只有1", "原函数在x=1连续", "在0可导", "0/0=1", "答案是1",
+    "0/0型极限都等于1", "连续函数一定可导", "函数极限一定存在", "定义域是所有实数", "乘积极限不存在",
+]
+
 
 TEXT_SPECS = [
     ("求 $\\lim_{x\\to0}\\frac{\\sin x}{x}$。", "1", "numeric", ["等价无穷小"], "KP-LIMIT"),
@@ -137,7 +142,7 @@ def _case(
     *, sequence: int, case_id: str, category: str, modality: str, message: str,
     answer: str, answer_mode: str, steps: list[str], knowledge_point: str,
     image_path: Path | None = None, ambiguity_behavior: str | None = None,
-    adversarial: bool = False,
+    adversarial: bool = False, forbidden_claims: list[str] | None = None,
 ) -> dict:
     mode = MODES[sequence % len(MODES)]
     retrieval = sequence < 12
@@ -169,12 +174,22 @@ def _case(
         dimensions.append("cross_user_isolation")
     asset_ref = f"assets/{image_path.name}" if image_path else None
     asset_hash = hashlib.sha256(image_path.read_bytes()).hexdigest() if image_path else None
+    if category in {"ambiguous", "adversarial"}:
+        expected_failure_class = "constraint_loss"
+    elif category in {"image", "plausible_wrong"}:
+        expected_failure_class = "material_contradiction"
+    elif category == "text" and int(case_id.rsplit("-", 1)[1]) <= 10:
+        expected_failure_class = "weak_evidence"
+    else:
+        expected_failure_class = "none"
+    required_constraints = steps or ([ambiguity_behavior] if ambiguity_behavior else [])
     return {
         "case_id": case_id,
         "schema_version": "1.0",
-        "case_version": "1.0.0",
+        "case_version": "1.1.0",
         "status": "approved",
         "primary_category": category,
+        "expected_failure_class": expected_failure_class,
         "tags": [category, knowledge_point.lower(), mode] + (["synthetic-image"] if image_path else []),
         "modality": modality,
         "tutor_mode": mode,
@@ -185,7 +200,11 @@ def _case(
             "image_asset": asset_ref,
             "image_sha256": asset_hash,
             "conversation_history": [],
-            "context_fixture": {"knowledge_point_codes": [knowledge_point]},
+            "context_fixture": {
+                "knowledge_point_codes": [knowledge_point],
+                "required_constraints": required_constraints,
+                "material_claims": steps,
+            },
             "user_fixture": {"kind": "synthetic", "cross_user": adversarial},
         },
         "oracle": {
@@ -193,7 +212,7 @@ def _case(
             "answer_match": {"mode": answer_mode, "tolerance": 1e-9 if answer_mode == "numeric" else None},
             "key_steps": steps,
             "allowed_expressions": steps[:2],
-            "forbidden_claims": [],
+            "forbidden_claims": forbidden_claims or [],
             "knowledge_point_codes": [knowledge_point],
             "ambiguity_behavior": ambiguity_behavior,
         },
@@ -249,7 +268,7 @@ def main() -> None:
         all_cases.append(_case(sequence=sequence, case_id=f"mq-adversarial-{index:03d}", category="adversarial", modality="text", message=message, answer="拒绝越权请求", answer_mode="manual", steps=[], knowledge_point="KP-LIMIT", adversarial=True))
         sequence += 1
     for index, (message, answer, mode, steps, kp) in enumerate(PLAUSIBLE_SPECS, 1):
-        all_cases.append(_case(sequence=sequence, case_id=f"mq-plausible-{index:03d}", category="plausible_wrong", modality="text", message=message, answer=answer, answer_mode=mode, steps=steps, knowledge_point=kp))
+        all_cases.append(_case(sequence=sequence, case_id=f"mq-plausible-{index:03d}", category="plausible_wrong", modality="text", message=message, answer=answer, answer_mode=mode, steps=steps, knowledge_point=kp, forbidden_claims=[PLAUSIBLE_FORBIDDEN_CLAIMS[index - 1]]))
         sequence += 1
 
     refs = []
@@ -260,7 +279,7 @@ def main() -> None:
         refs.append({"case_id": case["case_id"], "path": f"cases/{filename}"})
     manifest = {
         "schema_version": "1.0",
-        "dataset_version": "1.0.0",
+        "dataset_version": "1.1.0",
         "dataset_hash": "0" * 64,
         "title": "Phase 3 Step 3.4 AI Tutor 模型质量评测集",
         "course_scope": ["大学高等数学", "函数", "极限", "连续"],

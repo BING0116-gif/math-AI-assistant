@@ -1,8 +1,9 @@
 case_id: mq-image-004
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: image
+expected_failure_class: material_contradiction
 tags:
 - image
 - kp-limit
@@ -26,6 +27,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-LIMIT
+    required_constraints: &id001
+    - (e^x-1)/x
+    - 等价无穷小
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -34,9 +39,7 @@ oracle:
   answer_match:
     mode: numeric
     tolerance: 1.0e-09
-  key_steps:
-  - (e^x-1)/x
-  - 等价无穷小
+  key_steps: *id001
   allowed_expressions:
   - (e^x-1)/x
   - 等价无穷小

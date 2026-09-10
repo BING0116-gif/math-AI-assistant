@@ -1,8 +1,9 @@
 case_id: mq-text-012
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: text
+expected_failure_class: none
 tags:
 - text
 - kp-continuity
@@ -25,6 +26,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-CONTINUITY
+    required_constraints: &id001
+    - 极限存在且为1
+    - 函数在0未定义
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -33,9 +38,7 @@ oracle:
   answer_match:
     mode: exact
     tolerance: null
-  key_steps:
-  - 极限存在且为1
-  - 函数在0未定义
+  key_steps: *id001
   allowed_expressions:
   - 极限存在且为1
   - 函数在0未定义

@@ -168,6 +168,44 @@
           ],
           "default": null,
           "title": "Error Code"
+        },
+        "reasoning_judge": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "propertyNames": {
+            "enum": [
+              "constraint_coverage",
+              "evidence_grounding",
+              "material_consistency"
+            ]
+          },
+          "title": "Reasoning Judge",
+          "type": "object"
+        },
+        "reasoning_judge_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Judge Model"
+        },
+        "reasoning_judge_prompt_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Judge Prompt Version"
         }
       },
       "required": [
@@ -190,6 +228,10 @@
         },
         "tutor_mode": {
           "$ref": "#/$defs/TutorMode"
+        },
+        "expected_failure_class": {
+          "$ref": "#/$defs/ReasoningFailureClass",
+          "default": "none"
         },
         "execution": {
           "$ref": "#/$defs/CaseExecution"
@@ -292,6 +334,16 @@
         "plausible_wrong"
       ],
       "title": "PrimaryCategory",
+      "type": "string"
+    },
+    "ReasoningFailureClass": {
+      "enum": [
+        "constraint_loss",
+        "weak_evidence",
+        "material_contradiction",
+        "none"
+      ],
+      "title": "ReasoningFailureClass",
       "type": "string"
     },
     "TutorMode": {

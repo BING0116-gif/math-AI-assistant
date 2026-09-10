@@ -1,8 +1,9 @@
 case_id: mq-image-002
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: image
+expected_failure_class: material_contradiction
 tags:
 - image
 - kp-continuity
@@ -25,6 +26,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-CONTINUITY
+    required_constraints: &id001
+    - f(x)=|x|
+    - 左右极限为0
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -33,9 +38,7 @@ oracle:
   answer_match:
     mode: judge
     tolerance: null
-  key_steps:
-  - f(x)=|x|
-  - 左右极限为0
+  key_steps: *id001
   allowed_expressions:
   - f(x)=|x|
   - 左右极限为0

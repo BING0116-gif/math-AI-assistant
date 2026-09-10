@@ -59,6 +59,24 @@ GitHub Actions 的定时任务从 repository variable `MODEL_QUALITY_BASELINE` �
 - token、成本或 Prompt 遥测缺失时，真实报告标记为 `incomplete`，不得猜测填充。
 - `schema/case.schema.json` 与 `schema/report.schema.json` 分别锁定案例和版本化报告契约。
 
+### T09 推理缺陷诊断
+
+V1.1 为全部 60 条案例增加 `expected_failure_class`，取值为
+`constraint_loss`、`weak_evidence`、`material_contradiction` 或 `none`。三类缺陷分别由
+`constraint_coverage`、`evidence_grounding`、`material_consistency` 诊断维度承接，且不改变原有发布加权分。
+
+评分先执行确定性规则。调用方如增加独立 LLM judge 双检，必须把三个布尔结论写入
+`CaseExecution.reasoning_judge`，并同时记录 `reasoning_judge_model` 与
+`reasoning_judge_prompt_version`；任一 judge 否决都会 fail-closed。LLM judge 不是数学事实来源，
+因此开放式推理仍保留人工复核。未提供 judge 的离线或 mocked 运行会明确标记需要人工复核，
+不会伪造一次模型复核。
+
+JSON 报告的 `summary.reasoning_defects` 和 Markdown 的“推理缺陷类型 × 模型”章节包含：
+
+- 各缺陷类型的标记数量与全部用例 ID；
+- 各缺陷类型的检测失败数量与失败用例 ID；
+- 每个模型在各缺陷类型上的用例数、失败数和通过率。
+
 真实报告在所有自动证据齐全后仍会先标记为 `needs_human_review`。人工复核文件只填写报告中
 `needs_human_review=true` 的维度，分数采用 0/1/2 Rubric；所有待审项齐全后才转为
 `baseline_only`，再由另一条显式 `promote` 命令批准：

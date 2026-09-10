@@ -24,6 +24,13 @@ WEIGHTS = {
     "cross_user_isolation": 5,
 }
 
+# 诊断维度不参与既有发布加权分，避免给历史 baseline 造成静默语义变化。
+REASONING_DEFECT_DIMENSIONS = {
+    "constraint_loss": "constraint_coverage",
+    "weak_evidence": "evidence_grounding",
+    "material_contradiction": "material_consistency",
+}
+
 
 def _normalise_text(value: str) -> str:
     return re.sub(r"\s+", "", value).strip("$。.;； ").lower()
@@ -129,6 +136,88 @@ def score_latex(response: str) -> tuple[float, list[str]]:
     return (100.0 if not evidence else 0.0), evidence
 
 
+def _combine_rule_and_judge(
+    *,
+    rule_score: float,
+    rule_evidence: list[str],
+    judge_name: str,
+    execution: CaseExecution,
+) -> DimensionResult:
+    """合并确定性规则与可审计 judge；任一失败即失败。"""
+    judge_passed = execution.reasoning_judge.get(judge_name)
+    evidence = list(rule_evidence)
+    if judge_passed is None:
+        evidence.append("judge check not supplied; human review required")
+        return DimensionResult(score=rule_score, evidence=evidence, needs_human_review=True)
+    evidence.append(
+        f"judge={judge_passed}, model={execution.reasoning_judge_model or 'unreported'}, "
+        f"prompt={execution.reasoning_judge_prompt_version or 'unreported'}"
+    )
+    return DimensionResult(
+        score=rule_score if judge_passed else 0.0,
+        evidence=evidence,
+        # LLM judge 只做 fail-closed 双检，不升级为数学事实来源。
+        needs_human_review=True,
+    )
+
+
+def score_reasoning_defects(case: EvaluationCase, execution: CaseExecution) -> dict[str, DimensionResult]:
+    """对约束丢失、证据薄弱、材料矛盾做相互独立的双检。"""
+    response = execution.response
+    fixture = case.input.context_fixture
+    constraints = [str(value) for value in fixture.get("required_constraints", case.oracle.key_steps)]
+    matched_constraints = sum(1 for value in constraints if _contains_any(response, [value]))
+    constraint_score = 100.0 if not constraints else round(100 * matched_constraints / len(constraints), 2)
+
+    evidence_claims = [str(value) for value in fixture.get("material_claims", case.oracle.key_steps)]
+    matched_evidence = sum(1 for value in evidence_claims if _contains_any(response, [value]))
+    evidence_score = 100.0 if not evidence_claims else round(100 * matched_evidence / len(evidence_claims), 2)
+    expected_evidence = set(case.retrieval_expectation.expected_evidence_ids)
+    actual_evidence = set(execution.evidence_ids)
+    forbidden_evidence = set(case.retrieval_expectation.forbidden_evidence_ids) & actual_evidence
+    if (case.retrieval_expectation.required and not expected_evidence.issubset(actual_evidence)) or forbidden_evidence:
+        evidence_score = 0.0
+
+    contradictions = [
+        claim for claim in case.oracle.forbidden_claims if _contains_any(response, [claim])
+    ]
+    answer_match = case.oracle.answer_match
+    objective_consistent = True
+    if answer_match.mode != "manual" and "final_correctness" in case.applicable_dimensions:
+        objective_consistent = answer_matches(
+            response, case.oracle.expected_answer, answer_match.mode, answer_match.tolerance
+        )
+    material_score = 100.0 if objective_consistent and not contradictions else 0.0
+
+    return {
+        "constraint_coverage": _combine_rule_and_judge(
+            rule_score=constraint_score,
+            rule_evidence=[f"matched {matched_constraints}/{len(constraints)} required constraints"],
+            judge_name="constraint_coverage",
+            execution=execution,
+        ),
+        "evidence_grounding": _combine_rule_and_judge(
+            rule_score=evidence_score,
+            rule_evidence=[
+                f"matched {matched_evidence}/{len(evidence_claims)} material claims",
+                f"expected_evidence={sorted(expected_evidence)}, actual_evidence={sorted(actual_evidence)}",
+                f"forbidden_evidence={sorted(forbidden_evidence)}",
+            ],
+            judge_name="evidence_grounding",
+            execution=execution,
+        ),
+        "material_consistency": _combine_rule_and_judge(
+            rule_score=material_score,
+            rule_evidence=[
+                f"objective_consistent={objective_consistent}",
+                f"contradictory_claims={contradictions}",
+            ],
+            judge_name="material_consistency",
+            execution=execution,
+        ),
+    }
+
+
 def weighted_score(dimensions: dict[str, DimensionResult], applicable: list[str]) -> float:
     scored = [(WEIGHTS[name], dimensions[name].score) for name in applicable if dimensions[name].score is not None]
     if not scored:
@@ -139,6 +228,7 @@ def weighted_score(dimensions: dict[str, DimensionResult], applicable: list[str]
 def score_case(case: EvaluationCase, execution: CaseExecution) -> CaseResult:
     response = execution.response
     dimensions = {name: DimensionResult(score=None, evidence=["not applicable"]) for name in WEIGHTS}
+    dimensions.update(score_reasoning_defects(case, execution))
 
     if "recognition_fidelity" in case.applicable_dimensions:
         expected_tokens = case.oracle.allowed_expressions or case.oracle.key_steps
@@ -264,6 +354,7 @@ def score_case(case: EvaluationCase, execution: CaseExecution) -> CaseResult:
         case_id=case.case_id,
         category=case.primary_category,
         tutor_mode=case.tutor_mode,
+        expected_failure_class=case.expected_failure_class,
         execution=execution,
         dimensions=dimensions,
         weighted_score=weighted_score(dimensions, case.applicable_dimensions),

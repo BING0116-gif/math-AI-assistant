@@ -1,8 +1,9 @@
 case_id: mq-image-012
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: image
+expected_failure_class: material_contradiction
 tags:
 - image
 - kp-function
@@ -26,6 +27,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-FUNCTION
+    required_constraints: &id001
+    - ln(1-x)
+    - 真数大于0
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -34,9 +39,7 @@ oracle:
   answer_match:
     mode: exact
     tolerance: null
-  key_steps:
-  - ln(1-x)
-  - 真数大于0
+  key_steps: *id001
   allowed_expressions:
   - ln(1-x)
   - 真数大于0

@@ -1,8 +1,9 @@
 case_id: mq-plausible-008
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: plausible_wrong
+expected_failure_class: material_contradiction
 tags:
 - plausible_wrong
 - kp-limit
@@ -22,6 +23,9 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-LIMIT
+    required_constraints: &id001
+    - 左右极限还必须相等
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -30,11 +34,11 @@ oracle:
   answer_match:
     mode: judge
     tolerance: null
-  key_steps:
-  - 左右极限还必须相等
+  key_steps: *id001
   allowed_expressions:
   - 左右极限还必须相等
-  forbidden_claims: []
+  forbidden_claims:
+  - 函数极限一定存在
   knowledge_point_codes:
   - KP-LIMIT
   ambiguity_behavior: null

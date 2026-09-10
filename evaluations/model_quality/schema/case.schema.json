@@ -201,6 +201,16 @@
       "title": "PrimaryCategory",
       "type": "string"
     },
+    "ReasoningFailureClass": {
+      "enum": [
+        "constraint_loss",
+        "weak_evidence",
+        "material_contradiction",
+        "none"
+      ],
+      "title": "ReasoningFailureClass",
+      "type": "string"
+    },
     "RetrievalExpectation": {
       "additionalProperties": false,
       "properties": {
@@ -359,6 +369,10 @@
     },
     "primary_category": {
       "$ref": "#/$defs/PrimaryCategory"
+    },
+    "expected_failure_class": {
+      "$ref": "#/$defs/ReasoningFailureClass",
+      "default": "none"
     },
     "tags": {
       "items": {

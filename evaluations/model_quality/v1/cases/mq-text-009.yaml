@@ -1,8 +1,9 @@
 case_id: mq-text-009
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: text
+expected_failure_class: weak_evidence
 tags:
 - text
 - kp-function
@@ -25,6 +26,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-FUNCTION
+    required_constraints: &id001
+    - 分母为0
+    - 单侧趋于无穷
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -33,9 +38,7 @@ oracle:
   answer_match:
     mode: exact
     tolerance: null
-  key_steps:
-  - 分母为0
-  - 单侧趋于无穷
+  key_steps: *id001
   allowed_expressions:
   - 分母为0
   - 单侧趋于无穷

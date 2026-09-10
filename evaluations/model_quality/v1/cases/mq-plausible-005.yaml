@@ -1,8 +1,9 @@
 case_id: mq-plausible-005
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: plausible_wrong
+expected_failure_class: material_contradiction
 tags:
 - plausible_wrong
 - kp-limit
@@ -22,6 +23,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-LIMIT
+    required_constraints: &id001
+    - 1的无穷次方是不定式
+    - 第二重要极限
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -30,13 +35,12 @@ oracle:
   answer_match:
     mode: exact
     tolerance: null
-  key_steps:
-  - 1的无穷次方是不定式
-  - 第二重要极限
+  key_steps: *id001
   allowed_expressions:
   - 1的无穷次方是不定式
   - 第二重要极限
-  forbidden_claims: []
+  forbidden_claims:
+  - 答案是1
   knowledge_point_codes:
   - KP-LIMIT
   ambiguity_behavior: null

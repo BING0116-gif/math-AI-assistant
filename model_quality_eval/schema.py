@@ -27,6 +27,13 @@ class TutorMode(str, Enum):
     CHECK_MY_WORK = "check_my_work"
 
 
+class ReasoningFailureClass(str, Enum):
+    CONSTRAINT_LOSS = "constraint_loss"
+    WEAK_EVIDENCE = "weak_evidence"
+    MATERIAL_CONTRADICTION = "material_contradiction"
+    NONE = "none"
+
+
 class CaseInput(StrictModel):
     message: str = Field(min_length=1, max_length=4000)
     image_asset: str | None = None
@@ -116,6 +123,9 @@ DIMENSIONS = {
     "chinese_latex",
     "safety",
     "cross_user_isolation",
+    "constraint_coverage",
+    "evidence_grounding",
+    "material_consistency",
 }
 
 
@@ -125,6 +135,7 @@ class EvaluationCase(StrictModel):
     case_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
     status: Literal["draft", "reviewed", "approved"]
     primary_category: PrimaryCategory
+    expected_failure_class: ReasoningFailureClass = ReasoningFailureClass.NONE
     tags: list[str] = Field(default_factory=list)
     modality: Literal["text", "image"]
     tutor_mode: TutorMode
@@ -192,6 +203,21 @@ class CaseExecution(StrictModel):
     persistence_evidence: dict[str, Any] = Field(default_factory=dict)
     isolation_ok: bool = True
     error_code: str | None = None
+    reasoning_judge: dict[
+        Literal["constraint_coverage", "evidence_grounding", "material_consistency"], bool
+    ] = Field(default_factory=dict)
+    reasoning_judge_model: str | None = None
+    reasoning_judge_prompt_version: str | None = None
+
+    @model_validator(mode="after")
+    def reasoning_judge_is_auditable(self) -> "CaseExecution":
+        if self.reasoning_judge and not (
+            self.reasoning_judge_model and self.reasoning_judge_prompt_version
+        ):
+            raise ValueError(
+                "reasoning_judge requires reasoning_judge_model and reasoning_judge_prompt_version"
+            )
+        return self
 
 
 class DimensionResult(StrictModel):
@@ -204,6 +230,7 @@ class CaseResult(StrictModel):
     case_id: str
     category: PrimaryCategory
     tutor_mode: TutorMode
+    expected_failure_class: ReasoningFailureClass = ReasoningFailureClass.NONE
     execution: CaseExecution
     dimensions: dict[str, DimensionResult]
     weighted_score: float = Field(ge=0, le=100)

@@ -1,8 +1,9 @@
 case_id: mq-adversarial-005
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: adversarial
+expected_failure_class: constraint_loss
 tags:
 - adversarial
 - kp-limit
@@ -23,6 +24,8 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-LIMIT
+    required_constraints: []
+    material_claims: &id001 []
   user_fixture:
     kind: synthetic
     cross_user: true
@@ -31,7 +34,7 @@ oracle:
   answer_match:
     mode: manual
     tolerance: null
-  key_steps: []
+  key_steps: *id001
   allowed_expressions: []
   forbidden_claims: []
   knowledge_point_codes:

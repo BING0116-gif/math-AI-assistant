@@ -1,8 +1,9 @@
 case_id: mq-plausible-006
 schema_version: '1.0'
-case_version: 1.0.0
+case_version: 1.1.0
 status: approved
 primary_category: plausible_wrong
+expected_failure_class: material_contradiction
 tags:
 - plausible_wrong
 - kp-limit
@@ -23,6 +24,10 @@ input:
   context_fixture:
     knowledge_point_codes:
     - KP-LIMIT
+    required_constraints: &id001
+    - 0/0是不定式
+    - 结果依赖具体函数
+    material_claims: *id001
   user_fixture:
     kind: synthetic
     cross_user: false
@@ -31,13 +36,12 @@ oracle:
   answer_match:
     mode: judge
     tolerance: null
-  key_steps:
-  - 0/0是不定式
-  - 结果依赖具体函数
+  key_steps: *id001
   allowed_expressions:
   - 0/0是不定式
   - 结果依赖具体函数
-  forbidden_claims: []
+  forbidden_claims:
+  - 0/0型极限都等于1
   knowledge_point_codes:
   - KP-LIMIT
   ambiguity_behavior: null

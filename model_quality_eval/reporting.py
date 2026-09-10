@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .schema import CaseResult, RunReport
-from .scoring import WEIGHTS
+from .scoring import REASONING_DEFECT_DIMENSIONS, WEIGHTS
 
 
 def _average(values: list[float]) -> float | None:
@@ -36,6 +36,9 @@ def summarise_results(results: list[CaseResult]) -> dict[str, Any]:
     total_tokens: list[float] = []
     hard_failures: list[dict[str, Any]] = []
     human_review_cases: set[str] = set()
+    defect_cases: dict[str, list[str]] = defaultdict(list)
+    defect_failures: dict[str, list[str]] = defaultdict(list)
+    defect_model_cells: dict[str, dict[str, list[bool]]] = defaultdict(lambda: defaultdict(list))
     for result in results:
         category_values[result.category.value].append(result.weighted_score)
         category_passes[result.category.value].append(not result.hard_failures and result.weighted_score >= 80)
@@ -54,6 +57,29 @@ def summarise_results(results: list[CaseResult]) -> dict[str, Any]:
             total_tokens.append(float(execution.token_usage["total_tokens"]))
         if result.hard_failures:
             hard_failures.append({"case_id": result.case_id, "failures": result.hard_failures})
+        failure_class = result.expected_failure_class.value
+        defect_cases[failure_class].append(result.case_id)
+        if failure_class in REASONING_DEFECT_DIMENSIONS:
+            dimension_name = REASONING_DEFECT_DIMENSIONS[failure_class]
+            dimension = result.dimensions[dimension_name]
+            passed = dimension.score == 100.0
+            model = result.execution.model or "unknown"
+            defect_model_cells[model][failure_class].append(passed)
+            if not passed:
+                defect_failures[failure_class].append(result.case_id)
+    defect_classes = sorted(set(defect_cases) | set(REASONING_DEFECT_DIMENSIONS))
+    defect_models = {
+        model: {
+            name: {
+                "case_count": len(values),
+                "failure_count": len(values) - sum(values),
+                "pass_rate": round(100 * sum(values) / len(values), 2) if values else None,
+            }
+            for name in defect_classes
+            if (values := cells.get(name, []))
+        }
+        for model, cells in sorted(defect_model_cells.items())
+    }
     return {
         "case_count": len(results),
         "weighted_score": _average([result.weighted_score for result in results]),
@@ -70,6 +96,13 @@ def summarise_results(results: list[CaseResult]) -> dict[str, Any]:
         "latency": {"p95_ms": _percentile(latencies, 0.95), "average_ms": _average(latencies)},
         "cost": {"average": _average(costs), "reported_cases": len(costs)},
         "tokens": {"average_total": _average(total_tokens), "reported_cases": len(total_tokens)},
+        "reasoning_defects": {
+            "class_counts": {name: len(defect_cases.get(name, [])) for name in defect_classes},
+            "case_ids": {name: sorted(defect_cases.get(name, [])) for name in defect_classes},
+            "failure_counts": {name: len(defect_failures.get(name, [])) for name in defect_classes},
+            "failure_case_ids": {name: sorted(defect_failures.get(name, [])) for name in defect_classes},
+            "by_model": defect_models,
+        },
     }
 
 
@@ -331,6 +364,25 @@ def report_markdown(report: dict[str, Any]) -> str:
         "|---|---:|",
     ]
     lines.extend(f"| {name} | {score} |" for name, score in summary.get("dimensions", {}).items())
+    defects = summary.get("reasoning_defects", {})
+    lines.extend(["", "## 推理缺陷类型 × 模型", ""])
+    defect_names = list(REASONING_DEFECT_DIMENSIONS)
+    lines.append("| 模型 | " + " | ".join(defect_names) + " |")
+    lines.append("|---|" + "---:|" * len(defect_names))
+    for model, cells in defects.get("by_model", {}).items():
+        values = []
+        for name in defect_names:
+            cell = cells.get(name)
+            values.append(
+                f"{cell['failure_count']}/{cell['case_count']} 失败（通过率 {cell['pass_rate']}%）"
+                if cell else "无用例"
+            )
+        lines.append(f"| {model} | " + " | ".join(values) + " |")
+    lines.extend(["", "### 缺陷用例清单", ""])
+    for name in defect_names:
+        count = defects.get("class_counts", {}).get(name, 0)
+        failures = defects.get("failure_case_ids", {}).get(name, [])
+        lines.append(f"- `{name}`：标记 {count} 条；检测失败 {len(failures)} 条：{', '.join(failures) or '无'}")
     lines.extend(["", "## 硬失败", ""])
     if summary.get("hard_failures"):
         lines.extend(f"- `{item['case_id']}`：{', '.join(item['failures'])}" for item in summary["hard_failures"])
