@@ -43,6 +43,27 @@ describe('MathVisualCard', () => {
     expect(window.pwned).toBeUndefined()
   })
 
+  it('lets students move through precomputed parameter frames and explanations', async () => {
+    const interactive = {
+      ...structuredClone(spec),
+      interaction: {
+        kind: 'parameter_slider',
+        parameter: 'a',
+        label: '调整参数 a',
+        frames: [
+          { value: 1, teaching_note: '标准曲线', series: spec.series, annotations: spec.annotations },
+          { value: 2, teaching_note: '曲线变窄', series: spec.series, annotations: spec.annotations },
+        ],
+        steps: [{ frame_index: 1, title: '变化', explanation: '比较参数变化后的曲线。' }],
+      },
+    }
+    const wrapper = mount(MathVisualCard, { props: { spec: interactive } })
+    expect(wrapper.find('input[type="range"]').exists()).toBe(true)
+    await wrapper.find('input[type="range"]').setValue('1')
+    expect(wrapper.text()).toContain('曲线变窄')
+    expect(wrapper.text()).toContain('2')
+  })
+
   it.each([
     ['vector_plot', 'vector', 'line'],
     ['geometry_plot', 'polygon', 'polygon'],

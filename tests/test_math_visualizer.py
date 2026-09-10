@@ -15,6 +15,7 @@ from agent_core.langchain_adapter import LangChainToolConverter
 from tools import get_registry
 from tools.base_tool import ToolInput
 from tools.math_visualize_tool import MathVisualizeTool
+from prompts.react_prompt import ReActPromptTemplate
 
 
 def test_function_plot_fixture_is_deterministic_and_renderable():
@@ -108,6 +109,60 @@ def test_tangent_line_mismatch_is_rejected():
     spec["verified_values"]["slope"] = 3
     with pytest.raises(MathVisualValidationError, match="切点或斜率"):
         MathVisualizer().visualize(spec)
+
+
+def test_interactive_frames_are_validated_and_bound_to_teaching_steps():
+    spec = mock_visual_spec()
+    spec["interaction"] = {
+        "kind": "parameter_slider",
+        "parameter": "a",
+        "label": "调整参数 a",
+        "frames": [
+            {
+                "value": 1,
+                "title": "a=1",
+                "teaching_note": "标准抛物线",
+                "series": spec["series"],
+                "annotations": spec["annotations"],
+            },
+            {
+                "value": 2,
+                "title": "a=2",
+                "teaching_note": "开口变窄",
+                "series": [{"kind": "curve", "label": "y=2x²", "points": [[-1, 2], [0, 0], [1, 2]]}],
+                "annotations": [{"kind": "point", "x": 0, "y": 0, "label": "顶点"}],
+            },
+        ],
+        "steps": [
+            {"frame_index": 0, "title": "基准", "explanation": "先观察 a=1。"},
+            {"frame_index": 1, "title": "变化", "explanation": "再比较参数变化。"},
+        ],
+    }
+    result = MathVisualizer().visualize(spec)
+    interaction = result["spec"]["interaction"]
+    assert result["visualization_status"] == "ok"
+    assert [frame["value"] for frame in interaction["frames"]] == [1.0, 2.0]
+    assert interaction["steps"][1]["frame_index"] == 1
+
+
+def test_interactive_frame_cannot_contain_expression_or_too_many_frames():
+    spec = mock_visual_spec()
+    spec["interaction"] = {
+        "kind": "parameter_slider",
+        "parameter": "a",
+        "label": "a",
+        "frames": [],
+        "steps": [],
+    }
+    with pytest.raises(MathVisualValidationError, match="非空数组"):
+        MathVisualizer().visualize(spec)
+
+
+def test_prompt_requires_model_to_decide_visual_teaching_value():
+    prompt = ReActPromptTemplate.build_instruction(["math_visualize"])
+    assert "自主判断图形是否能解释" in prompt
+    assert "不要为了调用工具而调用工具" in prompt
+    assert "预计算 frames" in prompt
 
 
 @pytest.mark.asyncio

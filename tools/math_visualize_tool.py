@@ -58,6 +58,13 @@ class MathVisualSpecInput(BaseModel):
     teaching_note: str = ""
     verification_request: Optional[Dict[str, Any]] = None
     verified_values: Optional[Dict[str, float]] = None
+    interaction: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "可选的受控交互：kind=parameter_slider 或 step_sequence；"
+            "只传预计算 frames/steps，不得传表达式、HTML 或 JavaScript"
+        ),
+    )
 
 
 class MathVisualizeParameters(BaseModel):
@@ -74,12 +81,14 @@ class MathVisualizeArgs(BaseModel):
 class MathVisualizeTool(BaseTool):
     name = "math_visualize"
     description = (
-        "生成安全的数学静态可视化。parameters.spec 必须提供已采样坐标的 MathVisualSpec，"
+        "根据讲题上下文生成安全的数学可视化；只有图形能显著帮助理解时才调用。"
+        "parameters.spec 必须提供已采样坐标的 MathVisualSpec，"
         "支持 function_plot、tangent_line、area_under_curve、vector_plot、"
-        "sequence_plot、geometry_plot；禁止传 JavaScript、HTML 或待前端求值的表达式。"
+        "sequence_plot、geometry_plot；可用 parameter_slider/step_sequence 提供预计算交互帧，"
+        "禁止传 JavaScript、HTML 或待前端求值的表达式。"
         "切线和积分关键数据必须附 verification_request，工具会独立调用 MathVerifier。"
     )
-    version = "1.0.0"
+    version = "1.1.0"
     capabilities = [ToolCapability.NUMERICAL_COMPUTATION, ToolCapability.PLOTTING]
     args_schema = MathVisualizeArgs
 

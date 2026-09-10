@@ -21,6 +21,7 @@ VISUAL_TYPES = frozenset(
 )
 SERIES_KINDS = frozenset({"curve", "line", "area", "vector", "sequence", "polygon"})
 ANNOTATION_KINDS = frozenset({"point", "label", "interval"})
+INTERACTION_KINDS = frozenset({"parameter_slider", "step_sequence"})
 TYPE_SERIES_KINDS = {
     "function_plot": frozenset({"curve", "line"}),
     "tangent_line": frozenset({"curve", "line"}),
@@ -34,6 +35,7 @@ MAX_POINTS_PER_SERIES = 600
 MAX_TOTAL_POINTS = 1800
 MAX_ABS_COORDINATE = 1_000_000.0
 MAX_TEXT_LENGTH = 240
+MAX_INTERACTION_FRAMES = 24
 _EXECUTABLE_TEXT = re.compile(
     r"(?:<\s*/?\s*(?:script|iframe|object|embed|svg)|javascript\s*:|"
     r"(?:document|window)\s*\.|\beval\s*\(|=>|\bon\w+\s*=)",
@@ -87,6 +89,14 @@ class MathVisualizer:
         annotations, annotations_partial = self._reconcile_annotations(annotations, cleaned_series)
         partial = partial or annotations_partial
 
+        interaction, interaction_partial = self._clean_interaction(
+            spec.get("interaction"),
+            viewport,
+            allowed_kinds,
+            visual_type,
+        )
+        partial = partial or interaction_partial
+
         verification = self._verify_critical_data(visual_type, spec, cleaned_series)
         cleaned_spec = {
             "type": visual_type,
@@ -96,11 +106,99 @@ class MathVisualizer:
             "annotations": annotations,
             "teaching_note": note,
         }
+        if interaction is not None:
+            cleaned_spec["interaction"] = interaction
         return {
             "visualization_status": "partial" if partial else "ok",
             "spec": cleaned_spec,
             "verification": verification,
         }
+
+    def _clean_interaction(
+        self,
+        raw: Any,
+        viewport: Mapping[str, float],
+        allowed_kinds: frozenset[str],
+        visual_type: str,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """校验预计算交互帧；浏览器永远只切换纯坐标，不执行表达式。"""
+        if raw is None:
+            return None, False
+        if not isinstance(raw, Mapping):
+            raise MathVisualValidationError("interaction 必须是对象")
+        kind = str(raw.get("kind") or "").strip()
+        if kind not in INTERACTION_KINDS:
+            raise MathVisualValidationError("interaction.kind 不在白名单中")
+        parameter = self._clean_text(raw.get("parameter", ""), "interaction.parameter", required=True)
+        label = self._clean_text(raw.get("label", parameter), "interaction.label", required=True)
+        raw_frames = raw.get("frames")
+        if not isinstance(raw_frames, Sequence) or isinstance(raw_frames, (str, bytes)) or not raw_frames:
+            raise MathVisualValidationError("interaction.frames 必须是非空数组")
+        if len(raw_frames) > MAX_INTERACTION_FRAMES:
+            raise MathVisualValidationError(f"交互帧不能超过 {MAX_INTERACTION_FRAMES}")
+        frames: list[dict[str, Any]] = []
+        partial = False
+        for frame_index, frame in enumerate(raw_frames):
+            if not isinstance(frame, Mapping):
+                raise MathVisualValidationError(f"interaction.frames[{frame_index}] 必须是对象")
+            value = self._finite_number(frame.get("value"), f"interaction.frames[{frame_index}].value")
+            title = self._clean_text(frame.get("title", ""), f"interaction.frames[{frame_index}].title")
+            note = self._clean_text(frame.get("teaching_note", ""), f"interaction.frames[{frame_index}].teaching_note")
+            raw_frame_series = frame.get("series")
+            if not isinstance(raw_frame_series, Sequence) or isinstance(raw_frame_series, (str, bytes)) or not raw_frame_series:
+                raise MathVisualValidationError(f"interaction.frames[{frame_index}].series 必须是非空数组")
+            cleaned_series: list[dict[str, Any]] = []
+            frame_total_points = 0
+            for series_index, item in enumerate(raw_frame_series):
+                cleaned, was_partial = self._clean_series(item, viewport, allowed_kinds, series_index)
+                partial = partial or was_partial
+                frame_total_points += len(cleaned["points"])
+                if frame_total_points > MAX_TOTAL_POINTS:
+                    raise MathVisualValidationError(
+                        f"interaction.frames[{frame_index}] 总点数不能超过 {MAX_TOTAL_POINTS}"
+                    )
+                cleaned_series.append(cleaned)
+            raw_annotations = frame.get("annotations") or []
+            if not isinstance(raw_annotations, Sequence) or isinstance(raw_annotations, (str, bytes)):
+                raise MathVisualValidationError(f"interaction.frames[{frame_index}].annotations 必须是数组")
+            annotations = [self._clean_annotation(item, viewport, i) for i, item in enumerate(raw_annotations)]
+            annotations, annotation_partial = self._reconcile_annotations(annotations, cleaned_series)
+            partial = partial or annotation_partial
+            frames.append({
+                "value": value,
+                "title": title,
+                "teaching_note": note,
+                "series": cleaned_series,
+                "annotations": annotations,
+            })
+
+        values = [frame["value"] for frame in frames]
+        if len(set(values)) != len(values):
+            raise MathVisualValidationError("interaction.frames.value 不能重复")
+        if kind == "parameter_slider" and len(frames) < 2:
+            raise MathVisualValidationError("parameter_slider 至少需要 2 个交互帧")
+        raw_steps = raw.get("steps") or []
+        if not isinstance(raw_steps, Sequence) or isinstance(raw_steps, (str, bytes)):
+            raise MathVisualValidationError("interaction.steps 必须是数组")
+        steps: list[dict[str, Any]] = []
+        for step_index, step in enumerate(raw_steps):
+            if not isinstance(step, Mapping):
+                raise MathVisualValidationError(f"interaction.steps[{step_index}] 必须是对象")
+            frame_index = step.get("frame_index")
+            if isinstance(frame_index, bool) or not isinstance(frame_index, int) or not 0 <= frame_index < len(frames):
+                raise MathVisualValidationError(f"interaction.steps[{step_index}].frame_index 无效")
+            steps.append({
+                "frame_index": frame_index,
+                "title": self._clean_text(step.get("title", ""), f"interaction.steps[{step_index}].title", required=True),
+                "explanation": self._clean_text(step.get("explanation", ""), f"interaction.steps[{step_index}].explanation", required=True),
+            })
+        return {
+            "kind": kind,
+            "parameter": parameter,
+            "label": label,
+            "frames": frames,
+            "steps": steps,
+        }, partial
 
     def _clean_viewport(self, raw: Any) -> dict[str, float]:
         if not isinstance(raw, Mapping):
