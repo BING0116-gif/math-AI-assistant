@@ -88,6 +88,9 @@ class LangChainToolConverter:
                     allowed = is_tool_allowed(mode, custom_tool.name)
                 except ValueError:
                     allowed = False
+                capability_allowed = current_context.get("capability_allowed_tools")
+                if capability_allowed is not None and custom_tool.name not in capability_allowed:
+                    allowed = False
                 if not allowed:
                     payload = tool_denied_payload(mode, custom_tool.name)
                     denials = current_context.setdefault("mode_tool_denials", [])

@@ -23,6 +23,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config.settings import settings
 from agent_core.strategies import AgentStrategy, LangChainReActStrategy
+from agent_core.orchestrator import MathOrchestrator, CapabilityRoute
 from agent_core.thought import ThoughtRecorder
 from prompts.system_prompt import SystemPromptManager
 from prompts.react_prompt import ReActPromptTemplate
@@ -157,6 +158,8 @@ class MathAgent:
 
         # 构建 LangChainReActStrategy
         self._strategy = self._create_langchain_react_strategy()
+        # T10：外包编排层；旧 MathAgent 和既有 API/SSE 均保留。
+        self._orchestrator = MathOrchestrator(self._select_strategy)
 
         # 注册 VisionTool 引用（用于图片处理）
         self._vision_tool = None
@@ -552,6 +555,18 @@ class MathAgent:
         """根据任务类型获取最佳 LLM 参数配置。"""
         return get_params_for_task(task_type)
 
+    async def _route_capability(
+        self, user_input: str, session_id: str, context: Dict[str, Any]
+    ) -> CapabilityRoute:
+        """通过 T10 编排层选择教学任务，策略仍由旧 MathAgent 提供。"""
+        route = await self._orchestrator.route(user_input, session_id, context)
+        logger.info(
+            "[ORCHESTRATOR] capability=%s strategy_policy=%s",
+            route.manifest.name,
+            route.manifest.strategy_policy,
+        )
+        return route
+
     # ── 公共 API ────────────────────────────────────────────────────────
 
     async def process(
@@ -574,7 +589,8 @@ class MathAgent:
         if self._is_image_input(user_input):
             return await self._process_image(user_input, strategy_session, context)
 
-        strategy = await self._select_strategy(user_input, strategy_session)
+        route = await self._route_capability(user_input, strategy_session, context)
+        strategy = route.strategy
         result = await strategy.execute(user_input, strategy_session, context)
 
         history.add_ai_message(result)
@@ -637,7 +653,8 @@ class MathAgent:
 
         context = await self._build_context(sid, user_input=input_text, user_id=user_id)
         strategy_session = self.session_key(user_id, sid)
-        strategy = await self._select_strategy(input_text, strategy_session)
+        route = await self._route_capability(input_text, strategy_session, context)
+        strategy = route.strategy
         result_text = await strategy.execute(input_text, strategy_session, context)
 
         history.add_ai_message(result_text)
@@ -832,7 +849,8 @@ class MathAgent:
                 yield chunk
             return
 
-        strategy = await self._select_strategy(user_input, strategy_session)
+        route = await self._route_capability(user_input, strategy_session, context)
+        strategy = route.strategy
 
         logger.info(f"[AGENT-STREAM] 策略选择完成，开始流式执行: input='{user_input[:30]}...'")
 
@@ -910,6 +928,8 @@ class MathAgent:
             "token_usage": getattr(strategy, "_last_token_usage", None) or None,
             "estimated_cost": None,
             "tutor_mode": canonical_mode,
+            "capability": route.manifest.name,
+            "capability_strategy_policy": route.manifest.strategy_policy,
             "mode_tool_denials": list(context.get("mode_tool_denials") or []),
             "visualizations": list(context.get("visualizations") or []),
             "mode_output_guard": {
@@ -980,7 +1000,8 @@ class MathAgent:
         yield "\n\n---\n\n**【开始解题】**\n\n"
 
         try:
-            strategy = await self._select_strategy(recognized_text, session_id)
+            route = await self._route_capability(recognized_text, session_id, context)
+            strategy = route.strategy
             logger.info(f"[图片识别] 分类器路由完成，使用策略解题")
             from app.services.mode_gating import is_guarded_mode
 
@@ -1058,7 +1079,8 @@ class MathAgent:
         chunks = []
         try:
             strategy_session = self.session_key(user_id, sid)
-            strategy = await self._select_strategy(combined_input, strategy_session)
+            route = await self._route_capability(combined_input, strategy_session, context)
+            strategy = route.strategy
             logger.info(f"[多模态] 分类器路由完成，使用策略解题")
             from app.services.mode_gating import is_guarded_mode
 
@@ -1093,6 +1115,8 @@ class MathAgent:
                 "token_usage": token_usage if token_usage["total_tokens"] else None,
                 "estimated_cost": None,
                 "tutor_mode": canonical_mode,
+                "capability": route.manifest.name,
+                "capability_strategy_policy": route.manifest.strategy_policy,
                 "mode_tool_denials": list(context.get("mode_tool_denials") or []),
                 "mode_output_guard": {
                     "allowed": guard_result.allowed,
@@ -1211,7 +1235,8 @@ class MathAgent:
         if result.success:
             recognized_text = result.result or ""
             display_msg = f"【图片识别结果】\n{recognized_text}\n\n"
-            strategy = await self._select_strategy(recognized_text, session_id)
+            route = await self._route_capability(recognized_text, session_id, context)
+            strategy = route.strategy
             logger.info(f"[图片识别] 分类器路由完成，使用策略解题")
             answer = await strategy.execute(recognized_text, session_id, context)
             return f"{display_msg}{answer}"

@@ -102,16 +102,24 @@ class LangChainReActStrategy(AgentStrategy):
             f"(max_iterations={max_iterations}, timeout={timeout_seconds}s)"
         )
 
-    def _ensure_agent_initialized(self, mode: str = "tutor_free") -> Any:
+    def _ensure_agent_initialized(
+        self,
+        mode: str = "tutor_free",
+        capability_allowed_tools: Optional[frozenset[str]] = None,
+    ) -> Any:
         canonical_mode = normalize_tutor_mode(mode)
-        if canonical_mode in self._agents_by_mode:
-            return self._agents_by_mode[canonical_mode]
+        allowed_key = ",".join(sorted(capability_allowed_tools or ()))
+        cache_key = f"{canonical_mode}|{allowed_key}"
+        if cache_key in self._agents_by_mode:
+            return self._agents_by_mode[cache_key]
 
         start_init = time.time()
         logger.info("正在初始化LangChain ReAct Agent...")
 
         converter = get_tool_converter()
         custom_tools = filter_tools_for_mode(self._registry.get_all_tools(), canonical_mode)
+        if capability_allowed_tools is not None:
+            custom_tools = [tool for tool in custom_tools if tool.name in capability_allowed_tools]
         self._tools = converter.convert_batch(custom_tools)
 
         logger.info(f"已转换 {len(self._tools)} 个工具为LangChain格式")
@@ -139,8 +147,8 @@ class LangChainReActStrategy(AgentStrategy):
             middleware=middleware,
         )
         self._agent = agent
-        self._agents_by_mode[canonical_mode] = agent
-        self._prompts_by_mode[canonical_mode] = system_prompt
+        self._agents_by_mode[cache_key] = agent
+        self._prompts_by_mode[cache_key] = system_prompt
 
         elapsed = (time.time() - start_init) * 1000
         logger.info(f"LangChain ReAct Agent初始化完成 ({elapsed:.1f}ms)")
@@ -184,7 +192,10 @@ class LangChainReActStrategy(AgentStrategy):
         context: Dict[str, Any],
     ) -> AsyncGenerator[str, None]:
         mode = normalize_tutor_mode(context.get("tutor_mode", "tutor_free"))
-        agent = self._ensure_agent_initialized(mode)
+        capability_allowed_tools = context.get("capability_allowed_tools")
+        if capability_allowed_tools is not None:
+            capability_allowed_tools = frozenset(capability_allowed_tools)
+        agent = self._ensure_agent_initialized(mode, capability_allowed_tools)
         recorder = self._get_recorder(session_id)
 
         # 将 context（含 user_id）注入到工具转换器，让工具执行时能获取用户身份
@@ -195,7 +206,9 @@ class LangChainReActStrategy(AgentStrategy):
 
         chat_history = self._format_chat_history(context.get("chat_history", []))
 
-        messages = [SystemMessage(content=self._prompts_by_mode.get(mode, self._system_prompt))]
+        allowed_key = ",".join(sorted(capability_allowed_tools or ()))
+        cache_key = f"{mode}|{allowed_key}"
+        messages = [SystemMessage(content=self._prompts_by_mode.get(cache_key, self._system_prompt))]
         messages.extend(chat_history)
         messages.append(HumanMessage(content=user_input))
 
