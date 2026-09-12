@@ -88,9 +88,10 @@ async def check_ai_analysis() -> CapabilityResult:
     """AI 题目分析：provider 与 DeepSeek key 配置。"""
     provider = (settings.CONTENT_AI_PROVIDER or "").strip() or "mock"
     deepseek_key = settings.DEEPSEEK_API_KEY
+    model = settings.QWEN_MODEL if provider in {"qwen", "auto"} else settings.DEEPSEEK_MODEL
     details: dict[str, Any] = {
         "provider": provider,
-        "model": settings.DEEPSEEK_MODEL,
+        "model": model,
         "deepseek_key": _masked(deepseek_key),
     }
 
@@ -125,6 +126,20 @@ async def check_ai_analysis() -> CapabilityResult:
                 "在 .env 设置 CONTENT_AI_PROVIDER=deepseek，并确认 docker-compose.yml 的 "
                 "web.environment 已透传该变量（compose 是白名单，.env 不会自动进容器）"
             ),
+            details=details,
+        )
+
+    from app.services.llm_service import model_capability_status
+
+    capability = model_capability_status(model, ("json_output",))
+    details["model_capability"] = capability
+    if not capability["ok"]:
+        return CapabilityResult(
+            id="ai_analysis",
+            name="AI 题目分析",
+            status="warning",
+            reason=f"当前分析链路要求 JSON 输出，但{capability['reason']}",
+            remediation="在 MODEL_CAPABILITIES 登记该模型，或改用支持 json_output 的模型",
             details=details,
         )
 
@@ -164,7 +179,25 @@ async def check_vision_ocr() -> CapabilityResult:
     注意：轻量探测无法验证 key 是否真实有效，只能检测缺失与格式异常。
     """
     key = settings.DASHSCOPE_API_KEY
-    details: dict[str, Any] = {"dashscope_key": _masked(key)}
+    model = settings.VISION_MODEL
+    details: dict[str, Any] = {
+        "dashscope_key": _masked(key),
+        "model": model,
+    }
+
+    from app.services.llm_service import model_capability_status
+
+    capability = model_capability_status(model, ("vision",))
+    details["model_capability"] = capability
+    if not capability["ok"]:
+        return CapabilityResult(
+            id="vision_ocr",
+            name="视觉识题",
+            status="warning",
+            reason=f"视觉链路模型能力不匹配：{capability['reason']}",
+            remediation="将 VISION_MODEL 改为支持 vision 的已登记模型（如 qwen-vl-plus）",
+            details=details,
+        )
 
     if not key:
         return CapabilityResult(

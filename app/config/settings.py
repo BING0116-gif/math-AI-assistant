@@ -4,6 +4,28 @@ from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 
 
+# T12：模型高级能力的唯一配置源。调用方不得根据模型名前缀猜测能力；
+# 新增或替换模型时只在这里登记，并由服务层统一执行 fail-closed 校验。
+MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
+    "deepseek-v4-flash": {
+        "tool_call": True,
+        "json_output": True,
+        "vision": False,
+    },
+    "qwen-vl-plus": {
+        "tool_call": False,
+        "json_output": True,
+        "vision": True,
+    },
+    # VisionTool 的既有备用模型也必须显式登记，不能靠名称推断能力。
+    "qwen-vl-max": {
+        "tool_call": False,
+        "json_output": True,
+        "vision": True,
+    },
+}
+
+
 class Settings(BaseSettings):
     # 阈值待真实历史数据校准；环境变量用 JSON 对象配置。
     MASTERY_CONFIDENCE_CAP: dict[int, float] = Field(default_factory=lambda: {1: 0.50, 2: 0.80})
@@ -136,6 +158,7 @@ class Settings(BaseSettings):
     )
     LLM_MODEL: str = Field(default="deepseek-chat", alias="LLM_MODEL")
     LLM_MATH_MODEL: str = Field(default="qwen-turbo", alias="LLM_MATH_MODEL")
+    VISION_MODEL: str = Field(default="qwen-vl-plus", alias="VISION_MODEL")
     LLM_TEMPERATURE: float = Field(default=0.3, alias="LLM_TEMPERATURE")
     LLM_MAX_TOKENS: int = Field(default=4096, alias="LLM_MAX_TOKENS")
     LLM_STREAMING: bool = Field(default=True, alias="LLM_STREAMING")

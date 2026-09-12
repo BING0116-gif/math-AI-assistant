@@ -17,6 +17,9 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 import httpx
 
+from app.config.settings import settings
+from app.services.llm_service import require_model_capability
+
 logger = logging.getLogger(__name__)
 
 # API 配置（与现有 DashScope key 复用）
@@ -144,7 +147,7 @@ class VisionTool:
             "输出题目文字、LaTeX 公式、图形空间关系的结构化描述。"
         )
         self._api_key = api_key or _load_api_key(".env")
-        self._model = model or _VL_MODELS[0]
+        self._model = model or settings.VISION_MODEL
         self._base_url = _DASHSCOPE_BASE
         self._timeout = timeout
 
@@ -219,6 +222,8 @@ class VisionTool:
     def _get_models_to_try(self, model: Optional[str]) -> List[str]:
         """获取需要尝试的模型列表（按优先级排序）。"""
         preferred = model or self._model
+        # 显式选择了不支持视觉或未登记的模型时必须立即失败，不能静默换备用模型。
+        require_model_capability(preferred, "vision")
         return [preferred] + [m for m in _VL_MODELS if m != preferred]
 
     # ── 同步 API 调用 ──────────────────────────────────────────────────────

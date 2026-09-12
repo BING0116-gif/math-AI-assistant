@@ -21,13 +21,80 @@ import json
 import logging
 import time
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
-from app.config.settings import settings
+from app.config.settings import MODEL_CAPABILITIES, settings
 
 logger = logging.getLogger(__name__)
+
+MODEL_CAPABILITY_NAMES = frozenset({"tool_call", "json_output", "vision"})
+
+
+class ModelCapabilityError(RuntimeError):
+    """模型无法满足调用方强制要求的高级能力。"""
+
+    def __init__(self, model: str, capability: str, *, unknown_model: bool = False):
+        self.model = model
+        self.capability = capability
+        self.code = (
+            "MODEL_CAPABILITY_UNKNOWN"
+            if unknown_model
+            else "MODEL_CAPABILITY_UNSUPPORTED"
+        )
+        if unknown_model:
+            message = (
+                f"模型 {model!r} 未在 MODEL_CAPABILITIES 中登记，"
+                f"无法确认其 {capability!r} 能力"
+            )
+        else:
+            message = f"模型 {model!r} 不支持要求的 {capability!r} 能力"
+        super().__init__(message)
+
+
+def require_model_capabilities(model: str, capabilities: Iterable[str]) -> None:
+    """校验强制能力；未知模型、未知能力和明确不支持均 fail-closed。"""
+    normalized_model = (model or "").strip()
+    configured = MODEL_CAPABILITIES.get(normalized_model)
+    requested = tuple(dict.fromkeys(capabilities))
+    if not requested:
+        return
+    if configured is None:
+        raise ModelCapabilityError(
+            normalized_model or "<empty>", requested[0], unknown_model=True
+        )
+    for capability in requested:
+        if capability not in MODEL_CAPABILITY_NAMES:
+            raise ValueError(f"未知模型能力: {capability!r}")
+        if configured.get(capability) is not True:
+            raise ModelCapabilityError(normalized_model, capability)
+
+
+def require_model_capability(model: str, capability: str) -> None:
+    """单项能力校验的便捷入口。"""
+    require_model_capabilities(model, (capability,))
+
+
+def model_capability_status(model: str, capabilities: Iterable[str]) -> dict[str, Any]:
+    """返回无副作用的能力诊断，供 provider-status/readiness 复用。"""
+    required = tuple(dict.fromkeys(capabilities))
+    try:
+        require_model_capabilities(model, required)
+    except (ModelCapabilityError, ValueError) as exc:
+        return {
+            "ok": False,
+            "model": model,
+            "required": list(required),
+            "reason": str(exc),
+            "error_code": getattr(exc, "code", "MODEL_CAPABILITY_INVALID"),
+        }
+    return {
+        "ok": True,
+        "model": model,
+        "required": list(required),
+        "reason": "supported",
+    }
 
 
 class LLMProvider(str, Enum):
@@ -134,11 +201,14 @@ class LLMService:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         use_cache: bool = True,
+        required_capabilities: Iterable[str] = (),
     ) -> LLMResponse:
         start = time.time()
+        request_model = model or self.model
+        require_model_capabilities(request_model, required_capabilities)
 
         if use_cache:
-            cache_key = self._make_cache_key(prompt, system_prompt, model or self.model)
+            cache_key = self._make_cache_key(prompt, system_prompt, request_model)
             cached = self._get_from_cache(cache_key)
             if cached is not None:
                 return cached
@@ -147,7 +217,7 @@ class LLMService:
 
         try:
             response = await self._client.chat.completions.create(
-                model=model or self.model,
+                model=request_model,
                 messages=messages,
                 temperature=self.temperature if temperature is None else temperature,
                 max_tokens=self.max_tokens if max_tokens is None else max_tokens,
@@ -192,11 +262,14 @@ class LLMService:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        required_capabilities: Iterable[str] = (),
     ) -> AsyncGenerator[str, None]:
+        request_model = model or self.model
+        require_model_capabilities(request_model, required_capabilities)
         messages = self._build_messages(prompt, system_prompt)
         try:
             stream = await self._client.chat.completions.create(
-                model=model or self.model,
+                model=request_model,
                 messages=messages,
                 temperature=self.temperature if temperature is None else temperature,
                 max_tokens=self.max_tokens if max_tokens is None else max_tokens,
