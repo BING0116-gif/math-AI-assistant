@@ -22,7 +22,6 @@
 from __future__ import annotations
 
 import asyncio
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -61,6 +60,49 @@ MOCK_AI_RESULT_NOT_PUBLISHABLE = "MOCK_AI_RESULT_NOT_PUBLISHABLE"
 # 合法人工处置
 _DISPOSITIONS = {"approved", "doubtful", "reject", "reanalyze"}
 
+# 内容分析低于该置信度时必须提示人工复核，不能作为完整结论展示。
+CONTENT_AI_PARTIAL_CONFIDENCE_THRESHOLD = 0.7
+
+
+def _merge_partial_reasons(*groups: Any) -> List[str]:
+    """稳定去重 partial 原因，避免 provider/service 重复追加。"""
+    merged: List[str] = []
+    for group in groups:
+        if not isinstance(group, (list, tuple)):
+            continue
+        for reason in group:
+            normalized = str(reason or "").strip()
+            if normalized and normalized not in merged:
+                merged.append(normalized)
+    return merged
+
+
+def _mark_partial_result(analysis, verifier, provider) -> List[str]:
+    """汇总不完整信号并回写结构化结果；不依赖数据库 schema。"""
+    reasons = _merge_partial_reasons(
+        getattr(analysis, "partial_reasons", []),
+        getattr(verifier, "partial_reasons", []),
+    )
+    if float(getattr(analysis, "confidence", 0.0) or 0.0) < CONTENT_AI_PARTIAL_CONFIDENCE_THRESHOLD:
+        reasons.append("analysis_confidence_below_threshold")
+    if float(getattr(verifier, "confidence", 0.0) or 0.0) < CONTENT_AI_PARTIAL_CONFIDENCE_THRESHOLD:
+        reasons.append("verification_confidence_below_threshold")
+
+    try:
+        provider_available = bool(provider.is_available())
+    except Exception:  # noqa: BLE001 - 状态检查自身异常也必须保守标记
+        provider_available = False
+    if not provider_available:
+        reasons.append("provider_status_abnormal")
+
+    reasons = _merge_partial_reasons(reasons)
+    partial = bool(reasons or getattr(analysis, "partial", False) or getattr(verifier, "partial", False))
+    analysis.partial = partial
+    analysis.partial_reasons = reasons
+    verifier.partial = partial
+    verifier.partial_reasons = reasons
+    return reasons
+
 
 class ContentAIAnalysisError(Exception):
     """稳定 application error，携带稳定 code + message。"""
@@ -76,6 +118,16 @@ def _now() -> datetime:
 
 
 def _serialize_run(run: ContentAIAnalysisRun) -> Dict[str, Any]:
+    analysis_json = run.analysis_json if isinstance(run.analysis_json, dict) else {}
+    verifier_json = run.verifier_json if isinstance(run.verifier_json, dict) else {}
+    partial_reasons = _merge_partial_reasons(
+        analysis_json.get("partial_reasons"), verifier_json.get("partial_reasons")
+    )
+    partial = bool(
+        analysis_json.get("partial")
+        or verifier_json.get("partial")
+        or partial_reasons
+    )
     return ContentAIAnalysisRunOut(
         id=run.id,
         candidate_id=run.candidate_id,
@@ -87,6 +139,8 @@ def _serialize_run(run: ContentAIAnalysisRun) -> Dict[str, Any]:
         analysis_json=run.analysis_json,
         verifier_json=run.verifier_json,
         gate_reasons=run.gate_reasons or [],
+        partial=partial,
+        partial_reasons=partial_reasons,
         attempt_no=run.attempt_no,
         parent_run_id=run.parent_run_id,
         human_disposition=run.human_disposition,
@@ -116,6 +170,15 @@ def _compute_gate(analysis, verifier) -> tuple[str, Optional[str], List[str]]:
     """依据 verifier.verdict + analysis 健康检查计算最终 gate（§29）。"""
     reasons: List[str] = list(verifier.issues or [])
     verdict = (verifier.verdict or "pass").lower()
+
+    partial_reasons = _merge_partial_reasons(
+        getattr(analysis, "partial_reasons", []),
+        getattr(verifier, "partial_reasons", []),
+    )
+    if partial_reasons:
+        reasons.extend(f"[partial] {reason}" for reason in partial_reasons)
+        if verdict == "pass":
+            verdict = "doubtful"
 
     # 健康检查降级：pass 但答案自检不一致 → 至少 doubtful
     if verdict == "pass" and not getattr(analysis.answer_check, "consistent", True):
@@ -233,6 +296,7 @@ class ContentAIAnalysisService:
                 verifier = provider.verify(analysis, snapshot, context)
             await self._transition(run_id, "verifying")
 
+            _mark_partial_result(analysis, verifier, provider)
             status, gate, reasons = _compute_gate(analysis, verifier)
             await self._persist_terminal(
                 run_id,

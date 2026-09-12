@@ -75,6 +75,8 @@ class ContentAIAnalysisResult(BaseModel):
     answer_check: ContentAIAnswerCheck = Field(default_factory=ContentAIAnswerCheck)
     confidence: float = 0.95
     flags: List[str] = Field(default_factory=list)
+    partial: bool = False
+    partial_reasons: List[str] = Field(default_factory=list)
 
 
 class ContentAIVerificationResult(BaseModel):
@@ -87,6 +89,8 @@ class ContentAIVerificationResult(BaseModel):
     answer_spec_valid: bool = True
     issues: List[str] = Field(default_factory=list)
     confidence: float = 0.95
+    partial: bool = False
+    partial_reasons: List[str] = Field(default_factory=list)
 
 
 # ── 运行记录输出（§11）──
@@ -101,6 +105,8 @@ class ContentAIAnalysisRunOut(BaseModel):
     analysis_json: Optional[Dict[str, Any]] = None
     verifier_json: Optional[Dict[str, Any]] = None
     gate_reasons: List[str] = Field(default_factory=list)
+    partial: bool = False
+    partial_reasons: List[str] = Field(default_factory=list)
     attempt_no: int = 1
     parent_run_id: Optional[str] = None
     human_disposition: Optional[str] = None

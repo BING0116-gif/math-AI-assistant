@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
@@ -32,6 +34,8 @@ from app.models.content_ai import (
     ContentAIAnalysisResult,
     ContentAIVerificationResult,
 )
+
+logger = logging.getLogger(__name__)
 
 # 稳定错误码（§25）
 AI_PROVIDER_NOT_IMPLEMENTED = "AI_PROVIDER_NOT_IMPLEMENTED"
@@ -47,6 +51,15 @@ DEEPSEEK_PROMPT_VERSION = "deepseek-v1"
 # 稳定错误码（§25，沿用上方 AI_PROVIDER_NOT_IMPLEMENTED）
 AI_PROVIDER_REQUEST_FAILED = "AI_PROVIDER_REQUEST_FAILED"
 AI_PROVIDER_PARSE_FAILED = "AI_PROVIDER_PARSE_FAILED"
+
+PARTIAL_REASON_TRUNCATED = "model_output_truncated"
+PARTIAL_REASON_PARSE_RECOVERED = "heuristic_json_recovery"
+
+
+@dataclass(frozen=True)
+class _ContentAIChatResponse:
+    content: str
+    finish_reason: Optional[str] = None
 
 # 与 content_import.SUPPORTED_TYPES 保持一致的自动判题支持题型集合。
 # 为简化用户流程，AI provider 不再把不在此集合的题型强制回退为 choice：
@@ -350,7 +363,7 @@ class DeepSeekContentAIProvider(ContentAIProvider):
         return bool(self._api_key and self._api_key.strip())
 
     # ── 内部：同步调用 DeepSeek chat/completions ──
-    def _chat(self, user_prompt: str, temperature: float) -> str:
+    def _chat(self, user_prompt: str, temperature: float) -> _ContentAIChatResponse:
         if not self.is_available():
             raise ContentAIProviderError(
                 AI_PROVIDER_NOT_IMPLEMENTED,
@@ -390,7 +403,11 @@ class DeepSeekContentAIProvider(ContentAIProvider):
                 AI_PROVIDER_REQUEST_FAILED, f"调用 DeepSeek 失败: {e}"
             )
         try:
-            return data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]
+            return _ContentAIChatResponse(
+                content=choice["message"]["content"],
+                finish_reason=choice.get("finish_reason"),
+            )
         except (KeyError, IndexError, TypeError) as e:
             raise ContentAIProviderError(
                 AI_PROVIDER_PARSE_FAILED, f"DeepSeek 返回结构异常: {e}"
@@ -413,6 +430,99 @@ class DeepSeekContentAIProvider(ContentAIProvider):
                 except json.JSONDecodeError:
                     pass
         raise ContentAIProviderError(
+            AI_PROVIDER_PARSE_FAILED, "DeepSeek 返回无法解析为 JSON"
+        )
+
+    @staticmethod
+    def _repair_truncated_json(text: str) -> Dict[str, Any]:
+        """仅用于保留诊断字段的括号补全；调用方必须标记 partial。"""
+        cleaned = (text or "").strip()
+        fence = re.search(r"```(?:json)?\s*(.*)", cleaned, re.DOTALL)
+        if fence:
+            cleaned = fence.group(1).replace("```", "").strip()
+        start = cleaned.find("{")
+        if start < 0:
+            raise ContentAIProviderError(
+                AI_PROVIDER_PARSE_FAILED, "DeepSeek 截断结果不含 JSON 对象"
+            )
+        candidate = cleaned[start:]
+        stack = []
+        in_string = False
+        escaped = False
+        pairs = {"{": "}", "[": "]"}
+        for char in candidate:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char in pairs:
+                stack.append(pairs[char])
+            elif char in ("}", "]"):
+                if not stack or stack[-1] != char:
+                    raise ContentAIProviderError(
+                        AI_PROVIDER_PARSE_FAILED, "DeepSeek 截断 JSON 括号不匹配"
+                    )
+                stack.pop()
+        if in_string:
+            candidate += '"'
+        candidate += "".join(reversed(stack))
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            raise ContentAIProviderError(
+                AI_PROVIDER_PARSE_FAILED,
+                f"DeepSeek 截断 JSON 启发式恢复失败: {exc.msg}",
+            ) from exc
+        if not isinstance(value, dict):
+            raise ContentAIProviderError(
+                AI_PROVIDER_PARSE_FAILED, "DeepSeek 截断结果不是 JSON 对象"
+            )
+        return value
+
+    @staticmethod
+    def _normalize_chat_response(value: Any) -> _ContentAIChatResponse:
+        """兼容测试注入和旧扩展 provider 返回的纯字符串。"""
+        if isinstance(value, _ContentAIChatResponse):
+            return value
+        return _ContentAIChatResponse(content=str(value or ""))
+
+    def _request_json(self, prompt: str, temperature: float) -> Tuple[Dict[str, Any], List[str]]:
+        """解析失败或截断时重试一次；二次启发式恢复永远标记 partial。"""
+        first_error: Optional[ContentAIProviderError] = None
+        last_response = _ContentAIChatResponse("")
+        for attempt in range(2):
+            last_response = self._normalize_chat_response(self._chat(prompt, temperature))
+            truncated = last_response.finish_reason == "length"
+            try:
+                parsed = self._parse_json(last_response.content)
+            except ContentAIProviderError as exc:
+                first_error = first_error or exc
+                if attempt == 0:
+                    logger.warning("Content AI JSON 解析失败，将重试一次: code=%s", exc.code)
+                    continue
+                parsed = self._repair_truncated_json(last_response.content)
+                logger.warning(
+                    "Content AI JSON 仅通过启发式恢复，结果标记 partial: truncated=%s",
+                    truncated,
+                )
+                reasons = [PARTIAL_REASON_PARSE_RECOVERED]
+                if truncated:
+                    reasons.insert(0, PARTIAL_REASON_TRUNCATED)
+                return parsed, reasons
+            if truncated:
+                if attempt == 0:
+                    logger.warning("Content AI 输出被截断，将重试一次: finish_reason=length")
+                    continue
+                logger.warning("Content AI 重试后仍被截断，结果标记 partial")
+                return parsed, [PARTIAL_REASON_TRUNCATED]
+            return parsed, []
+        raise first_error or ContentAIProviderError(
             AI_PROVIDER_PARSE_FAILED, "DeepSeek 返回无法解析为 JSON"
         )
 
@@ -509,7 +619,10 @@ class DeepSeekContentAIProvider(ContentAIProvider):
 
     # ── 结果映射（防御性，缺字段用默认）──
     def _to_analysis_result(
-        self, data: Dict[str, Any], snapshot: Dict[str, Any]
+        self,
+        data: Dict[str, Any],
+        snapshot: Dict[str, Any],
+        partial_reasons: Optional[list[str]] = None,
     ) -> ContentAIAnalysisResult:
         qtype = data.get("question_type") or snapshot.get("detected_question_type")
         # P0-3：题型必须属于受支持枚举；缺失/非法失败关闭（禁止静默回退 choice）。
@@ -553,9 +666,13 @@ class DeepSeekContentAIProvider(ContentAIProvider):
             answer_check=answer_check,
             confidence=confidence,
             flags=flags,
+            partial=bool(partial_reasons),
+            partial_reasons=partial_reasons or [],
         )
 
-    def _to_verification_result(self, data: Dict[str, Any]) -> ContentAIVerificationResult:
+    def _to_verification_result(
+        self, data: Dict[str, Any], partial_reasons: Optional[list[str]] = None
+    ) -> ContentAIVerificationResult:
         verdict = str(data.get("verdict") or "").strip().lower()
         # P0-3：verdict 缺失/非法 → doubtful（失败关闭，绝不允许静默 pass）
         if verdict not in ("pass", "doubtful", "fail"):
@@ -576,6 +693,8 @@ class DeepSeekContentAIProvider(ContentAIProvider):
             answer_spec_valid=_strict_bool(data.get("answer_spec_valid")),
             issues=issues,
             confidence=confidence,
+            partial=bool(partial_reasons),
+            partial_reasons=partial_reasons or [],
         )
 
     # ── 接口实现 ──
@@ -587,9 +706,10 @@ class DeepSeekContentAIProvider(ContentAIProvider):
                 AI_PROVIDER_NOT_IMPLEMENTED,
                 "DeepSeek API Key 未配置（请在 .env 设置 DEEPSEEK_API_KEY）。",
             )
-        raw = self._chat(self._build_analysis_prompt(snapshot, context), temperature=0.2)
-        data = self._parse_json(raw)
-        return self._to_analysis_result(data, snapshot)
+        data, partial_reasons = self._request_json(
+            self._build_analysis_prompt(snapshot, context), temperature=0.2
+        )
+        return self._to_analysis_result(data, snapshot, partial_reasons)
 
     def verify(
         self,
@@ -602,11 +722,10 @@ class DeepSeekContentAIProvider(ContentAIProvider):
                 AI_PROVIDER_NOT_IMPLEMENTED,
                 "DeepSeek API Key 未配置（请在 .env 设置 DEEPSEEK_API_KEY）。",
             )
-        raw = self._chat(
+        data, partial_reasons = self._request_json(
             self._build_verification_prompt(analysis, snapshot, context), temperature=0.0
         )
-        data = self._parse_json(raw)
-        return self._to_verification_result(data)
+        return self._to_verification_result(data, partial_reasons)
 
     def analyze_and_verify(
         self,
@@ -619,10 +738,13 @@ class DeepSeekContentAIProvider(ContentAIProvider):
                 AI_PROVIDER_NOT_IMPLEMENTED,
                 "DeepSeek API Key 未配置（请在 .env 设置 DEEPSEEK_API_KEY）。",
             )
-        raw = self._chat(self._build_single_prompt(snapshot, context), temperature=0.2)
-        data = self._parse_json(raw)
-        analysis = self._to_analysis_result(data, snapshot)
-        verification = self._to_verification_result(data.get("verification") or {})
+        data, partial_reasons = self._request_json(
+            self._build_single_prompt(snapshot, context), temperature=0.2
+        )
+        analysis = self._to_analysis_result(data, snapshot, partial_reasons)
+        verification = self._to_verification_result(
+            data.get("verification") or {}, partial_reasons
+        )
         return analysis, verification
 
 

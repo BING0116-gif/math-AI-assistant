@@ -8,6 +8,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminReviewApi, unwrap } from '@/api/adminReview'
+import ContentAIPartialBadge from '@/components/admin/ContentAIPartialBadge.vue'
 import katex from 'katex'
 import { renderMarkdown } from '@/utils/markdown'
 
@@ -773,6 +774,10 @@ onBeforeUnmount(() => {
                   <el-tag v-if="analysis?.latest?.human_disposition" :type="dispositionType(analysis.latest.human_disposition)" size="small">
                     {{ dispositionLabel(analysis.latest.human_disposition) }}
                   </el-tag>
+                  <ContentAIPartialBadge
+                    v-if="analysis?.latest?.partial"
+                    :reasons="analysis.latest.partial_reasons || []"
+                  />
                 </h3>
                 <template v-if="analysis?.latest">
                   <div class="wb-row"><span class="wb-k">Provider</span><span class="wb-v">{{ analysis.latest.provider }} / {{ analysis.latest.model || '-' }}</span></div>
@@ -780,6 +785,10 @@ onBeforeUnmount(() => {
                   <div class="wb-row">
                     <span class="wb-k">门禁原因</span>
                     <span class="wb-v">{{ (analysis.latest.gate_reasons || []).join('；') || '—' }}</span>
+                  </div>
+                  <div v-if="analysis.latest.partial" class="wb-row wb-partial-reasons">
+                    <span class="wb-k">不完整原因</span>
+                    <span class="wb-v">{{ (analysis.latest.partial_reasons || []).join('；') || 'AI 结果不完整，请人工复核' }}</span>
                   </div>
                   <div v-if="analysis.latest.error_message" class="wb-warn">✗ {{ analysis.latest.error_message }}</div>
                   <div v-if="analysis.latest.analysis_json" class="wb-json">
@@ -982,6 +991,7 @@ onBeforeUnmount(() => {
 .wb-col--main { overflow-y: auto; min-height: 0; }
 .wb-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 12px; margin-bottom: 10px; }
 .wb-card-title { margin: 0 0 8px; font-size: var(--font-size-base); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.wb-partial-reasons { color: var(--warning); }
 .wb-hint { font-size: var(--font-size-xs); color: var(--text-tertiary); font-weight: 400; }
 .wb-stem { white-space: normal; margin: 0 0 8px; line-height: 1.7; }
 .wb-stem :deep(.katex) { font-size: 1.02em; }
