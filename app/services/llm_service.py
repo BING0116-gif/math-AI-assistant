@@ -12,7 +12,7 @@ LLM 服务模块 — 统一管理大语言模型调用。
 - 内存缓存（5分钟TTL，LRU淘汰，最多100条）
 - 流式响应支持（AsyncGenerator）
 - TIR 数学推理模式
-- 降级处理（JSON解析失败返回默认值）
+- 跨厂商响应校验（空工具调用、截断、JSON 失败降级）
 """
 
 from __future__ import annotations
@@ -30,6 +30,12 @@ from app.config.settings import MODEL_CAPABILITIES, settings
 logger = logging.getLogger(__name__)
 
 MODEL_CAPABILITY_NAMES = frozenset({"tool_call", "json_output", "vision"})
+TRUNCATION_NOTICE = "\n\n[回答被截断，请重试或缩小问题范围。]"
+JSON_PARTIAL_NOTICE = "\n\n[模型返回的 JSON 不完整，结果仅供诊断，请重试。]"
+
+
+class LLMResponseValidationError(ValueError):
+    """厂商响应不满足可安全消费的最小契约。异常文本可直接展示给用户。"""
 
 
 class ModelCapabilityError(RuntimeError):
@@ -112,6 +118,10 @@ class LLMResponse:
         usage: Optional[Dict[str, int]] = None,
         latency_ms: float = 0.0,
         cached: bool = False,
+        finish_reason: Optional[str] = None,
+        partial: bool = False,
+        parse_error: Optional[str] = None,
+        parsed_json: Any = None,
     ):
         self.content = content
         self.model = model
@@ -119,6 +129,10 @@ class LLMResponse:
         self.usage = usage or {}
         self.latency_ms = latency_ms
         self.cached = cached
+        self.finish_reason = finish_reason
+        self.partial = partial
+        self.parse_error = parse_error
+        self.parsed_json = parsed_json
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -128,6 +142,10 @@ class LLMResponse:
             "usage": self.usage,
             "latency_ms": self.latency_ms,
             "cached": self.cached,
+            "finish_reason": self.finish_reason,
+            "partial": self.partial,
+            "parse_error": self.parse_error,
+            "parsed_json": self.parsed_json,
         }
 
 
@@ -223,7 +241,24 @@ class LLMService:
                 max_tokens=self.max_tokens if max_tokens is None else max_tokens,
                 stream=False,
             )
-            content = response.choices[0].message.content or ""
+            if not response.choices:
+                raise LLMResponseValidationError("模型未返回任何候选回答，请重试。")
+
+            choice = response.choices[0]
+            message = choice.message
+            finish_reason_value = getattr(choice, "finish_reason", None)
+            finish_reason = finish_reason_value if isinstance(finish_reason_value, str) else None
+            self._validate_tool_calls(message, finish_reason)
+
+            content = message.content or ""
+            partial = finish_reason == "length"
+            if partial:
+                logger.warning(
+                    "LLM 回答被截断: provider=%s model=%s finish_reason=length",
+                    self.provider.value,
+                    response.model or request_model,
+                )
+                content += TRUNCATION_NOTICE
             usage = {
                 "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
                 "completion_tokens": response.usage.completion_tokens if response.usage else 0,
@@ -236,6 +271,8 @@ class LLMService:
                 provider=self.provider.value,
                 usage=usage,
                 latency_ms=(time.time() - start) * 1000,
+                finish_reason=finish_reason,
+                partial=partial,
             )
             from app.observability import AI_CALLS, AI_LATENCY, AI_TOKENS
             metric_model = (response.model or model or self.model or "unknown")[:80]
@@ -249,9 +286,14 @@ class LLMService:
                 self._add_to_cache(cache_key, result)
 
             return result
+        except LLMResponseValidationError as e:
+            from app.observability import AI_CALLS
+            AI_CALLS.labels(self.provider.value, request_model[:80], "error").inc()
+            logger.error("LLM 响应校验失败: %s", e)
+            raise
         except Exception as e:
             from app.observability import AI_CALLS
-            AI_CALLS.labels(self.provider.value, (model or self.model or "unknown")[:80], "error").inc()
+            AI_CALLS.labels(self.provider.value, request_model[:80], "error").inc()
             logger.error(f"LLM生成失败: {e}", exc_info=True)
             raise
 
@@ -276,8 +318,18 @@ class LLMService:
                 stream=True,
             )
             async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.delta.content:
+                    yield choice.delta.content
+                if getattr(choice, "finish_reason", None) == "length":
+                    logger.warning(
+                        "LLM 流式回答被截断: provider=%s model=%s finish_reason=length",
+                        self.provider.value,
+                        request_model,
+                    )
+                    yield TRUNCATION_NOTICE
         except Exception as e:
             logger.error(f"LLM流式生成失败: {e}", exc_info=True)
             yield f"\n\n[生成错误: {str(e)}]"
@@ -300,12 +352,164 @@ class LLMService:
             prompt=prompt, system_prompt=system_prompt, model=self.math_model,
         )
 
+    async def generate_json(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> LLMResponse:
+        """生成 JSON；解析失败只重试一次，之后以 partial 结果安全降级。
+
+        补括号恢复只用于提供诊断字段。调用方必须检查 ``partial``，不得把
+        ``parsed_json`` 中的恢复值当作完整成功结果。
+        """
+        retry_prompt = prompt
+        first_parse_error: Optional[str] = None
+
+        for attempt in range(2):
+            result = await self.generate(
+                prompt=retry_prompt,
+                system_prompt=system_prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                use_cache=False,
+                required_capabilities=("json_output",),
+            )
+            raw_content = self._raw_content(result.content)
+            try:
+                if result.finish_reason == "length":
+                    raise json.JSONDecodeError(
+                        "response truncated with finish_reason=length",
+                        raw_content,
+                        len(raw_content),
+                    )
+                result.parsed_json = self._parse_json(raw_content)
+                return result
+            except (json.JSONDecodeError, ValueError) as exc:
+                if first_parse_error is None:
+                    first_parse_error = str(exc)
+                logger.warning(
+                    "LLM JSON 解析失败: provider=%s model=%s attempt=%s/2 error=%s",
+                    self.provider.value,
+                    model or self.model,
+                    attempt + 1,
+                    exc,
+                )
+                if attempt == 0:
+                    retry_prompt = (
+                        f"{prompt}\n\n上一次响应不是完整合法的 JSON。"
+                        "请重新生成一次，只输出完整合法 JSON，不要使用 Markdown 代码围栏。"
+                    )
+                    continue
+
+                result.partial = True
+                result.parse_error = first_parse_error
+                result.parsed_json = self._diagnose_truncated_json(raw_content)
+                if JSON_PARTIAL_NOTICE not in result.content:
+                    result.content += JSON_PARTIAL_NOTICE
+                logger.error(
+                    "LLM JSON 重试后仍解析失败，已标记 partial: provider=%s model=%s "
+                    "original_error=%s final_error=%s",
+                    self.provider.value,
+                    model or self.model,
+                    first_parse_error,
+                    exc,
+                )
+                return result
+
+        raise AssertionError("unreachable")
+
     def _build_messages(self, prompt: str, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         return messages
+
+    @staticmethod
+    def _validate_tool_calls(message: Any, finish_reason: Optional[str]) -> None:
+        """拒绝空工具调用；这是响应校验，不触发任何自动重试。
+
+        当前直连 DeepSeek，不改写 tool-call id；接入代理网关时需回看 id 穿透。
+        """
+        tool_calls = getattr(message, "tool_calls", None)
+        concrete_calls = tool_calls if isinstance(tool_calls, (list, tuple)) else None
+        if finish_reason == "tool_calls" and not concrete_calls:
+            logger.warning("拒绝空工具调用: finish_reason=tool_calls 但 tool_calls 为空")
+            raise LLMResponseValidationError("模型返回了空工具调用，已拒绝处理，请重试。")
+        if concrete_calls is None:
+            return
+
+        for index, call in enumerate(concrete_calls):
+            function = call.get("function") if isinstance(call, dict) else getattr(call, "function", None)
+            name = function.get("name") if isinstance(function, dict) else getattr(function, "name", None)
+            arguments = (
+                function.get("arguments")
+                if isinstance(function, dict)
+                else getattr(function, "arguments", None)
+            )
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or not isinstance(arguments, str)
+                or not arguments.strip()
+            ):
+                logger.warning(
+                    "拒绝空工具调用: index=%s name=%r arguments=%r",
+                    index,
+                    name,
+                    arguments,
+                )
+                raise LLMResponseValidationError("模型返回了空工具调用，已拒绝处理，请重试。")
+
+    @staticmethod
+    def _raw_content(content: str) -> str:
+        return content.removesuffix(TRUNCATION_NOTICE).strip()
+
+    @staticmethod
+    def _parse_json(content: str) -> Any:
+        text = content.strip()
+        if text.startswith("```") and text.endswith("```"):
+            lines = text.splitlines()
+            if len(lines) >= 3:
+                text = "\n".join(lines[1:-1]).strip()
+        return json.loads(text)
+
+    @staticmethod
+    def _diagnose_truncated_json(content: str) -> Any:
+        """尽力补齐闭合括号，仅返回诊断数据，绝不改变 partial 状态。"""
+        text = content.strip()
+        if not text or text[0] not in "[{":
+            return None
+        closing = {"{": "}", "[": "]"}
+        stack: List[str] = []
+        in_string = False
+        escaped = False
+        for char in text:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char in closing:
+                stack.append(closing[char])
+            elif char in "}]":
+                if not stack or stack.pop() != char:
+                    return None
+        if in_string:
+            return None
+        try:
+            return json.loads(text + "".join(reversed(stack)))
+        except json.JSONDecodeError:
+            return None
 
     def _make_cache_key(self, prompt: str, system_prompt: Optional[str], model: str) -> str:
         import hashlib
@@ -322,7 +526,7 @@ class LLMService:
         return entry
 
     def _add_to_cache(self, key: str, response: LLMResponse) -> None:
-        if not response.content or len(response.content) < 10:
+        if response.partial or not response.content or len(response.content) < 10:
             return
         if len(self._cache) >= self._cache_max_size:
             oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k][1])
