@@ -75,9 +75,22 @@ docker run --rm `
 最终候选镜像 digest 为
 `sha256:e0c8c2909a56756b6ef8ea05138cfa1cea1fea6db5d176e8ff58715959532635`。
 对应 CycloneDX 清单为 `renderer-trixie.sbom.cdx.json`。剩余 zlib High 的处置状态见
-`CVE-2026-85091-risk-note.md`；在项目所有者签字前不能视为已接受。
+`CVE-2026-85091-risk-note.md`；项目所有者已于 2026-09-13 仅针对固定可信模板批准
+限时豁免。该批准不包含任意 Python，也不等于批准 Phase 1 上线。
+
+模板型 Phase 1 tracer 的执行边界见 `sandbox-decision.md`：业务层只提交受控
+`MathAnimationSpec`，由独立 runner 启动一次性 renderer；web/worker 不挂载 Docker socket。
 
 ## 学生对照验证
 
 `student_validation/` 提供匿名 CSV 模板、交叉实验协议和自动门禁分析器。原始学生
 响应只能保存在被忽略的 `artifacts/` 目录，不得提交真实身份或原始学习材料。
+
+`study_scenes.py` 提供 Riemann 和与 Taylor 逼近两类额外固定场景，连同
+`secant_to_tangent.py` 可生成三组静态/动画对照材料。
+
+## 本地 Phase 1 tracer
+
+`tracer/` 实现已获 `LOCAL-GO` 的最小纵切：严格 `MathAnimationSpec`、封闭模板注册表、
+源文件 hash 校验、稳定缓存键、一次重试、T08 静态回退元数据，以及固定参数的受限 Docker
+调用。它只是本地 CLI，不接入生产 API、数据库或 Compose；运行方法见 `tracer/README.md`。

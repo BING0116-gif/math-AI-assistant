@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "template_id": "secant_to_tangent",
+  "parameters": {},
+  "python": "import os; os.system('not-allowed')"
+}

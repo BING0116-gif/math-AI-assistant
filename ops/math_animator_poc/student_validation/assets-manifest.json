@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-09-13",
+  "renderer_image_digest": "sha256:e0c8c2909a56756b6ef8ea05138cfa1cea1fea6db5d176e8ff58715959532635",
+  "asset_root": "artifacts/t15-phase0/student-study-final",
+  "render_profile": {
+    "width": 854,
+    "height": 480,
+    "fps": 15
+  },
+  "concepts": [
+    {
+      "concept": "secant_to_tangent",
+      "static": {
+        "path": "images/secant_to_tangent/SecantToTangent_ManimCE_v0.21.0.png",
+        "bytes": 43187,
+        "sha256": "E20D47E7CB389B4F4F7DC9C90B0A1F2BAE4541DE1ADF24E751F621A43535477E"
+      },
+      "animation": {
+        "path": "videos/secant_to_tangent/480p15/SecantToTangent.mp4",
+        "bytes": 133954,
+        "sha256": "911669E2B5ACFEA60F613E42F9B4F7FAD0BBD14B2E9992D0559B8A429F9D5483",
+        "frames": 112,
+        "duration_seconds": 7.466667
+      }
+    },
+    {
+      "concept": "riemann_sum",
+      "static": {
+        "path": "images/study_scenes/RiemannSumApproximation_ManimCE_v0.21.0.png",
+        "bytes": 33925,
+        "sha256": "9D8B5F2D57DCF4F7E4F6C348BCDF2D6D2BBEF4E5B2A4D336AA6F6D4B0B533CBB"
+      },
+      "animation": {
+        "path": "videos/study_scenes/480p15/RiemannSumApproximation.mp4",
+        "bytes": 168705,
+        "sha256": "7A77E1BF8A1C8F2671683B4D66552F3E198C55463E58960A07A6A5E68E3E3EFF",
+        "frames": 104,
+        "duration_seconds": 6.932682
+      }
+    },
+    {
+      "concept": "taylor_approximation",
+      "static": {
+        "path": "images/study_scenes/TaylorApproximation_ManimCE_v0.21.0.png",
+        "bytes": 34222,
+        "sha256": "0F8382697068C8E3D39B83FE3184F34AF69B45B72741D3453B9A017B4BBC3D46"
+      },
+      "animation": {
+        "path": "videos/study_scenes/480p15/TaylorApproximation.mp4",
+        "bytes": 187507,
+        "sha256": "C2BC1891D5B4796B5E24644149463C4A281D9905485BA47809C5002D50F5D6B2",
+        "frames": 112,
+        "duration_seconds": 7.466667
+      }
+    }
+  ]
+}

@@ -12,6 +12,21 @@
 - 动画条件额外记录 1–5 分帮助度，以及是否出现眩晕、分心或移动端播放问题。
 - `participant_id` 只能使用本次实验生成的随机代号，不得关联真实身份。
 
+## 已生成的实验材料
+
+三组配对材料均由同一固定可信场景的最终静态帧和完整动画组成，位于被忽略的
+`artifacts/t15-phase0/student-study-final/`：
+
+| concept 值 | 静态条件 | 动画条件 |
+|---|---|---|
+| `secant_to_tangent` | `images/secant_to_tangent/SecantToTangent_ManimCE_v0.21.0.png` | `videos/secant_to_tangent/480p15/SecantToTangent.mp4` |
+| `riemann_sum` | `images/study_scenes/RiemannSumApproximation_ManimCE_v0.21.0.png` | `videos/study_scenes/480p15/RiemannSumApproximation.mp4` |
+| `taylor_approximation` | `images/study_scenes/TaylorApproximation_ManimCE_v0.21.0.png` | `videos/study_scenes/480p15/TaylorApproximation.mp4` |
+
+使用同一显示设备、尺寸和最长观看时间。静态条件不可播放动画，动画条件至少完整播放一次。
+解释题应预先固定、按概念等难度，并考察变化过程而非读取画面文字；实验过程中不得临时改题。
+参与者按随机顺序分配为 `S-A-S-A-S-A` 或 `A-S-A-S-A-S`，相邻参与者交替起始条件。
+
 先复制 `responses-template.csv`，再录入数据：
 
 ```powershell
@@ -37,4 +52,3 @@ Copy-Item ops/math_animator_poc/student_validation/responses-template.csv `
 4. 严重不良反馈为 0，普通不良反馈比例不超过 20%。
 
 脚本只输出聚合结果。原始 CSV 放在被忽略的 `artifacts/` 中，不提交到 Git。
-

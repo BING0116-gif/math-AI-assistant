@@ -1,0 +1,48 @@
+# T15 Local Template Tracer
+
+This tracer is a local development harness, not a production service. It accepts a versioned
+`MathAnimationSpec`, resolves an enum-like `template_id` through a closed registry, verifies the
+reviewed source hash, and invokes the pinned renderer image with fixed isolation arguments.
+
+It never accepts Python source, source paths, scene names, Docker arguments, output paths, or
+renderer image names from the spec. The three current templates accept no parameters.
+
+## Run
+
+From the repository root:
+
+```powershell
+python -m ops.math_animator_poc.tracer.cli `
+  ops/math_animator_poc/tracer/examples/secant.json `
+  --output-root artifacts/t15-phase1/tracer-cache
+```
+
+The first run renders into a SHA-256 cache directory. The same spec, renderer digest and reviewed
+source hash produce the same cache key; a later run validates the MP4 hash before reporting a hit.
+
+## Contract
+
+```json
+{
+  "schema_version": 1,
+  "template_id": "secant_to_tangent",
+  "parameters": {}
+}
+```
+
+Allowed template ids are `secant_to_tangent`, `riemann_sum`, and `taylor_approximation`.
+Unknown/missing fields, unknown templates, non-finite JSON values and template parameters outside
+the registry are rejected before Docker starts.
+
+## Failure behavior
+
+The renderer is limited both by a host subprocess timeout and `/usr/bin/timeout` inside the
+container. A failure is retried once. A second failure writes `job.json` with
+`fallback: "t08_static"` and exits unsuccessfully; it never generates or repairs Python code.
+
+## Scope
+
+- local CLI only;
+- fixed, hash-pinned trusted scenes only;
+- no FastAPI, database, Redis, Qdrant, frontend, Docker socket or student data;
+- no authorization for server deployment or arbitrary Python execution.
