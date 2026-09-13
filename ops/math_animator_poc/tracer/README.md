@@ -20,6 +20,20 @@ python -m ops.math_animator_poc.tracer.cli `
 The first run renders into a SHA-256 cache directory. The same spec, renderer digest and reviewed
 source hash produce the same cache key; a later run validates the MP4 hash before reporting a hit.
 
+To exercise the observable T08 adapter pipeline:
+
+```powershell
+python -m ops.math_animator_poc.tracer.pipeline_cli `
+  ops/math_animator_poc/tracer/examples/t08-tangent.json `
+  --template-id secant_to_tangent `
+  --output-root artifacts/t15-phase1/observable-pipeline
+```
+
+Each invocation writes an append-only JSONL event timeline under `events/`. The adapter calls the
+existing T08 `MathVisualizer` first and only maps exact, MathVerifier-backed semantics. It currently
+supports the fixed tangent and Riemann templates. Taylor mapping is deliberately rejected because
+T08 does not yet expose a verified Taylor-polynomial sequence contract.
+
 ## Contract
 
 ```json

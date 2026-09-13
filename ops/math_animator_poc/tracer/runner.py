@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import time
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 
 from .models import MathAnimationSpec
 from .registry import TemplateDefinition, resolve_template, verify_trusted_source
@@ -19,6 +19,7 @@ MAX_RENDER_ATTEMPTS = 2
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 
 CommandExecutor = Callable[[Sequence[str], float], subprocess.CompletedProcess[str]]
+RenderEventSink = Callable[[str, Mapping[str, object]], None]
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,12 @@ class LocalTracerRunner:
         self.timeout_seconds = timeout_seconds
         self.renderer_image = renderer_image
 
-    def render(self, spec: MathAnimationSpec) -> RenderResult:
+    def render(
+        self,
+        spec: MathAnimationSpec,
+        *,
+        event_sink: RenderEventSink | None = None,
+    ) -> RenderResult:
         definition = resolve_template(spec)
         source_hash = verify_trusted_source(definition)
         cache_key = self._cache_key(spec, definition)
@@ -75,11 +81,13 @@ class LocalTracerRunner:
 
         cached = self._load_valid_cache(metadata_path, output_path, cache_key)
         if cached:
+            self._emit(event_sink, "cache_hit", {"cache_key": cache_key})
             return RenderResult("succeeded", cache_key, output_path, 0, True)
 
         errors: list[str] = []
         started = time.monotonic()
         for attempt in range(1, MAX_RENDER_ATTEMPTS + 1):
+            self._emit(event_sink, "render_attempt_started", {"attempt": attempt})
             command = self._build_command(definition, job_dir, cache_key)
             try:
                 completed = self.executor(command, self.timeout_seconds + 5.0)
@@ -99,12 +107,35 @@ class LocalTracerRunner:
                             "template_id": spec.template_id,
                         },
                     )
+                    self._emit(
+                        event_sink,
+                        "render_succeeded",
+                        {"attempt": attempt, "media_sha256": media_hash},
+                    )
                     return RenderResult("succeeded", cache_key, output_path, attempt, False)
-                errors.append(self._safe_error(completed.stderr or completed.stdout))
+                error = self._safe_error(completed.stderr or completed.stdout)
+                errors.append(error)
+                self._emit(
+                    event_sink,
+                    "render_attempt_failed",
+                    {"attempt": attempt, "error": error},
+                )
             except subprocess.TimeoutExpired:
-                errors.append(f"render attempt {attempt} timed out")
+                error = f"render attempt {attempt} timed out"
+                errors.append(error)
+                self._emit(
+                    event_sink,
+                    "render_attempt_failed",
+                    {"attempt": attempt, "error": error},
+                )
             except (OSError, ValueError) as exc:
-                errors.append(self._safe_error(str(exc)))
+                error = self._safe_error(str(exc))
+                errors.append(error)
+                self._emit(
+                    event_sink,
+                    "render_attempt_failed",
+                    {"attempt": attempt, "error": error},
+                )
 
         error = errors[-1] if errors else "render failed without diagnostic output"
         self._write_metadata(
@@ -121,6 +152,11 @@ class LocalTracerRunner:
                 "template_id": spec.template_id,
             },
         )
+        self._emit(
+            event_sink,
+            "fallback_selected",
+            {"fallback": "t08_static", "reason": error},
+        )
         return RenderResult(
             "failed",
             cache_key,
@@ -130,6 +166,15 @@ class LocalTracerRunner:
             fallback="t08_static",
             error=error,
         )
+
+    @staticmethod
+    def _emit(
+        sink: RenderEventSink | None,
+        event_type: str,
+        details: Mapping[str, object],
+    ) -> None:
+        if sink is not None:
+            sink(event_type, details)
 
     def _cache_key(self, spec: MathAnimationSpec, definition: TemplateDefinition) -> str:
         digest = hashlib.sha256()

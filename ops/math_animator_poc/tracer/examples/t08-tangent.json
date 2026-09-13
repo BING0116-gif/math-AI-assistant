@@ -1,0 +1,37 @@
+{
+  "type": "tangent_line",
+  "title": "y=x² 在 x=1 处的切线",
+  "viewport": {
+    "x_min": -3,
+    "x_max": 3,
+    "y_min": -7,
+    "y_max": 9
+  },
+  "series": [
+    {
+      "kind": "curve",
+      "label": "y=x²",
+      "points": [[-3, 9], [-2, 4], [-1, 1], [0, 0], [1, 1], [2, 4], [3, 9]]
+    },
+    {
+      "kind": "line",
+      "label": "y=2x-1",
+      "points": [[-3, -7], [3, 5]]
+    }
+  ],
+  "annotations": [
+    {"kind": "point", "x": 1, "y": 1, "label": "切点 (1, 1)"}
+  ],
+  "teaching_note": "割线的移动点趋近 x=1 时，斜率趋近已验证的切线斜率 2。",
+  "verification_request": {
+    "type": "derivative",
+    "expression": "x**2",
+    "derivative": "2*x",
+    "variable": "x"
+  },
+  "verified_values": {
+    "tangent_x": 1,
+    "tangent_y": 1,
+    "slope": 2
+  }
+}
