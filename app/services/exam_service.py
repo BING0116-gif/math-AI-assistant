@@ -46,6 +46,8 @@ def _payload(session: PracticeSession) -> dict[str, Any]:
         "course_id": session.course_id, "version_id": session.version_id, "config": session.config_snapshot,
         "duration_limit_seconds": session.duration_limit_seconds, "started_at": session.started_at,
         "completed_at": session.completed_at, "completion_reason": session.completion_reason,
+        "recovery_snapshot": session.recovery_snapshot or {},
+        "recovery_snapshot_at": session.recovery_snapshot_at,
         "server_time": datetime.now(timezone.utc), "deadline_at": _deadline(session),
         "questions": [{
             **{key: (row.snapshot or {}).get(key) for key in ("question_id", "content", "question_type", "options", "difficulty", "estimated_time", "knowledge_point_codes")},
@@ -174,6 +176,31 @@ async def save_exam_draft(user_id: str, session_id: str, question_id: str, answe
             else: draft = PracticeSessionDraftAnswer(user_id=user_id, session_id=session.id, session_question_id=row.id, answer=answer, version=1); db.add(draft)
             await db.flush(); result = {"question_id": question_id, "version": draft.version, "saved_at": draft.updated_at, "completed": False}
     if finalized: await _refresh_learning(user_id)
+    return result
+
+
+async def save_exam_snapshot(user_id: str, session_id: str, current_question_id: str | None) -> dict[str, Any]:
+    """Persist the resumable UI position without accepting any client timing data."""
+    finalized = False
+    async with get_db_session() as db:
+        session = (await db.execute(_stmt(session_id, user_id, lock=True))).scalar_one_or_none()
+        if not session:
+            raise PracticeError("SESSION_NOT_FOUND", "考试会话不存在")
+        if session.status == "in_progress" and _expired(session):
+            await _finalize(db, session, "timeout")
+            finalized = True
+        if session.status != "in_progress":
+            result = {"completed": session.status == "completed", "completion_reason": session.completion_reason}
+        else:
+            if current_question_id and not any(row.question_id == current_question_id for row in session.questions):
+                raise PracticeError("VALIDATION_FAILED", "题目不属于当前考试")
+            now = datetime.now(timezone.utc)
+            session.recovery_snapshot = {"current_question_id": current_question_id}
+            session.recovery_snapshot_at = now
+            await db.flush()
+            result = {"completed": False, "current_question_id": current_question_id, "saved_at": now}
+    if finalized:
+        await _refresh_learning(user_id)
     return result
 
 

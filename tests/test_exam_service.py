@@ -7,7 +7,7 @@ from app.data.models import (
     Base, Chapter, Course, ErrorItem, KnowledgeGraphVersion, KnowledgePoint,
     LearningRecord, PracticeAttempt, Question, QuestionKnowledgePoint, User,
 )
-from app.services.exam_service import _pool_shortages, create_exam, exam_report, get_exam, save_exam_draft, start_exam, submit_exam
+from app.services.exam_service import _pool_shortages, create_exam, exam_report, get_exam, save_exam_draft, save_exam_snapshot, start_exam, submit_exam
 from app.services.practice_service import PracticeError
 
 
@@ -74,6 +74,16 @@ async def test_exam_exact_quota_snapshot_drafts_report_and_idempotent_submit(mon
     with pytest.raises(PracticeError, match="其他设备"):
         await save_exam_draft("user-1", created["session_id"], created["questions"][0]["question_id"], "B", 0)
 
+    # T11: only a UI position is accepted from the browser.  It cannot carry a
+    # client clock/deadline, so recovery still derives the deadline server-side.
+    restored_question = created["questions"][2]["question_id"]
+    snapshot = await save_exam_snapshot("user-1", created["session_id"], restored_question)
+    assert snapshot["current_question_id"] == restored_question
+    recovered = await get_exam("user-1", created["session_id"])
+    assert recovered["recovery_snapshot"] == {"current_question_id": restored_question}
+    started_at = recovered["started_at"].replace(tzinfo=timezone.utc)
+    assert recovered["deadline_at"] == started_at + timedelta(seconds=recovered["duration_limit_seconds"])
+
     # Existing sessions remain immutable after the source question is edited.
     async with factory() as db:
         question = await db.get(Question, created["questions"][0]["question_id"])
@@ -105,6 +115,39 @@ async def test_exam_exact_quota_snapshot_drafts_report_and_idempotent_submit(mon
     assert expired["status"] == "completed" and expired["completion_reason"] == "timeout"
     timeout_report = await exam_report("user-1", timed["session_id"])
     assert timeout_report["error_breakdown"] == [{"category": "UNANSWERED", "count": 5}]
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_exam_snapshot_rejects_foreign_question_and_cannot_extend_deadline(monkeypatch):
+    """Regression guard for the T11 client-clock tampering threat model."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    import app.data.database as database
+    monkeypatch.setattr(database, "async_session_factory", factory)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with factory() as db:
+        db.add_all([
+            Course(id="course-2", code="calculus-2", name="高数", subject="math"),
+            KnowledgeGraphVersion(id="version-2", course_id="course-2", version="1", name="V", status="published"),
+            Chapter(id="chapter-2", course_id="course-2", version_id="version-2", code="c", name="章节"),
+            KnowledgePoint(id="point-2", course_id="course-2", version_id="version-2", chapter_id="chapter-2", code="p", name="点"),
+            User(id="user-2", username="student-2", email="recovery@example.test", password_hash="x"),
+        ])
+        for index in range(5):
+            question = Question(id=f"R-{index}", content="题", question_type="choice", options=[{"id": "A", "text": "A"}], answer="A", category="高数", difficulty=2, course_id="course-2", version_id="version-2", review_status="published", grading_mode="deterministic", exam_eligible=True, auto_grading_eligible=True, answer_spec={"kind": "choice", "correct": "A"})
+            db.add(question); await db.flush(); db.add(QuestionKnowledgePoint(question_id=question.id, knowledge_point_id="point-2"))
+        await db.commit()
+    config = {"course_id": "course-2", "version_id": "version-2", "chapter_ids": ["chapter-2"], "knowledge_point_codes": [], "difficulty_min": 1, "difficulty_max": 5, "question_type_counts": {"choice": 5}, "duration_minutes": 1, "idempotency_key": "exam-recovery-key", "random_seed": 3}
+    created = await create_exam("user-2", config)
+    started = await start_exam("user-2", created["session_id"])
+    with pytest.raises(PracticeError, match="不属于"):
+        await save_exam_snapshot("user-2", created["session_id"], "forged-question")
+    # A browser changing its clock has no request field that can affect this.
+    await save_exam_snapshot("user-2", created["session_id"], created["questions"][0]["question_id"])
+    recovered = await get_exam("user-2", created["session_id"])
+    assert recovered["deadline_at"] == started["started_at"].replace(tzinfo=timezone.utc) + timedelta(seconds=60)
     await engine.dispose()
 
 

@@ -5,7 +5,7 @@ vi.mock('@/stores/authStore', () => ({
 }))
 vi.mock('../index', () => ({ default: {} }))
 
-const { parseSSEStream, sendChatMessage } = await import('../chat')
+const { parseSSEStream, recoverChatStream, sendChatMessage } = await import('../chat')
 
 describe('chat mode gating contract', () => {
   beforeEach(() => {
@@ -43,5 +43,23 @@ describe('chat mode gating contract', () => {
       },
     )
     expect(delivered).toBe(true)
+  })
+
+  it('exposes the SSE event ID as a sequence number for reconnecting clients', async () => {
+    const bytes = new TextEncoder().encode('id: 7\ndata: {"content":"续传"}\n\n')
+    const received = []
+    const response = { body: { getReader: () => ({ read: vi.fn().mockResolvedValueOnce({ done: false, value: bytes }).mockResolvedValueOnce({ done: true }) }) } }
+    const result = await parseSSEStream(response, data => received.push(data), () => {}, () => {})
+    expect(received).toEqual([{ content: '续传', seq: 7 }])
+    expect(result).toMatchObject({ completed: false, lastEventId: 7 })
+  })
+
+  it('sends Last-Event-ID when recovering an interrupted stream', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true })
+    await recoverChatStream('session-1', '00000000-0000-0000-0000-000000000001', 7)
+    expect(fetchMock).toHaveBeenCalledWith('/api/chat/recover', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({ 'Last-Event-ID': '7' }),
+    }))
   })
 })

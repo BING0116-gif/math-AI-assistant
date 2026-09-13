@@ -1131,6 +1131,10 @@ class PracticeSession(Base):
     random_seed = Column(Integer, nullable=False)
     idempotency_key = Column(String(128), nullable=False)
     duration_limit_seconds = Column(Integer, nullable=True)
+    # T11: 只保存可恢复的界面状态。计时权威仍是 started_at + duration_limit_seconds，
+    # 因此客户端快照无法延长考试时间。
+    recovery_snapshot = Column(JSON, nullable=True)
+    recovery_snapshot_at = Column(DateTime(timezone=True), nullable=True)
     completion_reason = Column(String(30), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)

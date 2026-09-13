@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 const examApi = {
   get: vi.fn(), saveDraft: vi.fn(), options: vi.fn(), create: vi.fn(),
-  start: vi.fn(), submit: vi.fn(), report: vi.fn(), aiSummary: vi.fn(),
+  start: vi.fn(), saveRecoverySnapshot: vi.fn(), submit: vi.fn(), report: vi.fn(), aiSummary: vi.fn(),
 }
 vi.mock('@/api/exam', () => ({ examApi, unwrapExam: response => response?.data?.data ?? response?.data }))
 
@@ -52,5 +52,15 @@ describe('examStore autosave queue', () => {
     await expect(store.save('q-1')).rejects.toThrow('offline')
     await store.save('q-1')
     expect(store.saveState).toBe('saved')
+  })
+
+  it('restores the persisted current question and snapshots it without client timing data', async () => {
+    examApi.get.mockResolvedValue({ data: { data: { ...structuredClone(session), questions: [{ question_id: 'q-1', draft_answer: null, draft_version: 0 }, { question_id: 'q-2', draft_answer: 'A', draft_version: 1 }], recovery_snapshot: { current_question_id: 'q-2' } } } })
+    examApi.saveRecoverySnapshot.mockResolvedValue({ data: { data: { completed: false, current_question_id: 'q-2' } } })
+    const store = useExamStore()
+    await store.load('session-1')
+    expect(store.currentIndex).toBe(1)
+    await store.saveRecoverySnapshot()
+    expect(examApi.saveRecoverySnapshot).toHaveBeenCalledWith('session-1', { current_question_id: 'q-2' })
   })
 })

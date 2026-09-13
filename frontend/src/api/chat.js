@@ -28,6 +28,15 @@ export function sendChatMessage(message, sessionId, signal, options = {}) {
   })
 }
 
+export function recoverChatStream(sessionId, streamId, lastEventId, signal) {
+  return fetch('/api/chat/recover', {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Last-Event-ID': String(lastEventId) },
+    body: JSON.stringify({ session_id: sessionId, stream_id: streamId }),
+    signal,
+  })
+}
+
 export function sendRecognizeRequest(imageData, sessionId, signal) {
   return fetch('/api/recognize', {
     method: 'POST',
@@ -82,6 +91,9 @@ export function parseSSEStream(response, onData, onDone, onError, onEvent) {
   const decoder = new TextDecoder()
   let buffer = ''
   let currentEvent = ''
+  let completed = false
+  let lastEventId = -1
+  let streamId = response.headers?.get?.('X-Stream-ID') || null
 
   async function read() {
     try {
@@ -91,8 +103,8 @@ export function parseSSEStream(response, onData, onDone, onError, onEvent) {
           if (buffer.trim()) {
             processLine(buffer.trim())
           }
-          onDone()
-          return
+          if (!completed) onDone({ disconnected: true, lastEventId, streamId })
+          return { completed, lastEventId, streamId }
         }
 
         buffer += decoder.decode(value, { stream: true })
@@ -105,8 +117,9 @@ export function parseSSEStream(response, onData, onDone, onError, onEvent) {
       }
     } catch (err) {
       if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
-        onError(err)
+        onError(err, { lastEventId, streamId })
       }
+      return { completed: false, lastEventId, streamId, error: err }
     }
   }
 
@@ -121,10 +134,13 @@ export function parseSSEStream(response, onData, onDone, onError, onEvent) {
     // Process each line in the block
     const lines = trimmed.split('\n')
     let dataLine = ''
+    let eventId = null
 
     for (const line of lines) {
       if (line.startsWith('event: ')) {
         eventType = line.substring(7).trim()
+      } else if (line.startsWith('id: ')) {
+        eventId = line.substring(4).trim()
       } else if (line.startsWith('data: ')) {
         dataLine = line.substring(6)
       }
@@ -133,14 +149,21 @@ export function parseSSEStream(response, onData, onDone, onError, onEvent) {
     if (!dataLine) return
 
     if (dataLine === '[DONE]') {
-      onDone()
+      completed = true
+      onDone({ disconnected: false, lastEventId, streamId })
       return
     }
 
     try {
       const parsed = JSON.parse(dataLine)
+      if (eventId !== null) {
+        parsed.seq = Number(eventId)
+        lastEventId = parsed.seq
+      }
+      if (eventType === 'stream' && parsed.stream_id) streamId = parsed.stream_id
       if (parsed.type === 'done') {
-        onDone()
+        completed = true
+        onDone({ disconnected: false, lastEventId, streamId })
         return
       }
       if (parsed.type === 'error') {

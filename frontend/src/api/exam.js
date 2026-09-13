@@ -7,6 +7,7 @@ export const examApi = {
   get: (id) => api.get(`/exams/sessions/${id}`),
   start: (id) => api.post(`/exams/sessions/${id}/start`),
   saveDraft: (id, questionId, payload) => api.put(`/exams/sessions/${id}/draft-answers/${questionId}`, payload),
+  saveRecoverySnapshot: (id, payload) => api.put(`/exams/sessions/${id}/recovery-snapshot`, payload),
   submit: (id, key) => api.post(`/exams/sessions/${id}/submit`, { idempotency_key: key }),
   report: (id) => api.get(`/exams/sessions/${id}/report`),
   aiSummary: (id) => api.post(`/exams/sessions/${id}/report/ai-summary`),

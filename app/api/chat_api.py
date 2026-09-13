@@ -23,6 +23,7 @@ from app.services.stream_handler import (
     stream_recognize_response,
     stream_multimodal_response,
 )
+from app.services.sse_replay import get_sse_replay_buffer
 
 router = APIRouter(tags=["chat"])
 
@@ -46,6 +47,11 @@ class ChatRequest(BaseModel):
     session_id: str = "default"
     tutor_mode: TutorMode = "guided"
     context: TutorContextRequest = Field(default_factory=TutorContextRequest)
+
+
+class RecoverStreamRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    stream_id: str = Field(min_length=36, max_length=36)
 
 
 class RecognizeRequest(BaseModel):
@@ -133,13 +139,42 @@ async def chat(request: ChatRequest, http_request: Request):
     # T03: 学生忽略待答卡片直接发新消息时，放弃 pending 澄清，避免阻塞下一次反问
     from app.services.clarification_store import get_clarification_store
     await get_clarification_store().abandon(user_id, validated_session)
-    return StreamingResponse(
+    replay_buffer = get_sse_replay_buffer()
+    stream_id = await replay_buffer.start(
         stream_agent_response(
             get_agent(),
             validated_message, validated_session,
             user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=tutor_context, ai_run_id=run_id,
         ),
+        user_id,
+        validated_session,
+    )
+    return StreamingResponse(
+        replay_buffer.subscribe(stream_id, user_id, validated_session),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": stream_id},
+    )
+
+
+@router.post("/api/chat/recover")
+async def recover_chat_stream(request: RecoverStreamRequest, http_request: Request):
+    """Replay buffered events newer than ``Last-Event-ID`` for the same owner/session."""
+    user_id = _user_id(http_request)
+    try:
+        after_seq = int(http_request.headers.get("Last-Event-ID", "-1"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_LAST_EVENT_ID", "message": "Last-Event-ID 必须为整数"})
+    try:
+        replay_buffer = get_sse_replay_buffer()
+        await replay_buffer.replay(request.stream_id, user_id, request.session_id, after_seq)
+        stream = replay_buffer.subscribe(request.stream_id, user_id, request.session_id, after_seq)
+    except LookupError:
+        raise HTTPException(status_code=404, detail={"code": "STREAM_NOT_FOUND", "message": "流已过期或不属于当前用户"})
+
+    return StreamingResponse(
+        stream,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": request.stream_id},
     )
 
 

@@ -15,9 +15,10 @@ export const useExamStore = defineStore('exam', () => {
   const questionTotal = computed(() => Object.values(config.value.question_type_counts).reduce((sum, value) => sum + Number(value || 0), 0))
   async function loadOptions(courseId) { loading.value = true; error.value = ''; try { options.value = unwrapExam(await examApi.options(courseId)); return options.value } catch (e) { error.value = messageOf(e); throw e } finally { loading.value = false } }
   async function create() { loading.value = true; error.value = ''; try { session.value = unwrapExam(await examApi.create({ ...config.value, course_id: options.value.course_id, version_id: options.value.version_id, idempotency_key: newKey() })); hydrate(session.value); return session.value } catch (e) { error.value = messageOf(e); throw e } finally { loading.value = false } }
-  function hydrate(data) { session.value = data; answers.value = {}; versions.value = {}; dirty.clear(); for (const q of data.questions || []) { answers.value[q.question_id] = q.draft_answer; versions.value[q.question_id] = q.draft_version || 0 } }
+  function hydrate(data) { session.value = data; answers.value = {}; versions.value = {}; dirty.clear(); for (const q of data.questions || []) { answers.value[q.question_id] = q.draft_answer; versions.value[q.question_id] = q.draft_version || 0 } const recoveredId = data.recovery_snapshot?.current_question_id; const recoveredIndex = (data.questions || []).findIndex(q => q.question_id === recoveredId); currentIndex.value = recoveredIndex >= 0 ? recoveredIndex : 0 }
   async function load(id) { loading.value = true; error.value = ''; try { hydrate(unwrapExam(await examApi.get(id))); return session.value } catch (e) { error.value = messageOf(e); throw e } finally { loading.value = false } }
   async function start() { hydrate(unwrapExam(await examApi.start(session.value.session_id))); return session.value }
+  async function saveRecoverySnapshot() { if (session.value?.status !== 'in_progress') return; return unwrapExam(await examApi.saveRecoverySnapshot(session.value.session_id, { current_question_id: currentQuestion.value?.question_id || null })) }
   function markDirty(questionId) { dirty.add(questionId); saveState.value = 'unsaved' }
   function save(questionId) {
     markDirty(questionId)
@@ -40,5 +41,5 @@ export const useExamStore = defineStore('exam', () => {
   async function submit() { loading.value = true; try { await flushAll(); report.value = unwrapExam(await examApi.submit(session.value.session_id, newKey())); session.value.status = 'completed'; return report.value } catch (e) { error.value = messageOf(e); throw e } finally { loading.value = false } }
   async function loadReport(id) { loading.value = true; try { report.value = unwrapExam(await examApi.report(id)); return report.value } catch (e) { error.value = messageOf(e); throw e } finally { loading.value = false } }
   async function loadAiSummary(id) { return unwrapExam(await examApi.aiSummary(id)) }
-  return { options, session, report, loading, error, saveState, currentIndex, answers, versions, config, currentQuestion, questionTotal, loadOptions, create, load, start, markDirty, save, flushAll, submit, loadReport, loadAiSummary }
+  return { options, session, report, loading, error, saveState, currentIndex, answers, versions, config, currentQuestion, questionTotal, loadOptions, create, load, start, saveRecoverySnapshot, markDirty, save, flushAll, submit, loadReport, loadAiSummary }
 })

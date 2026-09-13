@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.services.exam_service import create_exam, exam_ai_summary, exam_options, exam_report, get_exam, save_exam_draft, start_exam, submit_exam
+from app.services.exam_service import create_exam, exam_ai_summary, exam_options, exam_report, get_exam, save_exam_draft, save_exam_snapshot, start_exam, submit_exam
 from app.services.practice_service import PracticeError
 
 router = APIRouter(prefix="/api/exams", tags=["自主考试"])
@@ -48,6 +48,11 @@ class SubmitRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=128)
 
 
+class RecoverySnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_question_id: str | None = Field(default=None, max_length=36)
+
+
 def _user(request: Request) -> str:
     user_id = getattr(request.state, "user_id", None)
     if not user_id: raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "请先登录"})
@@ -86,6 +91,12 @@ async def start(request: Request, session_id: str):
 @router.put("/sessions/{session_id}/draft-answers/{question_id}")
 async def draft(request: Request, session_id: str, question_id: str, body: DraftRequest):
     try: return {"code": 0, "data": await save_exam_draft(_user(request), session_id, question_id, body.answer, body.expected_version)}
+    except PracticeError as error: _raise(error)
+
+
+@router.put("/sessions/{session_id}/recovery-snapshot")
+async def recovery_snapshot(request: Request, session_id: str, body: RecoverySnapshotRequest):
+    try: return {"code": 0, "data": await save_exam_snapshot(_user(request), session_id, body.current_question_id), "message": "ok"}
     except PracticeError as error: _raise(error)
 
 

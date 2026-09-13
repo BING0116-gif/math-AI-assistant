@@ -10,7 +10,7 @@ import ModeGuardNotice from '@/components/chat/ModeGuardNotice.vue'
 import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
-import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream } from '@/api/chat'
+import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
 import { DEFAULT_TUTOR_MODE, TUTOR_MODES, normalizeTutorMode } from '@/utils/tutorModes'
@@ -269,7 +269,8 @@ async function streamAgentReply(
       }
     }
 
-    const handleDone = () => {
+    const handleDone = (state: any = {}) => {
+      if (state.disconnected) return
       streaming.value = false
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
@@ -279,22 +280,42 @@ async function streamAgentReply(
       nextTick(() => scrollToBottom())
     }
 
-    const handleError = () => {
-      streaming.value = false
-      streamingMessageId.value = null
-      store.updateMessage(chatId, msgId, {
-        content: '发生错误，请重试。',
-        timestamp: new Date().toLocaleString(),
-      })
+    let streamId: string | null = null
+    let lastEventId = -1
+    let currentResponse = response
+    let recoveryDeadline: number | null = null
+    while (true) {
+      let streamError: any = null
+      const result = await parseSSEStream(
+        currentResponse,
+        handleData,
+        handleDone,
+        (error: any) => { streamError = error },
+        (eventType: string, data: any) => {
+          if (eventType === 'stream' && data.stream_id) streamId = data.stream_id
+          handleEvent(eventType, data, msgId)
+        },
+      )
+      streamId = result?.streamId || streamId
+      lastEventId = Number.isFinite(result?.lastEventId) ? result.lastEventId : lastEventId
+      if (result?.completed) return
+      if (!streamId || abortController.value?.signal.aborted) {
+        throw streamError || new Error('流式响应中断，续传失败')
+      }
+      recoveryDeadline ??= performance.now() + 5000
+      while (true) {
+        if (performance.now() >= recoveryDeadline) throw streamError || new Error('流式响应续传失败')
+        await new Promise(resolve => setTimeout(resolve, 500))
+        try {
+          currentResponse = await recoverChatStream(chatId, streamId, lastEventId, abortController.value.signal)
+          if (currentResponse.ok) break
+          if (currentResponse.status === 404) throw new Error('流已过期，请重新发送')
+        } catch (error: any) {
+          if (abortController.value?.signal.aborted || error.message === '流已过期，请重新发送') throw error
+          streamError = error
+        }
+      }
     }
-
-    await parseSSEStream(
-      response,
-      handleData,
-      handleDone,
-      handleError,
-      (eventType: string, data: any) => handleEvent(eventType, data, msgId),
-    )
   } catch (err: any) {
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
