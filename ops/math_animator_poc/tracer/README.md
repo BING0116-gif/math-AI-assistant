@@ -34,6 +34,27 @@ existing T08 `MathVisualizer` first and only maps exact, MathVerifier-backed sem
 supports the fixed tangent and Riemann templates. Taylor mapping is deliberately rejected because
 T08 does not yet expose a verified Taylor-polynomial sequence contract.
 
+## Local durable queue
+
+Submit and process a job in separate processes:
+
+```powershell
+python -m ops.math_animator_poc.tracer.local_queue_cli `
+  --root artifacts/t15-phase1/local-queue `
+  submit ops/math_animator_poc/tracer/examples/t08-tangent.json `
+  --template-id secant_to_tangent `
+  --idempotency-key local-demo-1
+
+python -m ops.math_animator_poc.tracer.local_queue_cli `
+  --root artifacts/t15-phase1/local-queue `
+  work-once --worker-id local-worker-1
+```
+
+The file-backed prototype provides idempotent submit, short-lease claim, heartbeat, expired-lease
+recovery, cooperative cancel and request hash verification. It writes only under the explicit
+artifact root. It is for one trusted developer machine, is not FIFO-guaranteed, and has no user
+ownership model; do not expose it through FastAPI or reuse it as the production task store.
+
 ## Contract
 
 ```json
