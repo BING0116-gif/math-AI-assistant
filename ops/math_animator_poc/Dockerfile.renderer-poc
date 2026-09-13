@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim-bookworm AS builder
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
+RUN python -m venv "${VIRTUAL_ENV}" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        libcairo2-dev \
+        libpango1.0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-renderer.txt /tmp/requirements-renderer.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r /tmp/requirements-renderer.txt
+
+
+FROM python:3.12-slim-bookworm AS runtime
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV XDG_CACHE_HOME=/tmp/cache
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libcairo2 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libpangoft2-1.0-0 \
+        libgl1 \
+        fonts-noto-core \
+        fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 renderer \
+    && useradd --uid 10001 --gid renderer --no-create-home --shell /usr/sbin/nologin renderer \
+    && mkdir -p /work \
+    && chown renderer:renderer /work
+
+COPY --from=builder /opt/venv /opt/venv
+
+USER 10001:10001
+WORKDIR /work
+
+ENTRYPOINT ["manim"]

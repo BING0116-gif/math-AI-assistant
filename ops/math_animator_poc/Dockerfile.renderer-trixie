@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.12-slim-trixie AS builder
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
+RUN python -m venv "${VIRTUAL_ENV}" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        libcairo2-dev \
+        libpango1.0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-renderer.txt requirements-renderer.lock /tmp/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip==25.3 setuptools==84.0.0 wheel==0.48.0 \
+    && pip install --require-hashes -r /tmp/requirements-renderer.lock \
+    && pip uninstall --yes pip setuptools wheel
+
+
+# Optional build-only target for regenerating the fully hashed dependency lock.
+# It is not copied into the runtime image.
+FROM builder AS lockgen
+
+RUN python -m ensurepip --upgrade \
+    && python -m pip install --no-cache-dir pip==25.3 pip-tools==7.5.2
+
+ENTRYPOINT ["pip-compile"]
+
+
+FROM python:3.12-slim-trixie AS runtime
+
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV XDG_CACHE_HOME=/tmp/cache
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
+        libcairo2 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libpangoft2-1.0-0 \
+        fonts-dejavu-core \
+        fontconfig \
+    && python -m pip uninstall --yes pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 renderer \
+    && useradd --uid 10001 --gid renderer --no-create-home --shell /usr/sbin/nologin renderer \
+    && mkdir -p /work \
+    && chown renderer:renderer /work
+
+COPY --from=builder /opt/venv /opt/venv
+
+USER 10001:10001
+WORKDIR /work
+
+ENTRYPOINT ["manim"]

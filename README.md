@@ -1,193 +1,336 @@
 # 知微 · 智能数学学习系统
 
-面向大学高等数学的 AI 学习助手。首批内容聚焦**函数、极限与连续**，提供智能问答、错题本、知识目录、学习分析和推荐能力。
+面向大学数学学习的全栈 AI 助手。项目把数学问答、图片题目理解、知识学习、错题复盘、学习画像和个性化练习放在同一条学习闭环中。
 
-## 当前架构
+当前正式课程范围是大学高等数学的第一阶段内容：**函数、极限与连续**。系统同时保留内容导入、题库审核、智能检测和自主考试等扩展能力，适合继续演进为课程化的数学学习平台。
 
-```
-frontend/                 Vue 3 + Vite 学生端（7 个视图页面）
-app/application.py        FastAPI 应用组装入口（正式 ASGI 入口）
-app/api/                  HTTP API 路由（13 个路由模块）
-app/services/             业务服务（20+ 服务模块）
-app/data/                 SQLAlchemy 模型、仓储和 Alembic 迁移
-agent_core/               MathAgent、记忆、任务规划和策略
-tools/                    Agent 工具注册与实现（9 个内置工具）
-prompts/                  模型提示词（系统、ReAct、规划、分类器）
-scripts/                  导入、迁移、检查和验证脚本
-tests/                    自动化测试（34 个测试文件）
-docs/                     当前开发文档和功能状态基线
-```
+> 当前应用版本：`1.6.0`（由 `app/config/settings.py` 提供）
 
-## 数据存储职责
+## 能力概览
 
-- **PostgreSQL**：用户、课程、知识点、题目、错题、记忆、画像等所有业务数据的唯一正式事实来源。后续所有 Schema 设计、迁移和约束必须以 PostgreSQL 为准。
-- **SQLite**：仅作为本地开发兼容模式和测试兼容路径存在。代码层仍支持 SQLite，但 SQLite 不保证所有 PostgreSQL 特性可用。不建议将 SQLite 作为正式业务数据存储。
-- **Qdrant**：只保存可重建的题目和记忆向量索引，用于语义搜索与推荐。不保存权威业务状态。
-- **Redis**：只用于缓存、限流和短期任务状态，不作为永久学习数据源。
-- 不使用 Chroma（已移除）。
+学生端提供：
 
-## 本地开发启动
+- 智能数学对话：多轮会话、流式回答、追问与澄清、工具调用。
+- 图片题目理解：识别题目和公式，并将结果交给数学解题链路。
+- 知识目录：课程树、知识点学习内容、资源和掌握度。
+- 错题本：错题 CRUD、错因与掌握度、复习状态、可验证变式训练。
+- 学习画像：学习行为、技能聚合、画像报告和个性化建议。
+- RAG 推荐：结合题目向量检索、画像和知识点进行推荐，并在向量服务不可用时降级。
+- 专项练习：按课程、知识点和题型创建练习会话，提交作答并查看结果。
+- 智能检测：生成检测会话、保存草稿答案、提交并查看检测报告。
+- 自主考试：考试会话、断点恢复、交卷和报告，支持 AI 总结（需要可用的 AI 配置）。
+- 学习闭环：今日学习概览、到期复习、学习活动和看板。
 
-后端和前端是两个独立进程。
+管理员端提供：
 
-### 前置依赖
+- 题库内容导入：上传源文档、解析候选题、质量审核、发布/撤回和审计记录。
+- 内容 AI 分析：`mock`、`deepseek` 和预留的 `qwen` provider。
+- 题目查重、题型能力检查、内容覆盖率和能力就绪度检查。
+- 管理员记忆维护、画像批量刷新和题目向量同步。
 
-- Python 3.10+
-- Node.js 18+
-- PostgreSQL（生产推荐，Docker Compose 默认使用）
-- Redis（可选，缓存降级可用）
-- Qdrant（可选，向量搜索降级可用）
-- SQLite（本地开发兼容，默认使用）
+当前内容导入可以识别更多题型，但专项练习、检测和考试的确定性自动判题主要支持：`choice`、`judge`、`numeric_fill`、`expression_fill`。证明题、主观题等内容可以进入审核流程，是否可自动评分取决于题目能力标记。
 
-### 环境变量
+## 系统架构
 
-复制 `.env.example` 或创建 `.env` 文件，至少需要：
-
-```env
-# 必需：JWT 签名密钥（生产环境必须替换）
-JWT_SECRET_KEY=your-strong-secret-key
-
-# 必需：数据加密密钥（生产环境必须设置）
-ENCRYPTION_KEY=your-encryption-key
-
-# AI 功能开关（默认 true，false 强制关闭 AI 功能）
-AI_ENABLED=true
-
-# 可选：DashScope API Key（无 Key 时聊天和 AI 功能不可用）
-DASHSCOPE_API_KEY=your-api-key
-
-# 可选：LLM 配置
-LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
-LLM_MODEL=qwen-max
-
-# 可选：数据库（本地开发默认 SQLite，生产必须使用 PostgreSQL）
-DATABASE_URL=sqlite:///./data/math_ai.db
-# DATABASE_URL=postgresql://user:pass@localhost:5432/math_ai
-
-# 可选：Redis
-REDIS_URL=redis://localhost:6379/0
+```text
+┌──────────────────────────────┐
+│ Vue 3 + Vite 学生端          │  frontend/
+│ Pinia / Vue Router / KaTeX    │
+└──────────────┬───────────────┘
+               │ /api（开发代理或 Nginx 反向代理）
+┌──────────────▼───────────────┐
+│ FastAPI 应用                  │  app.application:app
+│ 认证 / API / 中间件 / 任务    │
+├──────────────┬───────────────┤
+│ 业务服务      │ Math Agent    │
+│ app/services  │ agent_core/   │
+└──────┬───────┴──────┬────────┘
+       │              │
+       │              ├── LLM / Vision API（可关闭）
+       │              ├── Qdrant（题目和记忆向量）
+       │              └── Redis（缓存、限流、短期任务）
+       │
+       └── PostgreSQL（生产事实源）
+           SQLite（本地开发和测试兼容模式）
 ```
 
-### 启动后端
+正式 ASGI 入口是 `app.application:app`。根目录 `main.py` 只保留兼容入口，旧脚本执行 `python main.py` 时默认监听 `8100`，新部署和开发命令请直接使用 Uvicorn 入口。
+
+## 目录结构
+
+```text
+app/
+├── api/                 FastAPI 路由（认证、聊天、知识、错题、练习、考试等）
+├── config/              Pydantic Settings 和模型能力登记
+├── data/                SQLAlchemy 模型、仓储、Alembic 迁移
+├── middleware/          认证、安全头、输入校验、限流
+├── security/            所有权、RBAC、审计和加密
+├── services/            业务服务、RAG、记忆、画像、内容管线
+└── application.py       应用装配和全局路由注册
+agent_core/              MathAgent、提示上下文、记忆持久化和规划
+tools/                   Agent 工具注册与实现
+prompts/                 系统提示、ReAct、分类和动态参数提示
+frontend/                Vue 3 + Vite 前端、Pinia store 和 Vitest 测试
+scripts/                 seed、迁移、内容导入、运维和验证脚本
+data_processing/         题目和内容处理工具
+tests/                   后端单元、集成、安全、RAG 和 Agent 测试
+evaluations/             模型质量评测数据和报告
+ops/                     Prometheus 与数学可视化实验资产
+docs/                    本地开发文档和阶段报告
+```
+
+## 数据存储边界
+
+| 组件 | 职责 | 说明 |
+|---|---|---|
+| PostgreSQL | 用户、课程、知识点、题目、错题、记忆、画像、学习记录和事件 | 生产环境的唯一权威事实源 |
+| SQLite | 本地开发和测试 | 默认 `data/math_ai.db`，不保证与 PostgreSQL 的全部方言特性一致 |
+| Qdrant | 题目和用户记忆的向量索引 | 可重建投影，不保存权威业务状态 |
+| Redis | 缓存、限流和短期任务状态 | 不作为永久学习数据源 |
+
+题目发布后的向量同步通过 outbox 事件完成；Qdrant 或 embedding 暂时不可用时，确定性的 SQL 主链仍可运行，但推荐、查重和 readiness 可能降级。
+
+## 快速开始：本地开发
+
+### 前置条件
+
+- Python 3.10 或更高版本（Docker 镜像使用 Python 3.12）。
+- Node.js 18 或更高版本及 npm。
+- 本地开发可以只使用 SQLite；完整运行建议准备 PostgreSQL、Redis 和 Qdrant。
+- 需要真实 AI 时，准备文本模型或视觉模型对应的 API Key。
+
+### 1. 准备 Python 环境
 
 ```powershell
-.\venv\Scripts\python.exe -m uvicorn app.application:app --host 127.0.0.1 --port 8100 --reload
+py -3.10 -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-### 启动前端
+如果仓库中已经存在可用的 `venv`，可以直接复用，不必重复创建。
+
+### 2. 配置环境变量
+
+```powershell
+Copy-Item .env.example .env
+```
+
+本地最小配置建议至少填写：
+
+```env
+APP_ENV=development
+DEBUG=true
+JWT_SECRET_KEY=请替换为至少32个字符的随机字符串
+ENCRYPTION_KEY=请填写Fernet生成的base64密钥
+AI_ENABLED=false
+RAG_ENABLED=false
+REDIS_URL=
+```
+
+这组配置可以在没有外部 AI、Redis 和 Qdrant 的情况下启动基础 API。需要 AI 时，把 `AI_ENABLED` 改为 `true`，并填写 `LLM_API_KEY`（文本链路）或 `DASHSCOPE_API_KEY`（视觉链路）。完整变量说明见 [.env.example](.env.example)。
+
+可以用下面的命令生成 Fernet 密钥，再把输出写入 `ENCRYPTION_KEY`：
+
+```powershell
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+生产环境必须使用强随机的 `JWT_SECRET_KEY` 和持久化的 `ENCRYPTION_KEY`，不能依赖默认值或启动时生成的临时密钥。
+
+### 3. 迁移数据库并启动后端
+
+```powershell
+python -m alembic -c app/data/alembic.ini upgrade head
+python -m uvicorn app.application:app --host 127.0.0.1 --port 8000 --reload
+```
+
+应用启动时会再次执行幂等的 Alembic `upgrade head`，并在数据库可用时初始化第一阶段高等数学课程目录。需要手动重建本地 SQLite 开发库时，使用带确认保护的脚本：
+
+```powershell
+python scripts/reset_dev_db.py --dry-run
+python scripts/reset_dev_db.py --yes
+```
+
+### 4. 启动前端
+
+另开一个 PowerShell 窗口：
 
 ```powershell
 cd frontend
+npm ci
 npm run dev
 ```
 
-### 访问
-
-- **学生端**：`http://127.0.0.1:5173`
-- **API 文档**：`http://127.0.0.1:8100/docs`（当 `DEBUG=true` 时）
-- **API 基础地址**：`http://127.0.0.1:8100`
-
-### 兼容入口
-
-根目录 `main.py` 保留为兼容入口，`python main.py` 仍可运行。新部署统一使用 `app.application:app`。
-
-## Docker 启动
+Vite 默认监听 `http://127.0.0.1:5173`，并把 `/api` 代理到 `http://127.0.0.1:8000`。后端地址不同步时可以覆盖：
 
 ```powershell
-# 必须设置以下环境变量
-$env:DB_PASSWORD="your_db_password"
-$env:ENCRYPTION_KEY="your-encryption-key"
-$env:JWT_SECRET_KEY="your-jwt-secret"
+$env:VITE_API_TARGET = "http://127.0.0.1:8100"
+npm run dev
+```
 
+访问地址：
+
+- 学生端：<http://127.0.0.1:5173>
+- API 根状态：<http://127.0.0.1:8000/>
+- 健康检查：<http://127.0.0.1:8000/api/health>
+- 详细健康检查：<http://127.0.0.1:8000/api/health/detailed>
+- 就绪检查：<http://127.0.0.1:8000/api/health/ready>
+- Swagger / ReDoc：仅 `DEBUG=true` 时开放 `/docs` 和 `/redoc`
+- OpenAPI JSON：<http://127.0.0.1:8000/openapi.json>
+
+### 本地开发常用脚本
+
+```powershell
+# 初始化第一阶段函数、极限与连续知识目录
+python scripts/seed_calculus_knowledge.py
+
+# 查看题库和 Qdrant 的只读对账结果
+python scripts/operations/recovery.py qdrant-sync
+
+# 编译检查
+python -m compileall -q app agent_core scripts tests
+```
+
+## Docker Compose
+
+Compose 会启动五个服务：FastAPI `web`、Nginx `frontend`、PostgreSQL 15、Redis 7 和 Qdrant。
+
+先在 `.env` 或当前 PowerShell 会话中设置 Compose 必填项：
+
+```powershell
+$env:DB_PASSWORD = "change-this-password"
+$env:JWT_SECRET_KEY = "change-this-to-a-long-random-secret"
+$env:ENCRYPTION_KEY = "生成的Fernet密钥"
 docker compose up --build
 ```
 
-访问：`http://127.0.0.1:3000`
+默认端口：
 
-Docker 服务包括：Vue/Nginx、FastAPI、PostgreSQL 15、Redis 7、Qdrant。
+| 服务 | 容器端口 | 宿主端口 |
+|---|---:|---:|
+| Frontend / Nginx | 80 | 3000 |
+| FastAPI | 8000 | 8000 |
+| PostgreSQL | 5432 | 5432 |
+| Qdrant HTTP | 6333 | 16333 |
+| Qdrant gRPC | 6334 | 16334 |
+| Redis | 6379 | 仅 Compose 内网 |
 
-## 数据库迁移
-
-正式结构迁移使用 Alembic：
-
-```powershell
-alembic -c app/data/alembic.ini upgrade head
-```
-
-当前有 5 个迁移文件，覆盖初始表结构、记忆外键、知识目录、学习内容和资源。
-
-## 测试
-
-### 后端测试
+启动后访问 <http://127.0.0.1:3000>。`web` 容器的入口脚本会先执行 Alembic 迁移，再启动 `app.application:app`。如需只校验配置：
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest tests -q
+docker compose config
 ```
 
-**全量 pytest suite**：当前未成功完整执行。存在测试初始化 / fixture / 事件循环相关错误（`ValueError: I/O operation on closed file`），导致 suite 无法正常结束。
+如果只想验证离线 API，可在 Compose 环境中设置 `AI_ENABLED=false` 和 `RAG_ENABLED=false`；真实内容 AI 仍由 `CONTENT_AI_PROVIDER` 单独控制。
 
-**分文件执行累计结果**（逐文件运行后加总）：675 passed, 5 skipped, 6 failed。6 个失败全部来自 `test_api_integration.py`，因认证中间件要求 token 但测试未传入。归属 Step 0.3。
+## 关键配置说明
 
-### 前端测试
+| 变量 | 默认/示例 | 作用 |
+|---|---|---|
+| `DATABASE_URL` | `sqlite:///./data/math_ai.db` | 同步数据库 URL；生产使用 PostgreSQL |
+| `ASYNC_DATABASE_URL` | 留空自动推导 | 异步 SQLAlchemy URL，建议生产显式设置 `postgresql+asyncpg://...` |
+| `AI_ENABLED` | `true` | 是否初始化远程 AI runtime；关闭后 AI API 返回结构化 503 |
+| `LLM_API_KEY` | 留空 | 主文本模型 Key，优先于 `DASHSCOPE_API_KEY` |
+| `LLM_API_BASE` / `LLM_MODEL` | DeepSeek 或兼容端点 | 数学问答、Agent 和文本解释 |
+| `DASHSCOPE_API_KEY` | 留空 | 视觉链路（`qwen-vl-*`）及文本链路的兼容 fallback |
+| `VISION_MODEL` | `qwen-vl-plus` | 图片和公式识别模型 |
+| `RAG_ENABLED` | `true` | 启用推荐和向量链路 |
+| `QDRANT_HOST` / `QDRANT_PORT` | `localhost` / `6333` | Qdrant 连接地址 |
+| `VECTOR_EMBEDDING_MODEL` | `BAAI/bge-small-zh-v1.5` | 题目和记忆 embedding 模型 |
+| `REDIS_URL` | `redis://localhost:6379/0` | 缓存、限流和短期任务 |
+| `CONTENT_AI_PROVIDER` | `mock` | 内容审核 AI：`mock` / `deepseek` / `qwen`（qwen 当前为 stub） |
+| `DEEPSEEK_API_KEY` | 留空 | `CONTENT_AI_PROVIDER=deepseek` 时使用 |
+| `MINERU_EXECUTABLE` | 留空 | 可选的 MinerU 独立解析器路径 |
+| `METRICS_ENABLED` | `true` | 是否提供 `/metrics` |
+| `METRICS_BEARER_TOKEN` | 留空 | 设置后 `/metrics` 需要 Bearer Token |
+
+文本模型和视觉模型是两条独立链路。没有 API Key 时应用仍可以启动，非 AI 功能继续工作；依赖 AI 的端点会返回 `AI_UNAVAILABLE`，前端会显示离线状态。
+
+## API 分组
+
+所有业务接口都以 `/api` 开头，前端客户端会统一注入和刷新 JWT。
+
+| 分组 | 典型路径 | 用途 |
+|---|---|---|
+| 认证 | `/api/auth/register`、`/api/auth/login`、`/api/auth/refresh` | 注册、登录和令牌轮换 |
+| 对话 | `/api/chat`、`/api/chat/multimodal`、`/api/chat/sessions` | 文本/图片问答和会话 |
+| 知识 | `/api/knowledge/courses`、`/api/knowledge/points/{id}/learning` | 课程目录和学习内容 |
+| 错题 | `/api/error-book`、`/api/error-book/{id}/review` | 错题和复习状态 |
+| 画像 | `/api/profile/me`、`/api/profile/me/report` | 画像、技能和建议 |
+| 推荐 | `/api/recommend/questions`、`/api/recommend/vector-search` | RAG 推荐和语义检索 |
+| 练习 | `/api/practice/sessions` | 专项练习会话 |
+| 检测 | `/api/assessments/sessions` | 智能检测会话 |
+| 考试 | `/api/exams/sessions` | 自主考试、恢复和报告 |
+| 学习闭环 | `/api/learning/today`、`/api/learning/reviews/due` | 今日任务、复习和活动 |
+| 管理内容 | `/api/admin/content/*` | 导入、审核、发布和内容 AI |
+| 健康 | `/api/health`、`/api/health/ready` | 存活、依赖和就绪探针 |
+
+以运行时的 OpenAPI 为准，不建议把过时的接口列表复制到业务代码或外部文档中。`/api/papers/*` 仍保留兼容接口，但路由已标记 deprecated。
+
+## 数据库迁移和内容初始化
+
+只通过 `app/data/alembic/versions/` 中的 Alembic 迁移修改数据库结构，不要在运行时使用 `create_all` 或手工 SQL 代替迁移。
+
+```powershell
+python -m alembic -c app/data/alembic.ini current
+python -m alembic -c app/data/alembic.ini upgrade head
+python -m alembic -c app/data/alembic.ini downgrade -1
+```
+
+生产数据库推荐 PostgreSQL；迁移前请完成备份，并确认 `DATABASE_URL` / `ASYNC_DATABASE_URL` 指向目标环境。Qdrant 只保存可重建索引，迁移或发布后应通过 outbox 和只读对账检查 SQL 与向量索引的一致性。
+
+## 测试与质量门槛
+
+### 后端
+
+```powershell
+python -m pytest tests -q
+```
+
+本 README 更新时在 Windows 本地执行的结果是：**1068 passed、5 skipped、8 failed、20 warnings、19 subtests passed**。失败集中在 `test_llm_robustness.py`、`test_question_dedup.py` 和 `test_readiness_matrix.py` 的日志/能力断言，不能视为全量测试通过；提交前请先确认这些失败是否属于当前环境编码或实现回归。
+
+### 前端
 
 ```powershell
 cd frontend
 npm test
-```
-
-当前有 5 个测试文件、38 个测试用例，覆盖：
-
-- **Auth Store**：登录/注册/登出、token 刷新、会话恢复、session 清理
-- **API Interceptor**：Authorization 统一注入、401 刷新重放、刷新失败清理
-- **Router Guard**：受保护路由未登录重定向、已登录放行
-- **AgentComposer**：AI 离线状态组件行为
-- **MathRenderer**：普通文本 / 合法 LaTeX / 异常输入渲染
-
-所有测试自包含，不依赖实际后端服务或 dev server。
-
-### 前端构建
-
-```powershell
-cd frontend
 npm run build
 ```
 
-当前状态：通过（含 Dart Sass 弃用警告和 chunk 大小警告）
+本次验证结果：**21 个测试文件、76 个测试通过；生产构建通过**。构建仍会提示 Sass legacy API、`authStore` 动态/静态导入和大 chunk（约 1 MB）警告，这些是后续性能与工程清理项，不是构建失败。
 
-### 前端工程入口
+### CI
 
-- **Application entry**：`frontend/src/main.js`
-- **Router**：`frontend/src/router/index.js`（唯一正式 Router，含认证守卫）
-- **Tests**：`npm test`（Vitest）
-- **Production build**：`npm run build`（Vite）
-- **Build artifact**：`frontend/dist/`（不提交 Git，构建时生成）
+`.github/workflows/ci.yml` 包含后端测试和覆盖率、前端测试与构建、Compose 空库冷启动和 Docker 构建。CI 的后端 job 会关闭真实 AI（`AI_ENABLED=false`），因此无需在 CI 中提交任何模型密钥。
 
-## 当前产品范围
+## 安全与数据隔离约定
 
-- **课程**：大学高等数学
-- **首批内容**：函数、极限与连续（已通过启动种子数据加载）
-- **题型**：选择题、判断题、数值填空题（暂未实现判题引擎）
-- **高中数学**：属于旧产品方案中的早期规划，不作为当前 MVP 开发范围
+- 密钥只从环境变量读取；`.env`、真实学生数据、模型输出和运行时数据不得提交。
+- 所有用户范围数据必须按认证得到的 `user_id` 隔离，不能使用默认用户或共享 session key。
+- JWT、敏感字段加密、CSP、安全头、速率限制、RBAC 和审计由后端统一处理。
+- PostgreSQL 是生产事实源，Qdrant 是可重建投影；删除用户数据时要同时考虑 SQL、缓存、事件和向量索引。
+- 内容 AI 默认是 `mock`，mock 结果默认禁止正式发布；只有在明确的开发/联调场景才设置 `ALLOW_MOCK_PUBLISH=true`。
 
-## 功能状态摘要
+## 已知边界
 
-详见 [docs/当前功能状态基线_V1.0.md](docs/当前功能状态基线_V1.0.md)
+- 课程首期聚焦函数、极限与连续，高中数学不属于当前正式产品范围。
+- AI、Qdrant、Redis 都可以降级，但降级时对应能力会返回结构化错误或减少推荐能力。
+- `CONTENT_AI_PROVIDER=qwen` 目前是预留 stub；需要真实内容分析时使用 `deepseek` 并配置 `DEEPSEEK_API_KEY`。
+- 前端生产包仍有较大的 vendor chunk，适合后续继续做路由和依赖拆分。
+- 全量后端测试当前存在 8 个失败，发布前应处理或明确豁免原因。
 
-| 模块 | 状态 |
-|------|------|
-| 认证（注册/登录/Token） | 已贯通 |
-| 课程与知识目录 | 已贯通 |
-| 聊天与 AI Agent | 已贯通（AI Enabled 条件下） |
-| 数学静态可视化 | 已贯通（六类受控 MathVisualSpec、T05 关键数据复核、原生 SVG） |
-| 错题本 | 已贯通 |
-| 记忆系统 | 已贯通 |
-| 用户画像与技能 | 已贯通 |
-| 推荐系统 | 已贯通 |
-| 数据管理与安全 | 已贯通 |
-| 前端页面 | 已贯通 |
-| 练习会话 | 仅骨架 |
-| 判题引擎 | 未实现 |
-| 练习页面 | 未实现 |
-| 间隔复习计划 | 未实现 |
-| 今日任务 | 未实现 |
-| 考试/组卷/变式 | 暂缓 |
+## 进一步阅读
+
+- [docs/README.md](docs/README.md)：本地架构、开发、API 和运维文档索引。
+- [docs/当前功能状态基线_V1.0.md](docs/当前功能状态基线_V1.0.md)：功能完成度和已知风险基线。
+- [docs/CODE_WIKI.md](docs/CODE_WIKI.md)：代码导航和模块说明。
+- [AGENTS.md](AGENTS.md)：仓库约定、数据迁移和验证要求。
+
+## 贡献流程
+
+1. 先确认改动是否跨越 API、数据模型、记忆/画像、Qdrant 或前端契约。
+2. 数据库结构只新增 Alembic 迁移，并补充回滚、已有数据和索引一致性检查。
+3. API 变更同步更新 Pydantic 模型、前端 API 封装、文档和回归测试。
+4. Python 改动运行受影响的 pytest；前端改动运行 `npm test` 和 `npm run build`。
+5. 不提交 `.env`、数据库文件、Qdrant 存储、`frontend/dist`、运行时上传内容或本地测试产物。
