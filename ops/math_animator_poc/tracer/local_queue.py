@@ -94,10 +94,13 @@ class LocalFileTaskQueue:
         template_id: str,
         *,
         idempotency_key: str,
+        admission: Mapping[str, Any] | None = None,
     ) -> LocalAnimationJob:
         if not _IDEMPOTENCY_KEY.fullmatch(idempotency_key):
             raise LocalQueueError("invalid idempotency_key")
         request = {"template_id": template_id, "visual_spec": dict(raw_visual_spec)}
+        if admission is not None:
+            request["admission"] = dict(admission)
         request_bytes = _canonical_json(request)
         if len(request_bytes) > MAX_REQUEST_BYTES:
             raise LocalQueueError(f"request exceeds {MAX_REQUEST_BYTES} bytes")

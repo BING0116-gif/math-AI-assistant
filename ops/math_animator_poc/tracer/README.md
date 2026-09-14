@@ -55,6 +55,26 @@ recovery, cooperative cancel and request hash verification. It writes only under
 artifact root. It is for one trusted developer machine, is not FIFO-guaranteed, and has no user
 ownership model; do not expose it through FastAPI or reuse it as the production task store.
 
+## Local capability admission
+
+The local `MathAnimationCapability` gate sits before queue submission:
+
+```powershell
+python -m ops.math_animator_poc.tracer.capability_cli `
+  ops/math_animator_poc/tracer/examples/t08-tangent.json `
+  --root artifacts/t15-phase1/capability `
+  --template-id secant_to_tangent `
+  --trigger user_explicit `
+  --idempotency-key explicit-demo-1
+```
+
+`user_explicit` admits only after the T08 semantic check. `teaching_strategy` additionally requires
+a finite `dynamic_process_score` of at least `0.8`. `none`, a lower score, an incompatible visual,
+or the currently unsupported Taylor contract returns `t08_static` without creating a job.
+
+This trigger is structured local input, not an LLM call. The capability does not import or invoke
+DeepSeek, Qwen, or any other model provider and is not registered in the production orchestrator.
+
 ## Contract
 
 ```json
