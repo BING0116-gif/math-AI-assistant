@@ -1,17 +1,20 @@
-"""Owner-scoped persistence boundary for T15; no route or renderer is enabled yet."""
+"""Owner-scoped persistence and state boundary for the T15 production API."""
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config.settings import settings
 from app.data.models import AnimationJob, AnimationJobEvent
+from app.schemas.animation import AnimationArtifactSummary, AnimationJobResponse
 
 
 class AnimationServiceError(Exception):
@@ -19,6 +22,24 @@ class AnimationServiceError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+_PUBLIC_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,49}$")
+_SENSITIVE_ERROR = re.compile(
+    r"(?:stderr|traceback|(?:api[_-]?key|token|secret|password)\s*[=:]|"
+    r"[A-Za-z]:[\\/]|(?:^|\s)/(?:home|root|tmp|var|etc|app|workspace)/)",
+    re.IGNORECASE,
+)
+
+
+def _public_error(code: str | None, message: str | None) -> tuple[str | None, str | None]:
+    if code is not None and not _PUBLIC_ERROR_CODE.fullmatch(code):
+        code = "ANIMATION_FAILED"
+    if message is not None:
+        message = " ".join(message.split())[:500]
+        if _SENSITIVE_ERROR.search(message):
+            message = "动画生成失败，请稍后重试"
+    return code, message
 
 
 def canonical_request_fingerprint(*, template_id: str, trigger: str, visual_spec: dict[str, Any],
@@ -48,6 +69,91 @@ async def get_animation_job(db: AsyncSession, *, user_id: str, job_id: str) -> A
     if job is None:
         raise AnimationServiceError("ANIMATION_JOB_NOT_FOUND", "动画任务不存在")
     return job
+
+
+def animation_job_response(job: AnimationJob) -> AnimationJobResponse:
+    """Build the public projection without leaking owner, storage or worker data."""
+    artifacts: list[AnimationArtifactSummary] = []
+    if job.status == "succeeded":
+        artifacts = [
+            AnimationArtifactSummary.model_validate(artifact, from_attributes=True)
+            for artifact in job.artifacts
+            if artifact.validation_status == "validated" and artifact.published_at is not None
+        ]
+    error_code, error_message = _public_error(job.error_code, job.error_message)
+    return AnimationJobResponse(
+        job_id=job.id,
+        status=job.status,
+        stage=job.stage,
+        template_id=job.template_id,
+        attempt_count=job.attempt_count,
+        fallback_kind=job.fallback_kind,
+        error_code=error_code,
+        error_message=error_message,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        artifacts=artifacts,
+    )
+
+
+async def cancel_animation_job(db: AsyncSession, *, user_id: str, job_id: str) -> AnimationJob:
+    """Request cancellation using an owner-scoped lookup; repeated calls are safe."""
+    job = await db.scalar(
+        select(AnimationJob).where(
+            AnimationJob.id == job_id,
+            AnimationJob.user_id == user_id,
+        ).with_for_update()
+    )
+    if job is None:
+        raise AnimationServiceError("ANIMATION_JOB_NOT_FOUND", "动画任务不存在")
+    if job.status in {"succeeded", "fallback", "failed", "cancelled"} or job.cancel_requested:
+        await db.refresh(job, attribute_names=["artifacts"])
+        return job
+
+    now = datetime.now(timezone.utc)
+    job.cancel_requested = True
+    event_type = "cancel_requested"
+    if job.status == "pending":
+        job.status = "cancelled"
+        job.stage = "cancelled"
+        job.completed_at = now
+        event_type = "job_cancelled"
+    else:
+        job.stage = "cancel_requested"
+    job.updated_at = now
+
+    last_sequence = await db.scalar(
+        select(func.max(AnimationJobEvent.sequence)).where(AnimationJobEvent.job_id == job.id)
+    )
+    db.add(AnimationJobEvent(
+        event_id=str(uuid.uuid4()),
+        job_id=job.id,
+        sequence=(last_sequence or 0) + 1,
+        event_type=event_type,
+        stage=job.stage,
+        status=job.status,
+        details={},
+    ))
+    await db.flush()
+    await db.refresh(job, attribute_names=["artifacts"])
+    return job
+
+
+def validate_public_animation_request(*, template_id: str, visual_spec: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Run the approved T08/fixed-template admission without invoking a renderer."""
+    from ops.math_animator_poc.tracer.registry import TEMPLATES, verify_trusted_source
+    from ops.math_animator_poc.tracer.visual_adapter import adapt_math_visual_spec
+
+    animation_spec = adapt_math_visual_spec(visual_spec, template_id)
+    definition = TEMPLATES[animation_spec.template_id]
+    source_hash = verify_trusted_source(definition).lower()
+    return {
+        "verified": True,
+        "adapter": "t08_fixed_template_v1",
+        "animation_schema_version": animation_spec.schema_version,
+    }, source_hash
 
 
 async def enqueue_validated_animation(

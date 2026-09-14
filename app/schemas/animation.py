@@ -22,7 +22,16 @@ class CreateAnimationJobRequest(BaseModel):
     @field_validator("visual_spec")
     @classmethod
     def bound_visual_spec(cls, value: dict[str, Any]) -> dict[str, Any]:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        try:
+            encoded = json.dumps(
+                value,
+                allow_nan=False,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("visual_spec 必须包含有限 JSON 数据") from exc
         if not value or len(encoded.encode("utf-8")) > 50_000:
             raise ValueError("visual_spec 不能为空且不得超过 50000 字节")
         return value

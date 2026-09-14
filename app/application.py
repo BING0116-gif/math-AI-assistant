@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from app.api.admin_memory_api import router as admin_memory_router
 from app.api.agent_api import router as agent_router
 from app.api.auth import router as auth_router
+from app.api.animation_api import router as animation_router
 from app.api.chat_api import router as chat_router
 from app.api.content_import_api import router as content_import_router
 from app.api.content_ai_api import router as content_ai_router
@@ -63,6 +64,7 @@ if settings.JSON_LOGS:
 def _register_routers(target_app: FastAPI) -> None:
     routers = (
         auth_router,
+        animation_router,
         memory_router,
         profile_router,
         data_router,
