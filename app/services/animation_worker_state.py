@@ -14,8 +14,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import settings
-from app.data.models import AnimationJob, AnimationJobEvent
+from app.data.models import AnimationArtifact, AnimationJob, AnimationJobEvent
 from app.services.animation_service import AnimationServiceError
+from app.services.animation_storage import ValidatedArtifact
 
 TerminalStatus = Literal["succeeded", "fallback", "failed", "cancelled"]
 _WORKER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -211,6 +212,7 @@ async def finish_animation_job(
     job_id: str,
     worker_id: str,
     event_id: str,
+    artifact: ValidatedArtifact | None = None,
 ) -> AnimationJob | None:
     """Commit success unless cancellation already won the locked-row race."""
     _validate_worker_id(worker_id)
@@ -232,9 +234,22 @@ async def finish_animation_job(
         job.stage = "cancelled"
         event_type = "job_cancelled"
     else:
+        if artifact is None:
+            return None
         job.status = "succeeded"
         job.stage = "completed"
         event_type = "job_succeeded"
+        db.add(AnimationArtifact(
+            job_id=job.id,
+            user_id=job.user_id,
+            kind="video",
+            storage_key=artifact.storage_key,
+            mime_type=artifact.mime_type,
+            sha256=artifact.sha256,
+            size_bytes=artifact.size_bytes,
+            validation_status="validated",
+            published_at=now,
+        ))
     job.worker_id = None
     job.heartbeat_at = None
     job.lease_expires_at = None

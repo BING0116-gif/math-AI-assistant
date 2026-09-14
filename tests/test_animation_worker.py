@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.config.settings import settings
 from app.data.models import AnimationJob, AnimationJobEvent, Base, User
 from app.services.animation_service import enqueue_validated_animation
+from app.services.animation_storage import ValidatedArtifact
 from app.services.animation_worker_state import (
     begin_animation_attempt,
     claim_next_animation_job,
@@ -140,7 +141,8 @@ async def test_success_completion_event_replay_does_not_transition_twice(worker_
         worker_db, job_id=job.id, worker_id="worker-a", event_id="attempt-success-01"
     )
     first = await finish_animation_job(
-        worker_db, job_id=job.id, worker_id="worker-a", event_id="finish-success-001"
+        worker_db, job_id=job.id, worker_id="worker-a", event_id="finish-success-001",
+        artifact=ValidatedArtifact("artifacts/job/video.mp4", "video/mp4", "a" * 64, 128),
     )
     replay = await finish_animation_job(
         worker_db, job_id=job.id, worker_id="worker-a", event_id="finish-success-001"

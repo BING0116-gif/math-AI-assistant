@@ -46,6 +46,14 @@ services:
       - VECTOR_SIZE=${VECTOR_SIZE:-512}
       - QUESTION_QDRANT_COLLECTION=${QUESTION_QDRANT_COLLECTION:-math_questions_bge_zh_v1}
       - QUESTION_DEDUP_THRESHOLD=${QUESTION_DEDUP_THRESHOLD:-0.92}
+      # T15 MathAnimator 默认关闭。worker/runner 必须作为独立受限进程运行，不在 web 内启动。
+      - MATH_ANIMATION_ENABLED=${MATH_ANIMATION_ENABLED:-false}
+      - ANIMATION_STORAGE_ROOT=${ANIMATION_STORAGE_ROOT:-/app/runtime/animations}
+      - ANIMATION_RENDERER_IMAGE=${ANIMATION_RENDERER_IMAGE:-}
+      - ANIMATION_RENDER_TIMEOUT_SECONDS=${ANIMATION_RENDER_TIMEOUT_SECONDS:-30}
+      - ANIMATION_MAX_OUTPUT_BYTES=${ANIMATION_MAX_OUTPUT_BYTES:-20971520}
+      - ANIMATION_MAX_ATTEMPTS=${ANIMATION_MAX_ATTEMPTS:-2}
+      - ANIMATION_JOB_LEASE_SECONDS=${ANIMATION_JOB_LEASE_SECONDS:-60}
       - MEMORY_QDRANT_COLLECTION=${MEMORY_QDRANT_COLLECTION:-user_memories_bge_zh_v1}
       - HF_HOME=/app/runtime/model-cache
       - DB_USER=${DB_USER:-mathai}
@@ -68,6 +76,7 @@ services:
       - ./frontend:/app/frontend
       - ./data:/app/data
       - embedding_cache:/app/runtime/model-cache
+      - ./runtime/animations:/app/runtime/animations
     restart: unless-stopped
     deploy:
       resources:

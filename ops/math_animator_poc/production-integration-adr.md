@@ -235,6 +235,21 @@ student media. A later audited cleanup may remove expired artifacts.
 - render in FastAPI or mount Docker socket: rejected as host-compromise boundary;
 - execute LLM/user Python: rejected and outside the approved risk waiver.
 
+## Implementation status (2026-09-14)
+
+The disabled-by-default implementation now includes owner-scoped create/status/cancel/media APIs,
+the transactional SQL worker state machine, a standalone worker entrypoint, a fixed-template
+one-shot Docker controller, quarantine validation/atomic publication, bounded MP4 range responses,
+and a student UI. Run the controller separately with:
+
+```text
+python -m app.tasks.animation_worker
+```
+
+The controller host needs Docker CLI access, PostgreSQL connectivity and the shared animation
+storage root. The FastAPI web process must not receive Docker socket access. The flag remains false;
+this implementation status is not deployment approval.
+
 ## Approval gates
 
 Implementation remains blocked until the owner explicitly approves this production data/API design.

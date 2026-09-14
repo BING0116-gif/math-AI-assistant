@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 
 from app.config.settings import settings
 from app.data.database import get_db_session
@@ -16,6 +17,7 @@ from app.services.animation_service import (
     get_animation_job,
     validate_public_animation_request,
 )
+from app.services.animation_storage import get_owner_artifact, iter_file_range, parse_byte_range
 
 router = APIRouter(prefix="/api/animations", tags=["数学动画"])
 _DIGEST = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
@@ -33,6 +35,8 @@ def _raise_service_error(error: AnimationServiceError) -> None:
         "ANIMATION_DISABLED": status.HTTP_503_SERVICE_UNAVAILABLE,
         "ANIMATION_JOB_NOT_FOUND": status.HTTP_404_NOT_FOUND,
         "IDEMPOTENCY_CONFLICT": status.HTTP_409_CONFLICT,
+        "ANIMATION_ARTIFACT_NOT_FOUND": status.HTTP_404_NOT_FOUND,
+        "RANGE_NOT_SATISFIABLE": status.HTTP_416_RANGE_NOT_SATISFIABLE,
     }
     raise HTTPException(
         code_to_status.get(error.code, status.HTTP_422_UNPROCESSABLE_CONTENT),
@@ -105,5 +109,47 @@ async def cancel_job(request: Request, job_id: str):
             job = await cancel_animation_job(db, user_id=user_id, job_id=job_id)
             data = animation_job_response(job)
         return {"code": 0, "data": data.model_dump(mode="json"), "message": "ok"}
+    except AnimationServiceError as error:
+        _raise_service_error(error)
+
+
+@router.get("/jobs/{job_id}/artifacts/{kind}")
+async def read_animation_artifact(request: Request, job_id: str, kind: str):
+    user_id = _user_id(request)
+    if kind not in {"video", "thumbnail", "gif"}:
+        raise HTTPException(404, detail={"code": "ANIMATION_ARTIFACT_NOT_FOUND", "message": "动画产物不存在"})
+    try:
+        async with get_db_session() as db:
+            artifact, path = await get_owner_artifact(
+                db, user_id=user_id, job_id=job_id, kind=kind  # type: ignore[arg-type]
+            )
+            try:
+                byte_range = parse_byte_range(request.headers.get("range"), artifact.size_bytes)
+            except AnimationServiceError as error:
+                raise HTTPException(
+                    416,
+                    detail={"code": error.code, "message": error.message},
+                    headers={"Content-Range": f"bytes */{artifact.size_bytes}"},
+                ) from error
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=3600",
+            "Content-Disposition": 'inline; filename="animation.mp4"',
+            "X-Content-Type-Options": "nosniff",
+        }
+        if byte_range is None:
+            start, end = 0, artifact.size_bytes - 1
+            status_code = 200
+        else:
+            start, end = byte_range
+            status_code = 206
+            headers["Content-Range"] = f"bytes {start}-{end}/{artifact.size_bytes}"
+        headers["Content-Length"] = str(end - start + 1)
+        return StreamingResponse(
+            iter_file_range(path, start, end),
+            status_code=status_code,
+            media_type=artifact.mime_type,
+            headers=headers,
+        )
     except AnimationServiceError as error:
         _raise_service_error(error)
