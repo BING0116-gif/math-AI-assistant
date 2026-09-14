@@ -30,6 +30,14 @@ _SENSITIVE_ERROR = re.compile(
     r"[A-Za-z]:[\\/]|(?:^|\s)/(?:home|root|tmp|var|etc|app|workspace)/)",
     re.IGNORECASE,
 )
+_RENDERER_DIGEST = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
+
+
+def resolve_renderer_digest() -> str:
+    value = settings.ANIMATION_RENDERER_IMAGE.strip()
+    if not _RENDERER_DIGEST.fullmatch(value):
+        raise AnimationServiceError("ANIMATION_RENDERER_UNAVAILABLE", "动画渲染器尚未就绪")
+    return value.lower()
 
 
 def _public_error(code: str | None, message: str | None) -> tuple[str | None, str | None]:

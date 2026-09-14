@@ -299,11 +299,12 @@ class MathAgent:
         return history
 
     async def _persist_chat_message(
-        self, user_id: str, session_id: str, role: str, content: str
+        self, user_id: str, session_id: str, role: str, content: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         try:
             await self._memory_application.append_message(
-                user_id, session_id, role, content
+                user_id, session_id, role, content, metadata=metadata
             )
         except Exception as e:
             logger.warning(f"SQL 会话写入失败（非阻塞）: role={role} error={e}")
@@ -368,6 +369,8 @@ class MathAgent:
             # T06: 工具装配与执行时门控共用规范模式；拒绝记录供 SSE/UI 使用。
             "tutor_mode": canonical_mode,
             "mode_tool_denials": [],
+            "original_user_input": user_input,
+            "animations": [],
         }
         if tutor_context is not None:
             from app.services.tutor_service import tutor_instruction
@@ -920,7 +923,11 @@ class MathAgent:
         self._follow_up_text = follow_up_text
 
         history.add_ai_message(full_response)
-        await self._persist_chat_message(user_id, sid, "assistant", full_response)
+        public_animations = list(context.get("animations") or [])
+        await self._persist_chat_message(
+            user_id, sid, "assistant", full_response,
+            metadata={"animations": public_animations} if public_animations else None,
+        )
         self._last_run_metadata = {
             "model": self._model,
             "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
@@ -932,6 +939,7 @@ class MathAgent:
             "capability_strategy_policy": route.manifest.strategy_policy,
             "mode_tool_denials": list(context.get("mode_tool_denials") or []),
             "visualizations": list(context.get("visualizations") or []),
+            "animations": public_animations,
             "mode_output_guard": {
                 "allowed": guard_result.allowed,
                 "rewritten": guard_result.rewritten,

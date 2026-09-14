@@ -22,6 +22,8 @@
           图形暂时不可用，文字解答不受影响。
         </p>
 
+        <MathAnimationCard v-if="message.animation" :initial-job="message.animation" />
+
         <!-- 流式状态指示 -->
         <div v-if="isStreaming && (!message.content || message.content.length === 0)" class="msg-loading">
           <span class="msg-loading-dot"></span>
@@ -69,6 +71,7 @@
 import { computed } from 'vue'
 import { renderMarkdown } from '@/utils/markdown'
 import MathVisualCard from '@/components/math/MathVisualCard.vue'
+import MathAnimationCard from '@/components/math/MathAnimationCard.vue'
 
 const props = defineProps({
   message: { type: Object, required: true },

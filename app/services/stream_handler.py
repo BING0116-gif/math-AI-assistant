@@ -61,6 +61,13 @@ async def stream_agent_response(
                 f"{json.dumps(visualization, ensure_ascii=False, allow_nan=False)}\n\n"
             )
 
+        animations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("animations") or [])
+        for animation in animations:
+            yield (
+                "event: animation_job\ndata: "
+                f"{json.dumps(animation, ensure_ascii=False, allow_nan=False)}\n\n"
+            )
+
         # [T03] ask_student 结构化反问事件：本轮内工具创建了 pending 澄清时下发，
         # 前端据此渲染结构化问题卡片（选项按钮 + 自由输入）。此时跳过跟进推荐，
         # 避免在等待学生澄清回答时继续推荐练习。
@@ -199,6 +206,10 @@ async def stream_multimodal_response(
                 for visualization in visualizations:
                     yield "event: visualization\ndata: " + json.dumps(visualization, ensure_ascii=False, allow_nan=False) + "\n\n"
 
+                animations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("animations") or [])
+                for animation in animations:
+                    yield "event: animation_job\ndata: " + json.dumps(animation, ensure_ascii=False, allow_nan=False) + "\n\n"
+
                 yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
                 if ai_run_id:
                     from app.services.tutor_service import complete_ai_run
@@ -225,6 +236,10 @@ async def stream_multimodal_response(
             visualizations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("visualizations") or [])
             for visualization in visualizations:
                 yield "event: visualization\ndata: " + json.dumps(visualization, ensure_ascii=False, allow_nan=False) + "\n\n"
+
+            animations = list((getattr(agent, "_last_run_metadata", {}) or {}).get("animations") or [])
+            for animation in animations:
+                yield "event: animation_job\ndata: " + json.dumps(animation, ensure_ascii=False, allow_nan=False) + "\n\n"
 
             yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
             if ai_run_id:

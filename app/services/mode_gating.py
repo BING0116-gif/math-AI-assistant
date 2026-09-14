@@ -21,15 +21,15 @@ LEGACY_MODE_ALIASES = {
 MODE_TOOL_POLICY: dict[str, dict[str, Any]] = {
     "tutor_free": {"allow": "*", "deny": frozenset()},
     "hint_only": {
-        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "skill_profile", "ask_student", "math_visualize"}),
+        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "skill_profile", "ask_student", "math_visualize", "math_animate"}),
         "deny": frozenset({"explain_question", "error_book_analysis", "math_verify"}),
     },
     "guided": {
-        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "skill_profile", "ask_student", "math_verify", "math_visualize"}),
+        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "skill_profile", "ask_student", "math_verify", "math_visualize", "math_animate"}),
         "deny": frozenset({"explain_question", "error_book_analysis"}),
     },
     "review": {
-        "allow": frozenset({"vision_tool", "search_questions", "skill_profile", "ask_student", "math_verify", "math_visualize", "error_book_analysis"}),
+        "allow": frozenset({"vision_tool", "search_questions", "skill_profile", "ask_student", "math_verify", "math_visualize", "math_animate", "error_book_analysis"}),
         "deny": frozenset({"explain_question", "recommend_questions"}),
     },
 }

@@ -240,7 +240,12 @@ student media. A later audited cleanup may remove expired artifacts.
 The disabled-by-default implementation now includes owner-scoped create/status/cancel/media APIs,
 the transactional SQL worker state machine, a standalone worker entrypoint, a fixed-template
 one-shot Docker controller, quarantine validation/atomic publication, bounded MP4 range responses,
-and a student UI. Run the controller separately with:
+and an Agent tool surfaced inside the existing conversation UI. MathAnimator is not a standalone
+student module: `math_animate` uses trusted request context for owner identity, applies a deterministic
+teaching-value guard around model tool selection, enqueues the fixed template, and emits an
+`animation_job` SSE event after the accompanying text explanation. The chat message persists only the
+public job projection and restores its inline animation card when the conversation is reopened.
+Run the controller separately with:
 
 ```text
 python -m app.tasks.animation_worker

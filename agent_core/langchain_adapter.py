@@ -83,6 +83,7 @@ class LangChainToolConverter:
                 # 请求级列表由 ContextVar 隔离；可视化纯数据经它回传给 SSE，
                 # 不混入 Markdown，也不会跨学生会话共享。
                 current_context.setdefault("visualizations", [])
+                current_context.setdefault("animations", [])
                 mode = current_context.get("tutor_mode", "tutor_free")
                 try:
                     allowed = is_tool_allowed(mode, custom_tool.name)

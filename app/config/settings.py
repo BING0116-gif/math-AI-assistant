@@ -222,7 +222,7 @@ class Settings(BaseSettings):
     # 单次解析 subprocess 超时（秒）
     CONTENT_PARSER_TIMEOUT_SECONDS: int = Field(default=600, alias="CONTENT_PARSER_TIMEOUT_SECONDS")
 
-    # ── MathAnimator（T15，默认关闭；当前仅持久化契约，不注册生产路由/worker）──
+    # ── MathAnimator（T15，默认关闭；启用后由对话 Agent 工具按教学价值触发）──
     MATH_ANIMATION_ENABLED: bool = Field(default=False, alias="MATH_ANIMATION_ENABLED")
     ANIMATION_STORAGE_ROOT: str = Field(default="./runtime/animations", alias="ANIMATION_STORAGE_ROOT")
     ANIMATION_RENDERER_IMAGE: str = Field(default="", alias="ANIMATION_RENDERER_IMAGE")

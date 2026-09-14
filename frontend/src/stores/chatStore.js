@@ -144,7 +144,15 @@ export const useChatStore = defineStore('chat', () => {
 
   async function loadServerChat(chatId) {
     const data = unwrapChat(await getChatSession(chatId))
-    const mapped = (data.messages || []).map(message => ({ id: `sql-${message.id}`, content: message.content, sender: message.role === 'assistant' ? 'ai' : message.role, timestamp: message.created_at, type: 'text', errorBookStatus: message.role === 'assistant' ? 'pending' : undefined }))
+    const mapped = (data.messages || []).map(message => ({
+      id: `sql-${message.id}`,
+      content: message.content,
+      sender: message.role === 'assistant' ? 'ai' : message.role,
+      timestamp: message.created_at,
+      type: 'text',
+      errorBookStatus: message.role === 'assistant' ? 'pending' : undefined,
+      animation: message.metadata?.animations?.[0] || null,
+    }))
     const existing = chats.value.find(item => item.id === chatId)
     const chat = { id: data.id, title: data.title || '新对话', lastMessageTime: data.messages?.at(-1)?.created_at || new Date().toISOString(), messages: mapped.length ? mapped : [createWelcomeMessage()], defaultTutorMode: normalizeTutorMode(data.default_tutor_mode), context: data.context || {} }
     if (existing) Object.assign(existing, chat); else chats.value.push(chat)

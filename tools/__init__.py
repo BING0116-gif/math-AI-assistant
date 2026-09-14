@@ -15,6 +15,7 @@ from tools.error_book_tool import ErrorBookTool
 from tools.ask_student_tool import AskStudentTool
 from tools.math_verify_tool import MathVerifyTool
 from tools.math_visualize_tool import MathVisualizeTool
+from tools.math_animate_tool import MathAnimateTool
 
 _registry: HybridToolRegistry = None
 
@@ -55,6 +56,7 @@ def _register_builtin_tools(registry: HybridToolRegistry, api_key: str = None) -
     registry.register(AskStudentTool())
     registry.register(MathVerifyTool())
     registry.register(MathVisualizeTool())
+    registry.register(MathAnimateTool())
 
 
 ToolRegistry = HybridToolRegistry
@@ -71,6 +73,7 @@ __all__ = [
     "ToolExecutionError",
     "MathVerifyTool",
     "MathVisualizeTool",
+    "MathAnimateTool",
     "get_registry",
     "init_registry",
 ]

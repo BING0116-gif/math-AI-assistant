@@ -1,8 +1,6 @@
 """Authenticated, disabled-by-default production API for MathAnimator jobs."""
 from __future__ import annotations
 
-import re
-
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
@@ -15,12 +13,12 @@ from app.services.animation_service import (
     cancel_animation_job,
     enqueue_validated_animation,
     get_animation_job,
+    resolve_renderer_digest,
     validate_public_animation_request,
 )
 from app.services.animation_storage import get_owner_artifact, iter_file_range, parse_byte_range
 
 router = APIRouter(prefix="/api/animations", tags=["数学动画"])
-_DIGEST = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 
 
 def _user_id(request: Request) -> str:
@@ -49,13 +47,6 @@ def _disabled_gate() -> None:
         _raise_service_error(AnimationServiceError("ANIMATION_DISABLED", "动画功能尚未启用"))
 
 
-def _renderer_digest() -> str:
-    value = settings.ANIMATION_RENDERER_IMAGE.strip()
-    if not _DIGEST.fullmatch(value):
-        raise AnimationServiceError("ANIMATION_RENDERER_UNAVAILABLE", "动画渲染器尚未就绪")
-    return value.lower()
-
-
 @router.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
 async def create_animation_job(request: Request, body: CreateAnimationJobRequest):
     user_id = _user_id(request)
@@ -75,7 +66,7 @@ async def create_animation_job(request: Request, body: CreateAnimationJobRequest
                 visual_spec=body.visual_spec,
                 admission_snapshot=admission,
                 template_source_sha256=source_hash,
-                renderer_image_digest=_renderer_digest(),
+                renderer_image_digest=resolve_renderer_digest(),
                 policy_version="t15-production-v1",
             )
             await db.refresh(job, attribute_names=["artifacts"])

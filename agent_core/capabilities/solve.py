@@ -16,7 +16,7 @@ class SolveCapability(Capability):
         stages=("understand", "plan", "solve", "respond"),
         allowed_tools=frozenset({
             "vision_tool", "search_questions", "recommend_questions",
-            "skill_profile", "ask_student", "math_verify", "math_visualize",
+            "skill_profile", "ask_student", "math_verify", "math_visualize", "math_animate",
             "explain_question",
         }),
         # 现有仓库当前提供 ReAct；策略选择仍完全由 MathAgent 的既有链路负责，

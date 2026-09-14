@@ -185,6 +185,10 @@ function handleEvent(eventType: string, data: any, messageId?: string) {
     })
     nextTick(() => scrollToBottom())
   }
+  if (eventType === 'animation_job' && messageId && data.job_id) {
+    store.updateMessage(store.currentChatId, messageId, { animation: data })
+    nextTick(() => scrollToBottom())
+  }
 }
 
 function parseFollowUpContent(content: string) {

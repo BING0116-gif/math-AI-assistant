@@ -44,6 +44,9 @@ class ReActPromptTemplate:
    只传已采样坐标的 MathVisualSpec；需要交互时只传白名单 parameter_slider/step_sequence 的预计算 frames 与 steps，不传表达式
    禁止 JavaScript、HTML、事件属性或让前端求值的表达式；切线/积分图必须附 verification_request
    工具失败时继续给出文字解释，不中断主回答；不要为了调用工具而调用工具""" if "math_visualize" in names else ""
+        math_animate_rules = """\n9. math_animate：仅在动态变化过程比文字或静态图显著更直观，或用户明确要求动画时调用；普通代数计算不得调用
+   当前只支持 y=x^2 在 x=1 的割线趋近切线，以及 y=x^2 在 [0,2] 的黎曼和；其他题目用 math_visualize 或文字
+   动画必须服务于讲解：调用后在正文说明画面如何变化、变化对应哪个数学概念；动画失败不影响文字答案""" if "math_animate" in names else ""
 
         return f"""【工具调用规范 — 必须严格遵守】
 
@@ -58,7 +61,7 @@ Action Input: {{"query": "具体问题", "parameters": {{}}}}
 2. 简单问答（T1-T3场景）→ 直接回答，不使用工具
 3. 计算/画图/识别（T4-T5场景）→ 按需使用工具
 4. 工具失败时手动推导，不重复调用同一工具
-5. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}{math_visualize_rules}"""
+5. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}{math_visualize_rules}{math_animate_rules}"""
 
     @staticmethod
     def build_observation(result_text: str) -> str:

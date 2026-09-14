@@ -52,11 +52,6 @@ const routes = [
     meta: { title: '学习看板 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
-    path: '/animations', name: 'AnimationStudio',
-    component: () => import('@/views/AnimationStudioView.vue'),
-    meta: { title: '数学动画 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
-  },
-  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/ProfileView.vue'),

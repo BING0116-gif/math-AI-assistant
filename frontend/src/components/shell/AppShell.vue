@@ -17,7 +17,6 @@ const navItems = [
   { to: '/dashboard', label: '学习看板', icon: 'grid' },
   { to: '/profile', label: '记忆画像', icon: 'user' },
   { to: '/knowledge', label: '知识星球', icon: 'book' },
-  { to: '/animations', label: '数学动画', icon: 'play' },
   { to: '/apply', label: '学以致用', icon: 'pencil' },
   { to: '/error-book', label: '错题复盘', icon: 'alert-circle' },
 ]
