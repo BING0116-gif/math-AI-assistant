@@ -10,6 +10,7 @@ from sqlalchemy import (
     JSON,
     Index,
     UniqueConstraint,
+    CheckConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -1463,4 +1464,111 @@ class ContentTask(Base):
     __table_args__ = (
         Index("idx_ct_claim", "status", "next_run_at"),
         Index("idx_ct_kind_ref", "kind", "ref_id"),
+    )
+
+
+class AnimationJob(Base):
+    """Owner-bound request and durable state for one trusted-template render."""
+
+    __tablename__ = "animation_jobs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    request_fingerprint = Column(String(64), nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+    template_id = Column(String(64), nullable=False)
+    template_source_sha256 = Column(String(64), nullable=False)
+    renderer_image_digest = Column(String(128), nullable=False)
+    trigger = Column(String(32), nullable=False, default="user_explicit")
+    admission_snapshot = Column(JSON, nullable=False, default=dict)
+    visual_spec_snapshot = Column(JSON, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    stage = Column(String(40), nullable=False, default="queued")
+    attempt_count = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=2)
+    recovery_count = Column(Integer, nullable=False, default=0)
+    worker_id = Column(String(64), nullable=True)
+    heartbeat_at = Column(DateTime(timezone=True), nullable=True)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_requested = Column(Boolean, nullable=False, default=False)
+    cache_key = Column(String(64), nullable=True)
+    fallback_kind = Column(String(40), nullable=True)
+    error_code = Column(String(50), nullable=True)
+    error_message = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    events = relationship("AnimationJobEvent", back_populates="job", cascade="all, delete-orphan")
+    artifacts = relationship("AnimationArtifact", back_populates="job", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_animation_job_owner_idem"),
+        CheckConstraint("status IN ('pending','running','succeeded','fallback','failed','cancelled')", name="ck_animation_job_status"),
+        CheckConstraint("trigger IN ('user_explicit','teaching_strategy')", name="ck_animation_job_trigger"),
+        CheckConstraint("attempt_count >= 0 AND max_attempts BETWEEN 1 AND 2 AND attempt_count <= max_attempts", name="ck_animation_job_attempts"),
+        CheckConstraint("recovery_count >= 0", name="ck_animation_job_recovery"),
+        CheckConstraint("length(request_fingerprint) = 64 AND length(template_source_sha256) = 64", name="ck_animation_job_hashes"),
+        CheckConstraint("length(renderer_image_digest) BETWEEN 71 AND 128", name="ck_animation_job_renderer_digest"),
+        Index("ix_animation_job_claim", "status", "lease_expires_at", "created_at"),
+        Index("ix_animation_job_owner_created", "user_id", "created_at"),
+    )
+
+
+class AnimationJobEvent(Base):
+    """Append-only, idempotent transition evidence for an animation job."""
+
+    __tablename__ = "animation_job_events"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    event_id = Column(String(36), nullable=False, unique=True)
+    job_id = Column(String(36), ForeignKey("animation_jobs.id", ondelete="CASCADE"), nullable=False)
+    sequence = Column(Integer, nullable=False)
+    event_type = Column(String(40), nullable=False)
+    stage = Column(String(40), nullable=False)
+    status = Column(String(20), nullable=False)
+    details = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    job = relationship("AnimationJob", back_populates="events")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "sequence", name="uq_animation_event_job_sequence"),
+        CheckConstraint("sequence > 0", name="ck_animation_event_sequence"),
+        CheckConstraint("status IN ('pending','running','succeeded','fallback','failed','cancelled')", name="ck_animation_event_status"),
+        Index("ix_animation_event_job_created", "job_id", "created_at"),
+    )
+
+
+class AnimationArtifact(Base):
+    """Owner-bound metadata for a validated renderer output; never stores bytes."""
+
+    __tablename__ = "animation_artifacts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    job_id = Column(String(36), ForeignKey("animation_jobs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind = Column(String(20), nullable=False)
+    storage_key = Column(String(500), nullable=False)
+    mime_type = Column(String(80), nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    frame_count = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    validation_status = Column(String(20), nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    published_at = Column(DateTime(timezone=True), nullable=True)
+
+    job = relationship("AnimationJob", back_populates="artifacts")
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "kind", name="uq_animation_artifact_job_kind"),
+        CheckConstraint("kind IN ('video','thumbnail','gif')", name="ck_animation_artifact_kind"),
+        CheckConstraint("validation_status IN ('pending','validated','rejected')", name="ck_animation_artifact_validation"),
+        CheckConstraint("length(sha256) = 64 AND size_bytes >= 0", name="ck_animation_artifact_integrity"),
+        Index("ix_animation_artifact_owner_job_kind", "user_id", "job_id", "kind"),
     )

@@ -222,6 +222,16 @@ class Settings(BaseSettings):
     # 单次解析 subprocess 超时（秒）
     CONTENT_PARSER_TIMEOUT_SECONDS: int = Field(default=600, alias="CONTENT_PARSER_TIMEOUT_SECONDS")
 
+    # ── MathAnimator（T15，默认关闭；当前仅持久化契约，不注册生产路由/worker）──
+    MATH_ANIMATION_ENABLED: bool = Field(default=False, alias="MATH_ANIMATION_ENABLED")
+    ANIMATION_STORAGE_ROOT: str = Field(default="./runtime/animations", alias="ANIMATION_STORAGE_ROOT")
+    ANIMATION_RENDERER_IMAGE: str = Field(default="", alias="ANIMATION_RENDERER_IMAGE")
+    ANIMATION_RENDER_TIMEOUT_SECONDS: int = Field(default=30, ge=1, le=300, alias="ANIMATION_RENDER_TIMEOUT_SECONDS")
+    ANIMATION_MAX_OUTPUT_BYTES: int = Field(default=20 * 1024 * 1024, ge=1, alias="ANIMATION_MAX_OUTPUT_BYTES")
+    ANIMATION_MAX_ATTEMPTS: int = Field(default=2, ge=1, le=2, alias="ANIMATION_MAX_ATTEMPTS")
+    ANIMATION_WORKER_CONCURRENCY: int = Field(default=1, ge=1, le=4, alias="ANIMATION_WORKER_CONCURRENCY")
+    ANIMATION_JOB_LEASE_SECONDS: int = Field(default=60, ge=10, le=600, alias="ANIMATION_JOB_LEASE_SECONDS")
+
     # ── Content AI Pipeline（Step 1.1-E2-A0）──
     # 选择 AI 内容分析 provider：开发阶段默认 mock（不调用任何真实 AI API、
     # 不消耗 token、不要求 API Key）。真实 provider 启用后，只需在 .env 配置对应
