@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 import app.data.database as database
 from app.config.settings import settings
 from app.data.models import AnimationJob, Base, User
-from app.services.math_visualizer import mock_visual_spec
+from app.services.animation_service import trusted_animation_visual_spec, validate_public_animation_request
 from tools.base_tool import ToolInput
 from tools.math_animate_tool import MathAnimateTool, animation_teaching_decision
 from app.services.stream_handler import stream_agent_response
@@ -39,7 +39,6 @@ async def test_disabled_tool_falls_back_before_validation_or_database(monkeypatc
         query="解释割线趋近切线",
         parameters={"parameters": {
             "template_id": "secant_to_tangent",
-            "spec": mock_visual_spec("tangent_line"),
         }},
         context={"user_id": "owner-a", "session_id": "chat-a", "original_user_input": "请用动画演示导数"},
     ))
@@ -54,7 +53,6 @@ async def test_irrelevant_question_is_rejected_even_if_model_calls_tool(monkeypa
         query="做一个动画",
         parameters={"parameters": {
             "template_id": "secant_to_tangent",
-            "spec": mock_visual_spec("tangent_line"),
         }},
         context={"user_id": "owner-a", "session_id": "chat-a", "original_user_input": "解方程 x+2=5"},
     ))
@@ -81,7 +79,6 @@ async def test_admitted_agent_tool_enqueues_owner_scoped_job(monkeypatch):
         query="观察割线斜率逐步趋近切线斜率",
         parameters={"parameters": {
             "template_id": "secant_to_tangent",
-            "spec": mock_visual_spec("tangent_line"),
         }},
         context={
             "user_id": "owner-a", "session_id": "chat-a",
@@ -104,6 +101,16 @@ def test_tool_contract_does_not_accept_identity_or_runtime_controls():
     encoded = str(schema)
     for forbidden in ("user_id", "worker_id", "renderer_image", "python_code", "docker"):
         assert forbidden not in encoded
+
+
+@pytest.mark.parametrize("template_id", ["secant_to_tangent", "riemann_sum"])
+def test_server_owned_template_specs_pass_t08_and_fixed_template_admission(template_id):
+    spec = trusted_animation_visual_spec(template_id)
+    admission, source_hash = validate_public_animation_request(
+        template_id=template_id, visual_spec=spec,
+    )
+    assert admission["verified"] is True
+    assert len(source_hash) == 64
 
 
 @pytest.mark.asyncio

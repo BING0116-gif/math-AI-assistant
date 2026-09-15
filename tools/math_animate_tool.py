@@ -15,10 +15,10 @@ from app.services.animation_service import (
     animation_job_response,
     enqueue_validated_animation,
     resolve_renderer_digest,
+    trusted_animation_visual_spec,
     validate_public_animation_request,
 )
 from tools.base_tool import BaseTool, ToolCapability, ToolInput, ToolOutput
-from tools.math_visualize_tool import MathVisualSpecInput
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,12 @@ class MathAnimateParameters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     template_id: Literal["secant_to_tangent", "riemann_sum"]
-    spec: MathVisualSpecInput
 
 
 class MathAnimateArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    query: str = Field(..., description="动画要帮助学生理解的动态过程")
+    query: str = Field(..., min_length=1, max_length=500, description="动画要帮助学生理解的动态过程")
     parameters: MathAnimateParameters
 
 
@@ -75,7 +74,7 @@ class MathAnimateTool(BaseTool):
         "或用户明确要求动画时调用；普通计算、方程求解、静态关系不要调用。当前只支持两个可信模板："
         "secant_to_tangent（仅 y=x^2 在 x=1 处割线趋近切线，spec.type=tangent_line）和 "
         "riemann_sum（仅 y=x^2 在 [0,2] 上黎曼和趋近积分，spec.type=area_under_curve）。"
-        "spec 必须包含与 math_visualize 相同的已采样坐标及 MathVerifier 所需字段。调用动画后，回答中仍须配套解释"
+        "模型只选择 template_id，不提交坐标、公式或代码；数学数据由服务端可信模板提供。调用动画后，回答中仍须配套解释"
         "画面每一步说明的数学含义；不要把动画当成答案本身。"
     )
     version = "1.0.0"
@@ -99,11 +98,14 @@ class MathAnimateTool(BaseTool):
         if isinstance(params, BaseModel):
             params = params.model_dump(exclude_none=True)
         parsed = MathAnimateParameters.model_validate(params)
-        raw_spec = parsed.spec.model_dump(exclude_none=True)
+        visual_type = {
+            "secant_to_tangent": "tangent_line",
+            "riemann_sum": "area_under_curve",
+        }[parsed.template_id]
         decision = animation_teaching_decision(
             str(input_data.context.get("original_user_input") or ""),
             parsed.template_id,
-            parsed.spec.type,
+            visual_type,
         )
         if not decision["admitted"]:
             return self._fallback("动画准入未通过，请用文字或静态图继续讲解", decision)
@@ -114,6 +116,7 @@ class MathAnimateTool(BaseTool):
             return ToolOutput(success=False, error="缺少可信会话身份", tool_name=self.name)
 
         try:
+            raw_spec = trusted_animation_visual_spec(parsed.template_id)
             admission, source_hash = validate_public_animation_request(
                 template_id=parsed.template_id,
                 visual_spec=raw_spec,
@@ -138,7 +141,7 @@ class MathAnimateTool(BaseTool):
                 )
                 await db.refresh(job, attribute_names=["artifacts"])
                 payload = animation_job_response(job).model_dump(mode="json")
-            payload["teaching_note"] = parsed.spec.teaching_note or input_data.query
+            payload["teaching_note"] = raw_spec["teaching_note"]
             sink = input_data.context.get("animations")
             if isinstance(sink, list) and not any(item.get("job_id") == payload["job_id"] for item in sink):
                 sink.append(payload)

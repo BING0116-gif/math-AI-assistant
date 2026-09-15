@@ -46,6 +46,7 @@ class ReActPromptTemplate:
    工具失败时继续给出文字解释，不中断主回答；不要为了调用工具而调用工具""" if "math_visualize" in names else ""
         math_animate_rules = """\n9. math_animate：仅在动态变化过程比文字或静态图显著更直观，或用户明确要求动画时调用；普通代数计算不得调用
    当前只支持 y=x^2 在 x=1 的割线趋近切线，以及 y=x^2 在 [0,2] 的黎曼和；其他题目用 math_visualize 或文字
+   只选择对应 template_id 并说明教学目的；不要提交坐标、公式、验证值或代码，这些由服务端可信模板提供
    动画必须服务于讲解：调用后在正文说明画面如何变化、变化对应哪个数学概念；动画失败不影响文字答案""" if "math_animate" in names else ""
 
         return f"""【工具调用规范 — 必须严格遵守】

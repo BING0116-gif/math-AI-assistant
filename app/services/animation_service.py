@@ -40,6 +40,34 @@ def resolve_renderer_digest() -> str:
     return value.lower()
 
 
+def trusted_animation_visual_spec(template_id: str) -> dict[str, Any]:
+    """Return server-owned, verifier-compatible data for a reviewed fixed template."""
+    if template_id == "secant_to_tangent":
+        from app.services.math_visualizer import mock_visual_spec
+
+        spec = mock_visual_spec("tangent_line")
+        spec["teaching_note"] = "观察动点趋近切点时，割线斜率如何趋近切线斜率 2。"
+        return spec
+    if template_id == "riemann_sum":
+        curve = [[x / 4, (x / 4) ** 2] for x in range(9)]
+        return {
+            "type": "area_under_curve",
+            "title": "y=x² 在 [0,2] 上的黎曼和",
+            "viewport": {"x_min": 0, "x_max": 2, "y_min": 0, "y_max": 4},
+            "series": [
+                {"kind": "curve", "label": "y=x²", "points": curve},
+                {"kind": "area", "label": "积分面积", "points": curve + [[2, 0], [0, 0]]},
+            ],
+            "annotations": [],
+            "teaching_note": "观察分割逐渐变细时，矩形面积和如何趋近曲线下的面积 8/3。",
+            "verification_request": {
+                "type": "integral", "expression": "x**2", "variable": "x",
+                "lower": 0, "upper": 2, "claimed": 8 / 3,
+            },
+        }
+    raise AnimationServiceError("ANIMATION_SPEC_INVALID", "动画模板不受支持")
+
+
 def _public_error(code: str | None, message: str | None) -> tuple[str | None, str | None]:
     if code is not None and not _PUBLIC_ERROR_CODE.fullmatch(code):
         code = "ANIMATION_FAILED"

@@ -222,6 +222,30 @@ docker compose up --build
 docker compose config
 ```
 
+### 在本机启用对话内数学动画
+
+MathAnimator 是聊天 Agent 的教学工具，不是独立页面。Windows 本地完整启动请使用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start_with_animation.ps1
+```
+
+脚本会启动 `db/redis/qdrant/web/frontend`，用宿主机 Node 构建前端、构建或复用审核过的固定模板 renderer，
+并在宿主机后台启动专用动画 worker。它只为本次进程注入动画开关和镜像 digest，
+不会修改 `.env`；FastAPI 容器不会获得 Docker socket。脚本会避开 Windows 动态保留端口并在
+完成时显示实际访问地址。首次构建 renderer 会耗时较长。
+
+状态和停止命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/animation_status.ps1
+powershell -ExecutionPolicy Bypass -File scripts/stop_with_animation.ps1
+```
+
+启用后，在聊天中提问“为什么导数是切线斜率”或明确要求动画演示时，Agent 会在适合的
+固定模板范围内创建动画，并把生成状态和视频放在当前 AI 回复中。当前可信模板只覆盖
+`y=x²` 在 `x=1` 的割线趋近切线，以及 `y=x²` 在 `[0,2]` 的黎曼和。
+
 如果只想验证离线 API，可在 Compose 环境中设置 `AI_ENABLED=false` 和 `RAG_ENABLED=false`；真实内容 AI 仍由 `CONTENT_AI_PROVIDER` 单独控制。
 
 ## 关键配置说明
