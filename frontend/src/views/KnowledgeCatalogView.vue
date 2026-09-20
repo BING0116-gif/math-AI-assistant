@@ -21,13 +21,9 @@
         <button v-else @click="loadCatalog">重试</button>
       </section>
       <template v-else-if="tree">
-        <!-- 顶部图例 -->
+        <!-- 视图控制 -->
         <div class="legend-bar">
-          <span class="legend-item"><span class="legend-dot root"></span>课程</span>
-          <span class="legend-item"><span class="legend-dot chapter"></span>章节</span>
-          <span class="legend-item"><span class="legend-dot section"></span>小节</span>
-          <span class="legend-item"><span class="legend-dot point"></span>知识点</span>
-          <span class="legend-hint">拖动平移 · 滚轮缩放 · 点击节点查看详情</span>
+          <span class="legend-hint">默认显示当前章节与必要前置，选择节点可查看前置和后续。</span>
           <div class="view-toggle">
             <button :class="{ active: viewMode === '2d' }" @click="viewMode = '2d'">依赖图</button>
             <button :class="{ active: viewMode === '3d' }" @click="viewMode = '3d'">3D 球体</button>
@@ -36,18 +32,27 @@
 
         <!-- 图谱 + 详情面板 -->
         <div class="graph-layout">
+          <nav class="chapter-nav" aria-label="课程章节">
+            <p class="chapter-nav-label">章节</p>
+            <button v-for="chapter in chapterList" :key="chapter.id" type="button" :class="{ active: chapter.id === activeChapterId }" :aria-current="chapter.id === activeChapterId ? 'true' : undefined" @click="selectChapter(chapter.id)">
+              <span>{{ chapter.name }}</span><small>{{ chapter.pointCount }} 个知识点</small>
+            </button>
+          </nav>
           <div class="graph-area">
-            <KnowledgeGraph2D v-if="viewMode === '2d'" :tree="tree" :mastery="masteryMap" @select-point="selectPoint" />
+            <KnowledgeGraph2D v-if="viewMode === '2d'" :tree="tree" :mastery="masteryMap" :active-chapter-id="activeChapterId" :selected-point-id="selectedPoint?.id || ''" @chapter-change="selectChapter" @select-point="selectPoint" />
             <KnowledgeGalaxy v-else :tree="tree" @select-point="selectPoint" @select-branch="selectBranch" />
           </div>
           <aside class="detail-panel" :class="{ 'detail-panel--empty': !hasSelection }">
             <!-- 空状态 -->
             <div v-if="!hasSelection" class="detail-empty">
-              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.2" class="detail-empty-icon">
-                <circle cx="24" cy="24" r="20"/>
-                <path d="M24 14v12M24 30v2"/>
+              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.8" class="detail-empty-icon" aria-hidden="true">
+                <path d="M8 37V17l16-8 16 8v20l-16 8-16-8Z"/><path d="m8 17 16 8 16-8M24 25v20"/>
               </svg>
-              <p>点击图谱中的知识点节点查看详情</p>
+              <p class="start-kicker">推荐起点</p>
+              <h2>{{ startingPoint?.name || '从当前章节开始' }}</h2>
+              <p>{{ startingPoint?.description || '按章节顺序建立基础，再沿箭头进入下一步。' }}</p>
+              <ul><li>先理解当前知识点</li><li>沿实线箭头检查必要前置</li><li>学习后进入正式练习</li></ul>
+              <button v-if="startingPoint" type="button" class="start-button" @click="selectPoint(startingPoint.id)">查看学习起点</button>
             </div>
 
             <!-- 加载中 -->
@@ -168,7 +173,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppShell from '@/components/shell/AppShell.vue'
 import KnowledgeGalaxy from '@/components/knowledge/KnowledgeGalaxy.vue'
@@ -179,6 +184,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
 
 const router = useRouter()
+const route = useRoute()
 const errorBookStore = useErrorBookStore()
 const authStore = useAuthStore()
 const { openLogin } = useLoginDialog()
@@ -192,6 +198,7 @@ const pointLoading = ref(false)
 const viewMode = ref('2d')
 const masteryMap = ref({}) // { code: { mastery, attempts, correct, status } }
 const selectedResources = ref([])
+const activeChapterId = ref('')
 
 // 资源类型展示名
 const RESOURCE_TYPE_LABELS = { lesson: '讲解', formula: '公式', example: '例题', exercise: '练习' }
@@ -204,6 +211,22 @@ watch(() => authStore.isAuthenticated, (val) => {
 })
 
 const hasSelection = computed(() => selectedPoint.value || selectedBranch.value)
+
+const chapterList = computed(() => (tree.value?.chapters || []).map(chapter => ({
+  id: chapter.id,
+  name: chapter.name,
+  pointCount: (chapter.knowledge_points || []).length + (chapter.children || []).reduce((count, section) => count + (section.knowledge_points || []).length, 0)
+})).filter(chapter => chapter.pointCount > 0))
+
+const allPoints = computed(() => (tree.value?.chapters || []).flatMap(chapter => [
+  ...(chapter.knowledge_points || []),
+  ...(chapter.children || []).flatMap(section => section.knowledge_points || [])
+].map(point => ({ ...point, chapterId: chapter.id }))))
+
+const startingPoint = computed(() => {
+  const inChapter = allPoints.value.filter(point => point.chapterId === activeChapterId.value)
+  return inChapter.find(point => !(point.prerequisites || []).length) || inChapter[0] || allPoints.value[0] || null
+})
 
 const branchPoints = computed(() => {
   if (!selectedBranch.value) return []
@@ -269,7 +292,10 @@ async function loadCatalog() {
     if (!data.courses?.length) throw new Error('暂时没有可学习的已发布课程。')
     const courseId = data.courses[0].id
     tree.value = (await getCourseTree(courseId)).data
+    const requestedPoint = allPoints.value.find(point => point.id === route.query.point)
+    activeChapterId.value = requestedPoint?.chapterId || (chapterList.value.some(chapter => chapter.id === route.query.chapter) ? route.query.chapter : chapterList.value[0]?.id || '')
     await loadMastery(courseId)
+    if (requestedPoint) await selectPoint(requestedPoint.id, { updateRoute: false })
   } catch (err) {
     requiresAuth.value = err.response?.status === 401
     error.value = requiresAuth.value
@@ -295,7 +321,18 @@ function selectBranch(branch) {
   selectedBranch.value = branch
 }
 
-async function selectPoint(id) {
+function selectChapter(chapterId, { updateRoute = true } = {}) {
+  if (!chapterId || activeChapterId.value === chapterId) return
+  activeChapterId.value = chapterId
+  selectedPoint.value = null
+  selectedBranch.value = null
+  selectedResources.value = []
+  if (updateRoute) router.push({ query: { ...route.query, chapter: chapterId, point: undefined } })
+}
+
+async function selectPoint(id, { updateRoute = true } = {}) {
+  const summary = allPoints.value.find(point => point.id === id)
+  if (summary?.chapterId) activeChapterId.value = summary.chapterId
   selectedBranch.value = null
   pointLoading.value = true
   selectedPoint.value = null
@@ -307,12 +344,24 @@ async function selectPoint(id) {
     ])
     selectedPoint.value = pointResp.data
     selectedResources.value = learningResp.data?.resources || []
+    if (updateRoute && route.query.point !== id) router.push({ query: { ...route.query, chapter: summary?.chapterId || activeChapterId.value, point: id } })
   } catch {
     ElMessage.error('知识点详情加载失败，请重试。')
   } finally {
     pointLoading.value = false
   }
 }
+
+watch(() => [route.query.chapter, route.query.point], async ([chapterId, pointId]) => {
+  if (!tree.value) return
+  if (pointId && pointId !== selectedPoint.value?.id) {
+    await selectPoint(pointId, { updateRoute: false })
+  } else if (!pointId) {
+    selectedPoint.value = null
+    selectedResources.value = []
+    if (chapterId && chapterId !== activeChapterId.value) selectChapter(chapterId, { updateRoute: false })
+  }
+})
 
 function openLearning(point) {
   router.push(`/knowledge/points/${point.id}/learn`)
@@ -377,6 +426,7 @@ onMounted(loadCatalog)
   font-size: 12px;
   color: var(--text-secondary);
 }
+.legend-bar .legend-hint { margin-left: 0; font-size: 13px; }
 
 .legend-item {
   display: flex;
@@ -440,13 +490,28 @@ onMounted(loadCatalog)
   overflow: hidden;
 }
 
+.chapter-nav {
+  width: 210px;
+  flex: 0 0 auto;
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.chapter-nav-label { margin: 0 8px 10px; color: var(--text-tertiary); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.chapter-nav button { width: 100%; min-height: 56px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; margin-bottom: 6px; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.chapter-nav button:hover { background: var(--surface-hover); }.chapter-nav button.active { border-color: var(--accent); background: var(--accent-soft); }.chapter-nav button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.chapter-nav button span { font-size: 14px; font-weight: 650; }.chapter-nav button small { color: var(--text-tertiary); font-size: 12px; }
+
 .graph-area {
   flex: 1;
   min-width: 0;
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
-  background: #0B1924;
+  background: #f4f7fb;
 }
 
 /* 右侧详情面板 */
@@ -462,15 +527,13 @@ onMounted(loadCatalog)
 }
 
 .detail-panel--empty {
-  align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 /* 空状态 */
 .detail-empty {
-  text-align: center;
-  padding: 48px 24px;
-  color: var(--text-tertiary);
+  padding: 28px 24px;
+  color: var(--text-secondary);
 }
 
 .detail-empty-icon {
@@ -481,9 +544,14 @@ onMounted(loadCatalog)
 }
 
 .detail-empty p {
-  font-size: 13px;
+  margin: 0 0 14px;
+  font-size: 14px;
   line-height: 1.6;
 }
+.detail-empty .start-kicker { margin-bottom: 4px; color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.detail-empty h2 { margin: 0 0 10px; color: var(--text-primary); font-size: 20px; line-height: 1.35; }
+.detail-empty ul { margin: 18px 0; padding-left: 20px; color: var(--text-secondary); font-size: 14px; line-height: 1.8; }
+.start-button { width: 100%; min-height: 44px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 
 /* 加载中 */
 .detail-loading {
@@ -747,7 +815,7 @@ onMounted(loadCatalog)
 
 .action-btn {
   width: 100%;
-  min-height: 38px;
+  min-height: 44px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 600;
@@ -853,6 +921,7 @@ onMounted(loadCatalog)
 
 /* 响应式 */
 @media (max-width: 1100px) {
+  .chapter-nav { width: 180px; }
   .detail-panel {
     width: 300px;
   }
@@ -868,6 +937,9 @@ onMounted(loadCatalog)
     min-height: 400px;
   }
 
+  .chapter-nav { width: 100%; display: flex; gap: 8px; overflow-x: auto; padding: 10px; }
+  .chapter-nav-label { display: none; }.chapter-nav button { min-width: 160px; margin: 0; }
+
   .detail-panel {
     width: 100%;
     max-height: 45vh;
@@ -882,6 +954,9 @@ onMounted(loadCatalog)
 @media (max-width: 600px) {
   .catalog {
     padding: 12px 10px 16px;
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
   }
 
   .catalog-header h1 {
@@ -900,12 +975,16 @@ onMounted(loadCatalog)
   }
 
   .graph-area {
-    min-height: 320px;
+    min-height: 0;
+    overflow: visible;
   }
 
   .detail-panel {
-    max-height: 50vh;
+    max-height: none;
+    overflow: visible;
   }
+
+  .view-toggle button { min-height: 44px; padding-inline: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
