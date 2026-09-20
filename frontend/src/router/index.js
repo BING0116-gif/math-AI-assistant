@@ -13,13 +13,13 @@ const routes = [
     path: '/chat',
     name: 'Chat',
     component: () => import('@/views/ChatView.vue'),
-    meta: { title: '智能对话 - 数学AI助手', transition: 'slide-fade' },
+    meta: { title: '智能对话 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
     path: '/chat/:chatId',
     name: 'ChatDetail',
     component: () => import('@/views/ChatView.vue'),
-    meta: { title: '智能对话 - 数学AI助手', transition: 'slide-fade' },
+    meta: { title: '智能对话 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
     path: '/error-book',

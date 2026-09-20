@@ -69,7 +69,26 @@ class MathVisualSpecInput(BaseModel):
 
 class MathVisualizeParameters(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    spec: MathVisualSpecInput
+    type: Optional[Literal[
+        "tangent_line",
+        "area_under_curve",
+        "function_plot",
+        "vector_plot",
+        "sequence_plot",
+        "geometry_plot",
+    ]] = Field(
+        default=None,
+        description=(
+            "图形类型。tangent_line/area_under_curve 只传 type，坐标与验证数据由服务端可信模板提供；"
+            "其余类型必须附 spec"
+        ),
+    )
+    spec: Optional[MathVisualSpecInput] = Field(
+        default=None,
+        description=(
+            "已采样坐标的 MathVisualSpec；tangent_line/area_under_curve 不要传 spec，由服务端提供"
+        ),
+    )
 
 
 class MathVisualizeArgs(BaseModel):
@@ -82,13 +101,12 @@ class MathVisualizeTool(BaseTool):
     name = "math_visualize"
     description = (
         "根据讲题上下文生成安全的数学可视化；只有图形能显著帮助理解时才调用。"
-        "parameters.spec 必须提供已采样坐标的 MathVisualSpec，"
-        "支持 function_plot、tangent_line、area_under_curve、vector_plot、"
-        "sequence_plot、geometry_plot；可用 parameter_slider/step_sequence 提供预计算交互帧，"
+        "tangent_line/area_under_curve 只传 type 并写清 query 教学目的，坐标与验证数据由服务端可信模板提供；"
+        "function_plot、vector_plot、sequence_plot、geometry_plot 需提供已采样坐标的 MathVisualSpec，"
+        "可用 parameter_slider/step_sequence 提供预计算交互帧，"
         "禁止传 JavaScript、HTML 或待前端求值的表达式。"
-        "切线和积分关键数据必须附 verification_request，工具会独立调用 MathVerifier。"
     )
-    version = "1.1.0"
+    version = "1.2.0"
     capabilities = [ToolCapability.NUMERICAL_COMPUTATION, ToolCapability.PLOTTING]
     args_schema = MathVisualizeArgs
 
@@ -102,7 +120,11 @@ class MathVisualizeTool(BaseTool):
         }
 
     async def execute(self, input_data: ToolInput) -> ToolOutput:
-        from app.services.math_visualizer import MathVisualValidationError, get_math_visualizer
+        from app.services.math_visualizer import (
+            MathVisualValidationError,
+            get_math_visualizer,
+            trusted_visual_spec,
+        )
 
         request = dict(input_data.parameters or {})
         nested = request.get("parameters")
@@ -110,10 +132,15 @@ class MathVisualizeTool(BaseTool):
             nested = nested.model_dump(exclude_none=True)
         if isinstance(nested, dict):
             request = nested
+        parsed_type = request.get("type")
+        if isinstance(parsed_type, str):
+            parsed_type = parsed_type.strip() or None
         raw_spec = request.get("spec", request)
         if isinstance(raw_spec, BaseModel):
             raw_spec = raw_spec.model_dump(exclude_none=True)
         try:
+            if parsed_type in {"tangent_line", "area_under_curve"}:
+                raw_spec = trusted_visual_spec(parsed_type)
             payload = get_math_visualizer().visualize(raw_spec)
         except MathVisualValidationError as exc:
             payload = {

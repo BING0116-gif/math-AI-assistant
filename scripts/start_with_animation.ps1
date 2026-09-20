@@ -18,8 +18,8 @@ function Assert-Command([string]$Name) {
     }
 }
 
-function Find-AvailableFrontendPort {
-    foreach ($candidate in @(13000, 13001, 18080, 18081)) {
+function Find-AvailablePort([int[]]$Candidates) {
+    foreach ($candidate in $Candidates) {
         $listener = $null
         try {
             $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $candidate)
@@ -31,7 +31,7 @@ function Find-AvailableFrontendPort {
             if ($listener) { $listener.Stop() }
         }
     }
-    throw "No approved frontend port is available."
+    throw "No approved local port is available."
 }
 
 function Get-ComposeDatabaseConfiguration {
@@ -79,8 +79,10 @@ $imageId = $imageId.Trim().ToLowerInvariant()
 $env:MATH_ANIMATION_ENABLED = "true"
 $env:ANIMATION_RENDERER_IMAGE = $imageId
 $env:ANIMATION_STORAGE_ROOT = "/app/runtime/animations"
-$FrontendPort = Find-AvailableFrontendPort
+$FrontendPort = Find-AvailablePort @(13000, 13001, 18080, 18081)
+$BackendPort = Find-AvailablePort @(18000, 18001, 28000, 28001)
 $env:FRONTEND_PORT = [string]$FrontendPort
+$env:PORT = [string]$BackendPort
 
 $composeArgs = @("compose", "--project-directory", $ProjectRoot, "up", "-d", "--no-build")
 if (-not $SkipBuild) {
@@ -141,5 +143,6 @@ if (-not (Get-Process -Id $worker.Id -ErrorAction SilentlyContinue)) {
 
 Write-Host "Application and MathAnimator started."
 Write-Host "Open: http://127.0.0.1:$FrontendPort"
+Write-Host "API: http://127.0.0.1:$BackendPort"
 Write-Host "Worker PID: $($worker.Id)"
 Write-Host "Worker logs: $LogFile and $ErrorLogFile"

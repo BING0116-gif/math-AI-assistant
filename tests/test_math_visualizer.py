@@ -4,11 +4,13 @@ import json
 
 import pytest
 
+from app.services.math_verifier import VERIFIED
 from app.services.math_visualizer import (
     MAX_POINTS_PER_SERIES,
     MathVisualValidationError,
     MathVisualizer,
     mock_visual_spec,
+    trusted_visual_spec,
 )
 from app.services.stream_handler import stream_agent_response
 from agent_core.langchain_adapter import LangChainToolConverter
@@ -198,6 +200,30 @@ async def test_langchain_tool_exposes_and_accepts_full_visual_schema():
     assert payload["visualization_status"] == "ok"
     schema = tool.args_schema.model_json_schema()
     assert "MathVisualSpecInput" in schema["$defs"]
+
+
+@pytest.mark.parametrize("kind", ["tangent_line", "area_under_curve"])
+def test_trusted_visual_specs_pass_math_verifier(kind):
+    result = MathVisualizer().visualize(trusted_visual_spec(kind))
+    assert result["visualization_status"] == "ok"
+    assert result["verification"]["status"] == VERIFIED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["tangent_line", "area_under_curve"])
+async def test_tool_type_only_contract_generates_server_owned_spec(kind):
+    collected = []
+    output = await MathVisualizeTool().execute(
+        ToolInput(
+            query="请图示切线斜率等于导数",
+            parameters={"type": kind},
+            context={"visualizations": collected},
+        )
+    )
+    assert output.success is True
+    assert output.data["visualization_status"] == "ok"
+    assert output.data["spec"]["type"] == kind
+    assert collected == [output.data]
 
 
 @pytest.mark.asyncio

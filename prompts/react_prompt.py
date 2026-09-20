@@ -41,8 +41,9 @@ class ReActPromptTemplate:
    inconclusive 可保留答案但必须提示“未完全验证”，绝不能声称 verified""" if "math_verify" in names else ""
         math_visualize_rules = """\n8. math_visualize：先自主判断图形是否能解释题目中的关系、变化、几何意义或易错点；有明显教学增益时主动调用，即使用户没有说“画图”，纯文本能更清楚时不要调用
    图必须绑定当前题目的函数/点/区间/参数和讲解步骤，不能生成与题目无关的装饰图；query 写清“图要帮助学生理解什么”
-   只传已采样坐标的 MathVisualSpec；需要交互时只传白名单 parameter_slider/step_sequence 的预计算 frames 与 steps，不传表达式
-   禁止 JavaScript、HTML、事件属性或让前端求值的表达式；切线/积分图必须附 verification_request
+   切线(tangent_line)与积分面积(area_under_curve)只传 type 并说明教学目的，坐标与验证数据由服务端可信模板提供，不要传 spec
+   其余类型(function_plot/vector_plot/sequence_plot/geometry_plot)才传已采样坐标的 spec；交互只传白名单 parameter_slider/step_sequence 的预计算 frames 与 steps，不传表达式
+   禁止 JavaScript、HTML、事件属性或让前端求值的表达式
    工具失败时继续给出文字解释，不中断主回答；不要为了调用工具而调用工具""" if "math_visualize" in names else ""
         math_animate_rules = """\n9. math_animate：仅在动态变化过程比文字或静态图显著更直观，或用户明确要求动画时调用；普通代数计算不得调用
    当前只支持 y=x^2 在 x=1 的割线趋近切线，以及 y=x^2 在 [0,2] 的黎曼和；其他题目用 math_visualize 或文字

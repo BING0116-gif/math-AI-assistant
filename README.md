@@ -232,7 +232,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start_with_animation.ps1
 
 脚本会启动 `db/redis/qdrant/web/frontend`，用宿主机 Node 构建前端、构建或复用审核过的固定模板 renderer，
 并在宿主机后台启动专用动画 worker。它只为本次进程注入动画开关和镜像 digest，
-不会修改 `.env`；FastAPI 容器不会获得 Docker socket。脚本会避开 Windows 动态保留端口并在
+不会修改 `.env`；FastAPI 容器不会获得 Docker socket。脚本会为前端和 API 避开 Windows 动态保留/占用端口并在
 完成时显示实际访问地址。首次构建 renderer 会耗时较长。
 
 状态和停止命令：

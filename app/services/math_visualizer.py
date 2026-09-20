@@ -468,6 +468,38 @@ def mock_visual_spec(kind: str = "function_plot") -> dict[str, Any]:
     raise MathVisualValidationError(f"没有该 mock fixture：{kind}")
 
 
+def trusted_visual_spec(kind: str) -> dict[str, Any]:
+    """返回服务端持有的、可通过 MathVerifier 的可信可视化规格。
+
+    仅覆盖需要关键数学验证的图形类型；模型只选择类型，坐标与验证数据由服务端提供，
+    避免模型自造采样坐标触发 inconclusive 而让图形不可用。
+    """
+    if kind == "tangent_line":
+        return mock_visual_spec("tangent_line")
+    if kind == "area_under_curve":
+        curve = [[x / 4, (x / 4) ** 2] for x in range(9)]
+        return {
+            "type": "area_under_curve",
+            "title": "y=x² 在 [0,2] 上的定积分",
+            "viewport": {"x_min": 0, "x_max": 2, "y_min": 0, "y_max": 4},
+            "series": [
+                {"kind": "curve", "label": "y=x²", "points": curve},
+                {"kind": "area", "label": "积分面积", "points": curve + [[2, 0], [0, 0]]},
+            ],
+            "annotations": [],
+            "teaching_note": "阴影面积表示曲线 y=x² 在 [0,2] 上的定积分，其值为 8/3。",
+            "verification_request": {
+                "type": "integral",
+                "expression": "x**2",
+                "variable": "x",
+                "lower": 0,
+                "upper": 2,
+                "claimed": 8 / 3,
+            },
+        }
+    raise MathVisualValidationError(f"没有该可信可视化模板：{kind}")
+
+
 _visualizer: MathVisualizer | None = None
 
 
