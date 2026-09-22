@@ -97,7 +97,7 @@ async def add_error(request: Request, body: ErrorItemRequest):
 
     try:
         user_id = _get_user_id(request)
-        raw_data = body.dict()
+        raw_data = body.model_dump()
         try:
             validated_data = validate_request_data(raw_data, max_length=settings.INPUT_MAX_LENGTH, skip_sql_check=True)
         except SecurityValidationError as e:
