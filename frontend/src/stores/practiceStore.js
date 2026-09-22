@@ -84,6 +84,9 @@ export const usePracticeStore = defineStore('practice', () => {
   async function submitCurrent() {
     const question = currentQuestion.value
     if (!question || feedback.value[question.question_id]) return
+    const pending = answers.value[question.question_id]
+    // 多选空数组视为未作答，不发起提交
+    if (pending === null || pending === undefined || pending === '' || (Array.isArray(pending) && pending.length === 0)) return
     loading.value = true; error.value = ''
     try {
       const data = unwrapPractice(await practiceApi.attempt(session.value.session_id, {
