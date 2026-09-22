@@ -3,15 +3,20 @@ import pytest_asyncio
 from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.data.models import Base, Chapter, KnowledgeGraphVersion, KnowledgePoint
-from app.services.knowledge_catalog import get_published_course_tree, get_published_point, search_published_points
+from app.data.models import (
+    Base, Chapter, Course, KnowledgeGraphVersion, KnowledgePoint, KnowledgePointResource, Question, QuestionKnowledgePoint,
+)
+from app.services.knowledge_catalog import get_published_course_tree, get_published_point, get_published_learning_content, search_published_points
 from app.services.knowledge_content import (
+    REQUIRED_GOLDEN_RESOURCE_TYPES,
     ResourcePublishingError,
     chapter_completeness_report,
+    publish_calculus_phase5,
     publish_chapter,
     seed_calculus_phase5,
     withdraw_chapter,
 )
+from app.services.phase5_content import GOLDEN as PHASE5_GOLDEN
 
 
 @pytest_asyncio.fixture
@@ -90,3 +95,98 @@ async def test_chapter_release_is_version_scoped_and_incomplete_content_is_block
         assert not report["complete"]
         with pytest.raises(ResourcePublishingError, match="CHAPTER_INCOMPLETE"):
             await publish_chapter(session, chapter.id, "reviewer")
+
+
+@pytest.mark.asyncio
+async def test_phase5_golden_points_carry_full_resources_and_practice(session_factory):
+    async with session_factory() as session:
+        course = await seed_calculus_phase5(session)
+        await session.commit()
+        version = await session.scalar(select(KnowledgeGraphVersion).where(
+            KnowledgeGraphVersion.course_id == course.id, KnowledgeGraphVersion.version == "3.0"
+        ))
+
+        for code in PHASE5_GOLDEN:
+            point = await session.scalar(select(KnowledgePoint).where(
+                KnowledgePoint.version_id == version.id, KnowledgePoint.code == code
+            ))
+            assert point is not None and point.importance >= 0.9
+            resources = list((await session.scalars(select(KnowledgePointResource).where(
+                KnowledgePointResource.knowledge_point_id == point.id,
+                KnowledgePointResource.status == "published",
+            ))).all())
+            types = {resource.resource_type for resource in resources}
+            assert REQUIRED_GOLDEN_RESOURCE_TYPES <= types, (code, REQUIRED_GOLDEN_RESOURCE_TYPES - types)
+            for resource in resources:
+                validation = (resource.metadata_ or {}).get("math_validation") or {}
+                assert validation.get("content_hash") == resource.content_hash
+                assert validation.get("validator_id") != resource.reviewed_by
+
+            exercise = next(r for r in resources if r.resource_type == "exercise_set")
+            question_ids = (exercise.metadata_ or {}).get("question_ids") or []
+            assert len(question_ids) == 5
+            for qid in question_ids:
+                question = await session.get(Question, qid)
+                assert question is not None
+                assert question.answer_spec == {"version": 1, "kind": "choice", "correct": question.answer}
+                assert {option["id"] for option in question.options} == {"A", "B", "C", "D"}
+                link = await session.get(QuestionKnowledgePoint, {"question_id": qid, "knowledge_point_id": point.id})
+                assert link is not None and link.is_primary
+
+
+@pytest.mark.asyncio
+async def test_publish_calculus_phase5_releases_six_chapters_as_default(session_factory):
+    async with session_factory() as session:
+        report = await publish_calculus_phase5(session)
+        await session.commit()
+
+        assert report["version"] == "3.0" and report["point_count"] == 98
+        assert len(report["chapters"]) == 6
+        assert all(chapter["complete"] for chapter in report["chapters"])
+
+        course = await session.get(Course, report["course_id"])
+        assert course.default_version_id == report["default_version_id"]
+        tree = await get_published_course_tree(session, course.id)
+        assert tree["version"]["version"] == "3.0"
+        assert [row["name"] for row in tree["chapters"]] == [
+            "函数、极限与连续", "导数与微分", "中值定理与导数应用", "不定积分", "定积分", "定积分的应用",
+        ]
+        visible = sum(
+            len(section["knowledge_points"])
+            for root in tree["chapters"]
+            for section in [root, *root["children"]]
+        )
+        assert visible == 98
+
+        hits = await search_published_points(session, course.id, "微积分基本定理")
+        assert [row["name"] for row in hits] == ["微积分基本定理"]
+
+        point = await session.scalar(select(KnowledgePoint).where(
+            KnowledgePoint.version_id == report["default_version_id"],
+            KnowledgePoint.code == "fundamental-calculus-theorem",
+        ))
+        content = await get_published_learning_content(session, point.id)
+        assert REQUIRED_GOLDEN_RESOURCE_TYPES <= {row["type"] for row in content["resources"]}
+
+
+@pytest.mark.asyncio
+async def test_publish_phase5_is_idempotent_and_reseeding_keeps_release(session_factory):
+    async with session_factory() as session:
+        first = await publish_calculus_phase5(session)
+        await session.commit()
+
+        second = await publish_calculus_phase5(session)
+        await session.commit()
+        assert second["default_version_id"] == first["default_version_id"]
+        version = await session.get(KnowledgeGraphVersion, first["default_version_id"])
+        assert version.status == "published"
+        questions = await session.scalar(select(func.count()).select_from(Question).where(Question.id.like("P5%")))
+        assert questions == 65
+
+        # Re-seeding after release refreshes content but must not demote 3.0.
+        course = await seed_calculus_phase5(session)
+        await session.commit()
+        version = await session.get(KnowledgeGraphVersion, first["default_version_id"])
+        assert version.status == "published"
+        course = await session.get(Course, course.id)
+        assert course.default_version_id == first["default_version_id"]

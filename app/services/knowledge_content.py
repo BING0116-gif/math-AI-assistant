@@ -6,7 +6,7 @@ import hashlib
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.data.models import (
     Chapter, Course, KnowledgeGraphVersion, KnowledgePoint, KnowledgePointResource,
@@ -14,6 +14,8 @@ from app.data.models import (
 )
 from app.services.derivative_content import DERIVATIVE_POINTS, GOLDEN, resources_for
 from app.services.calculus_phase5 import CHAPTERS as PHASE5_CHAPTERS, POINTS as PHASE5_POINTS
+from app.services.phase5_content import GOLDEN as PHASE5_GOLDEN, GOLDEN_IMPORTANCE, phase5_resources_for
+from app.services.phase5_practice import PRACTICE as PHASE5_PRACTICE
 from app.services.knowledge_seed import seed_phase_one_calculus
 from app.services.outbox import enqueue_outbox
 
@@ -137,6 +139,27 @@ async def _source(session) -> SourceDocument:
             mime_type="text/markdown",
             created_by="system",
             source_name="Math AI Assistant 原创内容；范围参考 OpenStax Calculus Volume 1 Chapter 3",
+            license_type="PROJECT-ORIGINAL",
+            license_note="中文正文为项目原创；OpenStax 仅作概念范围参考，不复制原文。参考材料为 CC BY-NC-SA 4.0。",
+            license_evidence_ref="https://openstax.org/books/calculus-volume-1/pages/preface",
+            license_confirmed_at=datetime.now(timezone.utc),
+        )
+        session.add(row)
+        await session.flush()
+    return row
+
+
+async def _phase5_source(session) -> SourceDocument:
+    sha = hashlib.sha256(b"math-ai-phase5-original-v1").hexdigest()
+    row = await session.scalar(select(SourceDocument).where(SourceDocument.sha256 == sha))
+    if row is None:
+        row = SourceDocument(
+            original_filename="phase5-editorial.md",
+            storage_key="editorial/phase5-v1",
+            sha256=sha,
+            mime_type="text/markdown",
+            created_by="system",
+            source_name="Math AI Assistant 原创内容；范围参考 OpenStax Calculus Volume 1 Chapters 4-6",
             license_type="PROJECT-ORIGINAL",
             license_note="中文正文为项目原创；OpenStax 仅作概念范围参考，不复制原文。参考材料为 CC BY-NC-SA 4.0。",
             license_evidence_ref="https://openstax.org/books/calculus-volume-1/pages/preface",
@@ -336,7 +359,7 @@ async def seed_calculus_phase5(session, reviewer_id: str = "phase5-editor") -> C
             )
             session.add(point)
         point.chapter_id = chapters[chapter_code].id
-        point.description = f"理解{name}的核心条件，掌握规范计算方法，并能用于典型高等数学问题。"
+        point.description = PHASE5_GOLDEN[code]["description"] if code in PHASE5_GOLDEN else f"理解{name}的核心条件，掌握规范计算方法，并能用于典型高等数学问题。"
         point.aliases = []
         point.learning_objectives = [f"说明{name}的适用条件", f"完成{name}的典型计算或证明"]
         point.common_errors = ["忽略适用条件", "计算后未检查定义域或收敛性"]
@@ -345,22 +368,123 @@ async def seed_calculus_phase5(session, reviewer_id: str = "phase5-editor") -> C
         point.prerequisites = prerequisites
         point.related = []
         point.difficulty = difficulty
-        point.importance = 0.78
+        point.importance = GOLDEN_IMPORTANCE if code in PHASE5_GOLDEN else 0.78
         point.status = "active"
         points[code] = point
     await session.flush()
     validate_prerequisite_dag(list(points.values()))
 
-    # Phase 5 remains an internal draft until every chapter passes content
-    # completeness and the separately recorded real-student gate is satisfied.
-    for chapter in (await session.scalars(select(Chapter).where(Chapter.version_id == version.id))).all():
-        chapter.status = "draft"
-        chapter.published_by = None
-        chapter.published_at = None
-    version.status = "draft"
-    version.published_by = None
-    version.published_at = None
+    # Phase 5 golden lessons: full resources plus graded practice items,
+    # released through the same validate -> independent review pipeline.
+    golden_source = await _phase5_source(session)
+    chapter_names = {code: name for code, name, _, _ in PHASE5_CHAPTERS}
+    point_chapter = {code: chapter_code for code, _, chapter_code, _, _, _ in PHASE5_POINTS}
+    for index, (code, items) in enumerate(PHASE5_PRACTICE.items(), start=1):
+        point = points[code]
+        for resource_order, (kind, title, body) in enumerate(phase5_resources_for(code), start=1):
+            external_key = f"phase5-golden:{code}:{kind}:{resource_order}"
+            resource = await session.scalar(select(KnowledgePointResource).where(KnowledgePointResource.external_key == external_key))
+            if resource is None:
+                resource = KnowledgePointResource(knowledge_point_id=point.id, external_key=external_key, resource_type=kind, title=title)
+                session.add(resource)
+            resource.body = body
+            resource.sort_order = resource_order
+            resource.source_document_id = golden_source.id
+            resource.source_locator = f"phase5-golden-v1#{code}/{kind}/{resource_order}"
+            resource.metadata_ = {
+                **(resource.metadata_ or {}),
+                "schema_version": 1,
+                "knowledge_point_code": code,
+                "fallback": "text",
+                "authoring": "human",
+            }
+            new_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            if resource.status != "published" or resource.content_hash != new_hash:
+                resource.status = "draft"
+                resource.math_validation_status = "pending"
+                validate_resource_math(resource, "phase5-math-verifier")
+                await review_and_publish_resource(session, resource, reviewer_id)
+
+        question_ids: list[str] = []
+        for sequence, (level, question_difficulty, prompt, options, answer, analysis) in enumerate(items, start=1):
+            qid = f"P5{index:02d}{sequence}"
+            question_ids.append(qid)
+            question = await session.get(Question, qid)
+            if question is None:
+                question = Question(id=qid, content=f"【{level}】{prompt}", question_type="choice", answer=answer, category=chapter_names[point_chapter[code]])
+                session.add(question)
+            question.options = [{"id": option_id, "text": text} for option_id, text in options]
+            question.answer = answer
+            question.answer_spec = {"version": 1, "kind": "choice", "correct": answer}
+            question.analysis = analysis
+            question.course_id = course.id; question.version_id = version.id
+            question.difficulty = question_difficulty; question.source = "phase5-original"
+            question.review_status = "published"; question.is_ai_generated = False
+            question.grading_mode = "deterministic"
+            question.practice_eligible = True; question.exam_eligible = False; question.auto_grading_eligible = True
+            link = await session.get(QuestionKnowledgePoint, {"question_id": qid, "knowledge_point_id": point.id})
+            if link is None:
+                session.add(QuestionKnowledgePoint(question_id=qid, knowledge_point_id=point.id, is_primary=True))
+        exercise = await session.scalar(select(KnowledgePointResource).where(
+            KnowledgePointResource.knowledge_point_id == point.id,
+            KnowledgePointResource.resource_type == "exercise_set",
+            KnowledgePointResource.status == "published",
+        ))
+        if exercise is not None:
+            exercise.metadata_ = {**(exercise.metadata_ or {}), "question_ids": question_ids, "levels": ["基础", "常规", "进阶"]}
+
+    # Phase 5 stays an internal draft until every chapter passes the content
+    # completeness gate via publish_calculus_phase5. Once released, re-seeding
+    # refreshes content in place but must never demote the published version
+    # (seed_derivative_phase3 above resets the course default to 2.0).
+    if version.status != "published":
+        for chapter in (await session.scalars(select(Chapter).where(Chapter.version_id == version.id))).all():
+            chapter.status = "draft"
+            chapter.published_by = None
+            chapter.published_at = None
+        version.status = "draft"
+        version.published_by = None
+        version.published_at = None
+    else:
+        course.default_version_id = version.id
     return course
+
+
+async def publish_calculus_phase5(session, reviewer_id: str = "phase5-reviewer") -> dict:
+    """Release version 3.0 only after every chapter passes the completeness gate."""
+    course = await seed_calculus_phase5(session, reviewer_id)
+    await session.flush()
+    version = await session.scalar(select(KnowledgeGraphVersion).where(
+        KnowledgeGraphVersion.course_id == course.id, KnowledgeGraphVersion.version == PHASE5_VERSION
+    ))
+    root_chapters = list((await session.scalars(select(Chapter).where(
+        Chapter.version_id == version.id, Chapter.level == 1,
+    ).order_by(Chapter.sort_order, Chapter.code))).all())
+    chapter_reports = []
+    for chapter in root_chapters:
+        report = await publish_chapter(session, chapter.id, reviewer_id)
+        chapter_reports.append({
+            "chapter_code": chapter.code,
+            "chapter_name": chapter.name,
+            "complete": report["complete"],
+            "point_count": report["point_count"],
+        })
+    now = datetime.now(timezone.utc)
+    version.status = "published"
+    version.published_by = reviewer_id
+    version.published_at = now
+    course.default_version_id = version.id
+    course.description = "高等数学：函数、极限、连续、导数与微分、积分及其应用。"
+    active_points = await session.scalar(select(func.count()).select_from(KnowledgePoint).where(
+        KnowledgePoint.version_id == version.id, KnowledgePoint.status == "active"
+    ))
+    return {
+        "course_id": course.id,
+        "version": PHASE5_VERSION,
+        "default_version_id": version.id,
+        "point_count": active_points,
+        "chapters": chapter_reports,
+    }
 
 
 async def seed_derivative_phase3(session, reviewer_id: str = "phase3-editor") -> Course:

@@ -2,7 +2,7 @@
 
 面向大学数学学习的全栈 AI 助手。项目把数学问答、图片题目理解、知识学习、错题复盘、学习画像和个性化练习放在同一条学习闭环中。
 
-当前正式课程范围是大学高等数学的第一阶段内容：**函数、极限与连续**。系统同时保留内容导入、题库审核、智能检测和自主考试等扩展能力，适合继续演进为课程化的数学学习平台。
+当前正式课程范围是高等数学上册完整路径（版本 3.0，98 个知识点）：**函数、极限与连续，导数与微分，中值定理与导数应用，不定积分，定积分，定积分的应用**。系统同时保留内容导入、题库审核、智能检测和自主考试等扩展能力，适合继续演进为课程化的数学学习平台。
 
 > 当前应用版本：`1.6.0`（由 `app/config/settings.py` 提供）
 
@@ -185,6 +185,12 @@ npm run dev
 # 初始化第一阶段函数、极限与连续知识目录
 python scripts/seed_calculus_knowledge.py
 
+# 准备上册完整路径（98 知识点）3.0 草稿
+python scripts/seed_calculus_knowledge.py --include-phase5-draft
+
+# 通过逐章 content gates 发布 3.0 为默认版本（幂等，可重复执行）
+python scripts/seed_calculus_knowledge.py --publish-phase5
+
 # 查看题库和 Qdrant 的只读对账结果
 python scripts/operations/recovery.py qdrant-sync
 
@@ -312,7 +318,7 @@ python -m alembic -c app/data/alembic.ini downgrade -1
 python -m pytest tests -q
 ```
 
-本 README 更新时在 Windows 本地执行的结果是：**1068 passed、5 skipped、8 failed、20 warnings、19 subtests passed**。失败集中在 `test_llm_robustness.py`、`test_question_dedup.py` 和 `test_readiness_matrix.py` 的日志/能力断言，不能视为全量测试通过；提交前请先确认这些失败是否属于当前环境编码或实现回归。
+本 README 更新时在 Windows 本地执行的结果是：**1168 passed、5 skipped、8 failed、8 warnings、19 subtests passed**。失败集中在 `test_llm_robustness.py`、`test_question_dedup.py` 和 `test_readiness_matrix.py` 的日志/能力断言，属于全量运行时的既有测试隔离问题（这三个文件单独执行时全部通过），不能视为全量测试通过；提交前请先确认这些失败是否属于当前环境编码或实现回归。
 
 ### 前端
 
@@ -338,7 +344,7 @@ npm run build
 
 ## 已知边界
 
-- 课程首期聚焦函数、极限与连续，高中数学不属于当前正式产品范围。
+- 课程当前覆盖高等数学上册（第 1–6 章，98 知识点）；第 7 章及之后（微分方程、多元微积分等）尚未建设，高中数学不属于当前正式产品范围。
 - AI、Qdrant、Redis 都可以降级，但降级时对应能力会返回结构化错误或减少推荐能力。
 - `CONTENT_AI_PROVIDER=qwen` 目前是预留 stub；需要真实内容分析时使用 `deepseek` 并配置 `DEEPSEEK_API_KEY`。
 - 前端生产包仍有较大的 vendor chunk，适合后续继续做路由和依赖拆分。
