@@ -7,7 +7,16 @@ export default defineConfig(({ mode }) => {
   const apiTarget = env.VITE_API_TARGET || 'http://127.0.0.1:8000'
 
   return {
-  plugins: [vue()],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: {
+          // §5.2 MathLive Web Components：math-field/math-json 为自定义元素，Vue 不接管渲染
+          isCustomElement: (tag) => tag === 'math-field' || tag === 'math-json'
+        }
+      }
+    })
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src')
@@ -33,7 +42,8 @@ export default defineConfig(({ mode }) => {
       output: {
         manualChunks: {
           'element-plus': ['element-plus'],
-          'katex': ['katex']
+          'katex': ['katex'],
+          'mathlive': ['mathlive']
         }
       }
     }
