@@ -24,7 +24,7 @@ class CreatePracticeSessionRequest(BaseModel):
     chapter_ids: list[str] = Field(default_factory=list, max_length=30)
     knowledge_point_codes: list[str] = Field(default_factory=list, max_length=100)
     difficulty_band: tuple[int, int] | None = None
-    question_types: list[Literal["choice", "judge", "numeric_fill", "expression_fill"]] = Field(default_factory=list)
+    question_types: list[Literal["choice", "multi_choice", "judge", "numeric_fill", "expression_fill"]] = Field(default_factory=list)
     question_count: int = Field(ge=5, le=20)
     idempotency_key: str = Field(min_length=8, max_length=128)
     random_seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
@@ -33,6 +33,8 @@ class CreatePracticeSessionRequest(BaseModel):
     # ---- §5.1 答题行为与排序（默认值等价旧行为，向后兼容）----
     behavior: Literal["immediate", "adaptive", "deferred"] = Field(default="immediate")
     order_mode: Literal["sequential", "random"] = Field(default="random")
+    # §5.4 选项乱序（练习默认关闭，考试场景语义默认开）
+    shuffle_options: bool = False
 
     @field_validator("chapter_ids", "knowledge_point_codes", "question_types")
     @classmethod

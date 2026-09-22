@@ -367,7 +367,7 @@ def _blueprint_public(blueprint: AssessmentBlueprint | None) -> tuple[Any, dict[
 def _student_session(session: PracticeSession, include_results: bool = False) -> dict[str, Any]:
     drafts = {d.session_question_id: d for d in session.draft_answers}
     blueprint_summary, quota_summary, deviations = _blueprint_public(session.blueprint)
-    base = {"session_id": session.id, "mode": session.mode, "status": session.status, "course_id": session.course_id, "version_id": session.version_id, "duration_limit_seconds": session.duration_limit_seconds, "started_at": session.started_at, "completed_at": session.completed_at, "completion_reason": session.completion_reason, "server_time": datetime.now(timezone.utc), "deadline_at": _deadline(session), "planning_source": session.blueprint.planning_source if session.blueprint else None, "blueprint_schema_version": session.blueprint.schema_version if session.blueprint else None, "blueprint_summary": blueprint_summary, "quota_summary": quota_summary, "blueprint_deviations": deviations, "questions": []}
+    base = {"session_id": session.id, "mode": session.mode, "status": session.status, "course_id": session.course_id, "version_id": session.version_id, "duration_limit_seconds": session.duration_limit_seconds, "started_at": session.started_at, "completed_at": session.completed_at, "completion_reason": session.completion_reason, "server_time": datetime.now(timezone.utc), "deadline_at": _deadline(session), "review_policy": (session.config_snapshot or {}).get("review_policy") or "after_submit", "shuffle_options": bool((session.config_snapshot or {}).get("shuffle_options", True)), "planning_source": session.blueprint.planning_source if session.blueprint else None, "blueprint_schema_version": session.blueprint.schema_version if session.blueprint else None, "blueprint_summary": blueprint_summary, "quota_summary": quota_summary, "blueprint_deviations": deviations, "questions": []}
     for row in session.questions:
         snap = row.snapshot or {}
         item = {key: snap.get(key) for key in ("question_id", "content", "question_type", "options", "difficulty", "estimated_time", "knowledge_point_codes")}
@@ -397,13 +397,9 @@ def _session_expired(session: PracticeSession) -> bool:
     return (datetime.now(timezone.utc) - started).total_seconds() >= session.duration_limit_seconds
 
 
-async def create_assessment(user_id: str, config: dict[str, Any], planner: AssessmentBlueprintPlanner | None = None) -> dict[str, Any]:
+async def _plan_assessment(user_id: str, config: dict[str, Any], planner: AssessmentBlueprintPlanner | None = None) -> tuple[Any, Any, Any, dict[str, Any]]:
+    """蓝图规划（版本校验 → 范围盘点 → 学习信号 → LLM/规则蓝图），create 与 preview 共用。"""
     async with get_db_session() as db:
-        prior = (await db.execute(select(PracticeSession).where(PracticeSession.user_id == user_id, PracticeSession.idempotency_key == config["idempotency_key"]).options(selectinload(PracticeSession.questions), selectinload(PracticeSession.attempts), selectinload(PracticeSession.draft_answers), selectinload(PracticeSession.blueprint)))).scalar_one_or_none()
-        if prior:
-            if prior.mode != "assessment": raise PracticeError("IDEMPOTENCY_CONFLICT", "幂等键已用于其他模式")
-            if prior.config_snapshot != config: raise PracticeError("IDEMPOTENCY_CONFLICT", "该幂等键已用于不同的检测配置")
-            return _student_session(prior)
         version = await db.get(KnowledgeGraphVersion, config["version_id"])
         if not version or version.course_id != config["course_id"]: raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程与版本不匹配")
         stmt = select(KnowledgePoint).where(KnowledgePoint.version_id == version.id)
@@ -422,12 +418,48 @@ async def create_assessment(user_id: str, config: dict[str, Any], planner: Asses
     signals["assessment_request"] = {"goal": config["goal"], "intensity": config["intensity"], "duration_minutes": config["duration_minutes"]}
     planned = await (planner or AssessmentBlueprintPlanner()).plan(signals, inventory, config["question_count"])
     plan = AssessmentPlan.model_validate(planned["plan"])
+    return plan, planned, version, signals
+
+
+async def preview_assessment_blueprint(user_id: str, config: dict[str, Any], planner: AssessmentBlueprintPlanner | None = None) -> dict[str, Any]:
+    """§5.4 蓝图预览：规划但不落库、不消耗幂等键，供 SSE 逐桶推送与前端微调。"""
+    plan, planned, version, _signals_used = await _plan_assessment(user_id, config, planner)
+    quotas: dict[str, int] = {kind: 0 for kind in QUOTA_ORDER}
+    for bucket in plan.buckets:
+        if bucket.quota_kind in quotas: quotas[bucket.quota_kind] += int(bucket.count or 0)
+    return {
+        "plan": plan.model_dump(), "planning_source": planned["source"], "model": planned["model"],
+        "quota_summary": quotas, "total": sum(quotas.values()),
+        "course_id": version.course_id, "version_id": version.id,
+        "latency_ms": planned["latency_ms"], "token_usage": planned["token_usage"],
+    }
+
+
+async def create_assessment(user_id: str, config: dict[str, Any], planner: AssessmentBlueprintPlanner | None = None) -> dict[str, Any]:
+    async with get_db_session() as db:
+        prior = (await db.execute(select(PracticeSession).where(PracticeSession.user_id == user_id, PracticeSession.idempotency_key == config["idempotency_key"]).options(selectinload(PracticeSession.questions), selectinload(PracticeSession.attempts), selectinload(PracticeSession.draft_answers), selectinload(PracticeSession.blueprint)))).scalar_one_or_none()
+        if prior:
+            def _comparable(cfg):
+                normalized = dict(cfg or {})
+                normalized.pop("review_policy", None)
+                if normalized.get("shuffle_options") is True:
+                    normalized.pop("shuffle_options", None)
+                return normalized
+            if prior.mode != "assessment": raise PracticeError("IDEMPOTENCY_CONFLICT", "幂等键已用于其他模式")
+            if _comparable(prior.config_snapshot) != _comparable(config): raise PracticeError("IDEMPOTENCY_CONFLICT", "该幂等键已用于不同的检测配置")
+            return _student_session(prior)
+    plan, planned, version, signals = await _plan_assessment(user_id, config, planner)
     async with get_db_session() as db:
         seed = config.get("random_seed") or random.SystemRandom().randint(1, 2**31 - 1)
         selected, deviations = await _select_questions(db, user_id, version.course_id, version.id, plan, config["question_count"], seed)
-        session = PracticeSession(user_id=user_id, mode="assessment", course_id=version.course_id, version_id=version.id, status="created", config_snapshot=config, random_seed=seed, idempotency_key=config["idempotency_key"], duration_limit_seconds=config["duration_minutes"] * 60)
+        # §5.4 反馈时段（智能组卷默认交卷后统一反馈）与选项乱序（默认开启）
+        shuffle_options = bool(config.get("shuffle_options", True))
+        stored_config = dict(config) | {"review_policy": "after_submit", "shuffle_options": shuffle_options}
+        session = PracticeSession(user_id=user_id, mode="assessment", course_id=version.course_id, version_id=version.id, status="created", config_snapshot=stored_config, random_seed=seed, idempotency_key=config["idempotency_key"], duration_limit_seconds=config["duration_minutes"] * 60)
         db.add(session); await db.flush()
         codes = await _question_codes(db, [item[0].id for item in selected])
+        from app.services.practice_service import apply_options_shuffle
+        rng = random.Random(seed)
         for pos, selected_item in enumerate(selected, 1):
             question, bucket, adjustment = selected_item
             snapshot = _question_snapshot(question, codes[question.id])
@@ -437,6 +469,7 @@ async def create_assessment(user_id: str, config: dict[str, Any], planner: Asses
                 "evidence_type": bucket.reason_code, "evidence_summary": bucket.reason,
                 "adjustment": adjustment,
             }
+            if shuffle_options: apply_options_shuffle(snapshot, rng)
             db.add(PracticeSessionQuestion(session_id=session.id, question_id=question.id, position=pos, snapshot=snapshot))
         db.add(AssessmentBlueprint(user_id=user_id, session_id=session.id, schema_version=BLUEPRINT_SCHEMA_VERSION, prompt_version=PROMPT_VERSION, model=planned["model"], planning_source=planned["source"], input_signal_snapshot=signals, blueprint_json=plan.model_dump(), deviations_json=deviations, latency_ms=planned["latency_ms"], token_usage=planned["token_usage"], error_code=planned["error_code"]))
         await db.flush()
@@ -517,7 +550,8 @@ async def _finalize(db, session: PracticeSession, reason: str, key: str | None =
         graded = _grade_one(row.snapshot or {}, answer)
         classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
         attempt_key = f"{key}:{row.question_id}" if key else f"assessment-finalize:{session.id}:{row.question_id}"
-        snapshot = {"question_id": row.question_id, "question_content": (row.snapshot or {}).get("content") or "", "your_answer": answer if answer not in (None, "") else "（未作答）", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "selection_reason": (row.snapshot or {}).get("selection_reason"), "selection_explanation": (row.snapshot or {}).get("selection_explanation"), "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": {"attempt_kind": "regular", "hint_used": False, "solution_viewed": False}}
+        graded_extra = {k: v for k, v in graded.items() if k not in {"correct", "correct_answer", "needs_review"}}
+        snapshot = {"question_id": row.question_id, "question_content": (row.snapshot or {}).get("content") or "", "your_answer": answer if answer not in (None, "") else "（未作答）", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "selection_reason": (row.snapshot or {}).get("selection_reason"), "selection_explanation": (row.snapshot or {}).get("selection_explanation"), "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": {"attempt_kind": "regular", "hint_used": False, "solution_viewed": False}, **graded_extra}
         attempt = PracticeAttempt(user_id=user_id, session_id=session.id, session_question_id=row.id, question_id=row.question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=snapshot, idempotency_key=attempt_key)
         db.add(attempt)
         if not graded["correct"]:

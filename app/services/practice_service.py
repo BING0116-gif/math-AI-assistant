@@ -25,7 +25,7 @@ from app.services.paper_generator import _grade_one
 from app.services.error_classification import classify_error
 from app.services.error_review import capture_wrong_attempt
 
-SUPPORTED_TYPES = {"choice", "judge", "numeric_fill", "expression_fill"}
+SUPPORTED_TYPES = {"choice", "multi_choice", "judge", "numeric_fill", "expression_fill"}
 # ---- §5.1 答题行为配置（Moodle-style behaviour）：仅影响放行/重试/反馈时序，不改判分事实 ----
 SUPPORTED_BEHAVIORS = {"immediate", "adaptive", "deferred"}
 SUPPORTED_ORDER_MODES = {"sequential", "random"}
@@ -141,7 +141,26 @@ def _config_for_key_compare(config: dict[str, Any]) -> dict[str, Any]:
         normalized.pop("behavior", None)
     if normalized.get("order_mode") in (None, "random"):
         normalized.pop("order_mode", None)
+    if normalized.get("review_policy") in (None, "immediate"):
+        normalized.pop("review_policy", None)
+    if "shuffle_options" not in normalized or normalized.get("shuffle_options") is False:
+        normalized.pop("shuffle_options", None)
     return normalized
+
+
+def apply_options_shuffle(snapshot: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+    """§5.4 选项乱序：服务端打乱 choice/multi_choice 选项展示顺序并快照标记。
+
+    选项内容与 id 绑定不变，判分按 id 进行，因此乱序不影响判分；
+    ``options_shuffled`` 标记供前端识别与报告端说明。
+    """
+    options = snapshot.get("options")
+    if snapshot.get("question_type") in ("choice", "multi_choice") and isinstance(options, list) and len(options) > 1:
+        shuffled = list(options)
+        rng.shuffle(shuffled)
+        snapshot["options"] = shuffled
+        snapshot["options_shuffled"] = True
+    return snapshot
 
 
 async def create_session(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -216,8 +235,12 @@ async def create_session(user_id: str, config: dict[str, Any]) -> dict[str, Any]
         session = PracticeSession(user_id=user_id, mode="practice", course_id=course_id, version_id=version_id, status="created", config_snapshot=stored_config, random_seed=seed, idempotency_key=key)
         db.add(session)
         await db.flush()
+        shuffle_options = bool(config.get("shuffle_options", False))
+        option_rng = random.Random(seed ^ 0x5EED)
         for position, question in enumerate(selected, 1):
-            db.add(PracticeSessionQuestion(session_id=session.id, question_id=question.id, position=position, snapshot=_question_snapshot(question, question_codes[question.id])))
+            snapshot = _question_snapshot(question, question_codes[question.id])
+            if shuffle_options: apply_options_shuffle(snapshot, option_rng)
+            db.add(PracticeSessionQuestion(session_id=session.id, question_id=question.id, position=position, snapshot=snapshot))
         await db.flush()
         loaded = (await db.execute(_session_statement(session.id, user_id))).scalar_one()
         return _session_payload(loaded)
@@ -477,7 +500,8 @@ async def _retry_attempt(db, session: PracticeSession, row: PracticeSessionQuest
     history.append({"answer": answer, "correct": bool(graded["correct"]), "submitted_at": _now_iso()})
     signals = _compose_signals(context, learning_signals, behavior, len(history) - 1)
     signals["retry"] = True
-    result = {**(attempt.grading_snapshot or {}), "question_id": row.question_id, "correct": bool(graded["correct"]), "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals, "submissions": history, "retry_count": len(history) - 1}
+    graded_extra = {k: v for k, v in graded.items() if k not in {"correct", "correct_answer", "needs_review"}}
+    result = {**(attempt.grading_snapshot or {}), "question_id": row.question_id, "correct": bool(graded["correct"]), "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals, **graded_extra, "submissions": history, "retry_count": len(history) - 1}
     attempt.user_answer = answer
     attempt.correct = bool(graded["correct"])
     attempt.idempotency_key = key
@@ -545,7 +569,9 @@ async def submit_attempt(user_id: str, session_id: str, question_id: str, answer
         GRADING_RESULTS.labels(outcome).inc()
         classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
         signals = _compose_signals(session_context, learning_signals, behavior, 0)
-        result = {"question_id": question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals, "submissions": [{"answer": answer, "correct": bool(graded["correct"]), "submitted_at": _now_iso()}], "retry_count": 0}
+        # 判分扩展键（multi_choice 的 partial_credit/scoring 等）原样透出，报告端按需消费
+        graded_extra = {k: v for k, v in graded.items() if k not in {"correct", "correct_answer", "needs_review"}}
+        result = {"question_id": question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals, **graded_extra, "submissions": [{"answer": answer, "correct": bool(graded["correct"]), "submitted_at": _now_iso()}], "retry_count": 0}
         practice_attempt = PracticeAttempt(user_id=user_id, session_id=session.id, session_question_id=row.id, question_id=question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=result, idempotency_key=key)
         db.add(practice_attempt)
         await db.flush()

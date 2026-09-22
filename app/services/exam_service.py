@@ -78,7 +78,14 @@ async def create_exam(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
     async with get_db_session() as db:
         prior = (await db.execute(select(PracticeSession).where(PracticeSession.user_id == user_id, PracticeSession.idempotency_key == key).options(selectinload(PracticeSession.questions), selectinload(PracticeSession.attempts), selectinload(PracticeSession.draft_answers)))).scalar_one_or_none()
         if prior:
-            if prior.mode != "exam" or prior.config_snapshot != config: raise PracticeError("IDEMPOTENCY_CONFLICT", "该幂等键已用于其他配置")
+            # §5.4 幂等比较：剔除服务端注入的 review_policy/shuffle_options 默认值
+            def _comparable(cfg):
+                normalized = dict(cfg or {})
+                normalized.pop("review_policy", None)
+                if normalized.get("shuffle_options") is True:
+                    normalized.pop("shuffle_options", None)
+                return normalized
+            if prior.mode != "exam" or _comparable(prior.config_snapshot) != _comparable(config): raise PracticeError("IDEMPOTENCY_CONFLICT", "该幂等键已用于其他配置")
             return _payload(prior)
         version = await db.get(KnowledgeGraphVersion, config["version_id"])
         if not version or version.status != "published" or version.course_id != config["course_id"]: raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程与发布版本不匹配")
@@ -101,9 +108,16 @@ async def create_exam(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
         seed = config.get("random_seed") or random.SystemRandom().randint(1, 2**31 - 1); rng = random.Random(seed); selected = []
         for kind, count in sorted(requested.items()): candidates = list(pools[kind]); rng.shuffle(candidates); selected.extend(candidates[:count])
         rng.shuffle(selected)
-        session = PracticeSession(user_id=user_id, mode="exam", course_id=version.course_id, version_id=version.id, status="created", config_snapshot=dict(config), random_seed=seed, idempotency_key=key, duration_limit_seconds=config["duration_minutes"] * 60)
+        # §5.4 反馈时段（考试默认交卷后统一反馈）与选项乱序（默认开启，可经 shuffle_options 关闭）
+        shuffle_options = bool(config.get("shuffle_options", True))
+        stored_config = dict(config) | {"review_policy": "after_submit", "shuffle_options": shuffle_options}
+        session = PracticeSession(user_id=user_id, mode="exam", course_id=version.course_id, version_id=version.id, status="created", config_snapshot=stored_config, random_seed=seed, idempotency_key=key, duration_limit_seconds=config["duration_minutes"] * 60)
         db.add(session); await db.flush()
-        for position, question in enumerate(selected, 1): db.add(PracticeSessionQuestion(session_id=session.id, question_id=question.id, position=position, snapshot=_question_snapshot(question, question_codes[question.id])))
+        from app.services.practice_service import apply_options_shuffle
+        for position, question in enumerate(selected, 1):
+            snapshot = _question_snapshot(question, question_codes[question.id])
+            if shuffle_options: apply_options_shuffle(snapshot, rng)
+            db.add(PracticeSessionQuestion(session_id=session.id, question_id=question.id, position=position, snapshot=snapshot))
         await db.flush(); loaded = (await db.execute(_stmt(session.id, user_id))).scalar_one(); return _payload(loaded)
 
 
@@ -114,7 +128,8 @@ async def _finalize(db, session: PracticeSession, reason: str) -> None:
         answer = drafts[row.id].answer if row.id in drafts else None; graded = _grade_one(row.snapshot or {}, answer)
         classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
         if answer in (None, "") and not graded["correct"]: classification = {**(classification or {}), "category": "UNANSWERED"}
-        result = {"question_id": row.question_id, "question_content": (row.snapshot or {}).get("content") or "", "your_answer": answer if answer not in (None, "") else "（未作答）", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification.get("category") if classification else None, "error_classification": classification, "learning_signals": {"attempt_kind": "regular", "hint_used": False, "solution_viewed": False}}
+        graded_extra = {k: v for k, v in graded.items() if k not in {"correct", "correct_answer", "needs_review"}}
+        result = {"question_id": row.question_id, "question_content": (row.snapshot or {}).get("content") or "", "your_answer": answer if answer not in (None, "") else "（未作答）", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification.get("category") if classification else None, "error_classification": classification, "learning_signals": {"attempt_kind": "regular", "hint_used": False, "solution_viewed": False}, **graded_extra}
         attempt = PracticeAttempt(user_id=session.user_id, session_id=session.id, session_question_id=row.id, question_id=row.question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=result, idempotency_key=f"exam-finalize:{session.id}:{row.question_id}")
         db.add(attempt)
         if not graded["correct"]: await capture_wrong_attempt(db, attempt=attempt, question_snapshot=row.snapshot or {}, classification=classification)

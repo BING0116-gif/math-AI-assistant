@@ -1,12 +1,14 @@
 """Authenticated intelligent assessment API with explicit contracts."""
 from __future__ import annotations
+import json
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from app.services.assessment_service import (
-    create_assessment, get_assessment, readiness, save_draft,
+    create_assessment, get_assessment, preview_assessment_blueprint, readiness, save_draft,
     start_assessment, submit_assessment,
 )
 from app.services.practice_service import PracticeError
@@ -29,6 +31,8 @@ class CreateAssessmentRequest(BaseModel):
     question_count: int = Field(ge=5, le=30)
     idempotency_key: str = Field(min_length=8, max_length=128)
     random_seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    # §5.4 微调后创建：预览蓝图的桶经用户 ±2 调整后直接作为组卷蓝图（跳过 LLM 规划）
+    blueprint_buckets: list[dict[str, Any]] | None = Field(default=None, max_length=20)
 
 
 class SaveDraftRequest(BaseModel):
@@ -38,6 +42,11 @@ class SaveDraftRequest(BaseModel):
 
 class SubmitAssessmentRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class PreviewBlueprintRequest(CreateAssessmentRequest):
+    """§5.4 流式蓝图预览：与创建同构，但不落库、不消耗幂等键。"""
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 def _user(request: Request) -> str:
@@ -59,8 +68,38 @@ async def get_readiness(request: Request, course_id: str | None = Query(default=
 
 @router.post("/sessions")
 async def post_session(request: Request, body: CreateAssessmentRequest):
-    try: return {"code":0,"data":await create_assessment(_user(request),body.model_dump(exclude_none=True))}
+    payload = body.model_dump(exclude_none=True)
+    buckets = payload.pop("blueprint_buckets", None)
+    planner = None
+    if buckets:
+        # 用户微调后的蓝图：跳过 LLM，直接按桶组卷（沿用 AssessmentPlan 校验与选题/偏差兜底）
+        class _UserBucketsPlanner:
+            async def plan(self, signals, inventory, question_count):
+                return {"plan": {"buckets": buckets}, "source": "user_adjusted", "model": None, "latency_ms": 0, "token_usage": {}, "error_code": None}
+        planner = _UserBucketsPlanner()
+    try: return {"code":0,"data":await create_assessment(_user(request),payload,planner=planner)}
     except PracticeError as error: _raise(error)
+
+
+@router.post("/preview-blueprint")
+async def post_preview_blueprint(request: Request, body: PreviewBlueprintRequest):
+    """§5.4 SSE 流式蓝图预览：meta → bucket* → done；断流/出错以 error 事件结束，前端可降级快速模式。"""
+    user_id = _user(request)
+    payload = {k: v for k, v in body.model_dump(exclude_none=True).items() if k != "idempotency_key"}
+
+    async def event_stream():
+        try:
+            preview = await preview_assessment_blueprint(user_id, payload)
+            yield f"event: meta\ndata: {json.dumps({'planning_source': preview['planning_source'], 'model': preview['model'], 'total': preview['total'], 'quota_summary': preview['quota_summary']}, ensure_ascii=False)}\n\n"
+            for bucket in (preview["plan"].get("buckets") or []):
+                yield f"event: bucket\ndata: {json.dumps(bucket, ensure_ascii=False)}\n\n"
+            yield f"event: done\ndata: {json.dumps(preview, ensure_ascii=False)}\n\n"
+        except PracticeError as error:
+            yield f"event: error\ndata: {json.dumps({'code': error.code, 'message': error.message, **error.extra}, ensure_ascii=False)}\n\n"
+        except Exception as error:  # noqa: BLE001 — SSE 连接内异常以事件形式回传，避免悬挂
+            yield f"event: error\ndata: {json.dumps({'code': 'PREVIEW_FAILED', 'message': '蓝图预览失败，请使用快速模式'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.get("/sessions/{session_id}")

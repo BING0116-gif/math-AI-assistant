@@ -27,6 +27,13 @@ function practice() {
   } })
 }
 
+const SCORING_LABELS = {
+  all_or_nothing: '全对得分（漏选或错选均不得分）',
+  partial: '部分得分（漏选按正确项比例，出现错选即 0 分）',
+  partial_minus: '部分得分 + 错选按比例扣分',
+}
+const scoringLabel = (kind) => SCORING_LABELS[kind] || kind
+
 function tutor(item) {
   router.push({ path: '/chat', query: {
     source_session_id: store.report.session_id,
@@ -89,8 +96,9 @@ async function requestSummary() {
           <summary><span>第 {{ item.position }} 题 · {{ item.correct ? '答对' : item.error_category === 'UNANSWERED' ? '未作答' : '待改进' }}</span><strong>{{ item.score_awarded }} / {{ item.max_score }} 分</strong></summary>
           <div class="body">
             <div class="math" v-html="renderMarkdown(item.content)" />
-            <p>你的答案：{{ item.your_answer || '未作答' }}</p>
+            <p>你的答案：{{ Array.isArray(item.your_answer) ? item.your_answer.join('、') : (item.your_answer || '未作答') }}</p>
             <p>正确答案：{{ item.correct_answer }}</p>
+            <p v-if="item.scoring" class="scoring-note">多选计分：{{ scoringLabel(item.scoring) }} · 本题得分比例 {{ Math.round((item.partial_credit ?? (item.correct ? 1 : 0)) * 100) }}%</p>
             <div v-if="item.analysis" class="math" v-html="renderMarkdown(item.analysis)" />
             <button @click="tutor(item)">向 Tutor 追问</button>
           </div>

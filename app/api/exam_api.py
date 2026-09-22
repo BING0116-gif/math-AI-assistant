@@ -9,7 +9,7 @@ from app.services.exam_service import create_exam, exam_ai_summary, exam_options
 from app.services.practice_service import PracticeError
 
 router = APIRouter(prefix="/api/exams", tags=["自主考试"])
-QuestionType = Literal["choice", "judge", "numeric_fill", "expression_fill"]
+QuestionType = Literal["choice", "multi_choice", "judge", "numeric_fill", "expression_fill"]
 
 
 class CreateExamRequest(BaseModel):
@@ -23,6 +23,8 @@ class CreateExamRequest(BaseModel):
     duration_minutes: Literal[30, 45, 60, 90]
     idempotency_key: str = Field(min_length=8, max_length=128)
     random_seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    # §5.4 选项乱序（默认开启，可显式关闭）
+    shuffle_options: bool = True
 
     @field_validator("chapter_ids", "knowledge_point_codes")
     @classmethod

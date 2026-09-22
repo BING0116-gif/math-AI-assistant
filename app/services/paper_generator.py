@@ -173,13 +173,60 @@ def _expr_equiv(student: str, canonical: Any, variables: Any = None) -> bool:
         return False
 
 
+MULTI_CHOICE_SCORINGS = ("all_or_nothing", "partial", "partial_minus")
+
+
+def _multi_choice_selection(answer: Any) -> List[str]:
+    """学生多选作答规整为选项 id 集合（列表/逗号字符串/单值均可）。"""
+    if answer is None or answer == "":
+        return []
+    if isinstance(answer, (list, tuple, set)):
+        return [str(item) for item in answer if str(item).strip()]
+    return [str(answer)]
+
+
+def _grade_multi_choice(spec: Dict[str, Any], answer: Any) -> Dict[str, Any]:
+    """§5.4 多选题三种计分：all_or_nothing / partial / partial_minus。
+
+    判分事实与得分系数分离：``correct`` 表示满分（完全一致），
+    ``partial_credit`` ∈ [0,1] 供报告端按分值折算，不改判分契约。
+    """
+    correct_set = {str(item) for item in (spec.get("correct") or []) if str(item).strip()}
+    selected_set = set(_multi_choice_selection(answer))
+    scoring = str(spec.get("scoring") or "all_or_nothing")
+    if scoring not in MULTI_CHOICE_SCORINGS:
+        scoring = "all_or_nothing"
+    hits = len(selected_set & correct_set)
+    misses = len(correct_set - selected_set)
+    wrongs = len(selected_set - correct_set)
+    if scoring == "all_or_nothing" or not correct_set:
+        credit = 1.0 if selected_set == correct_set and correct_set else 0.0
+    elif scoring == "partial":
+        # 部分得分：无错选时按正确项比例给分，出现错选即 0 分
+        credit = (hits / len(correct_set)) if wrongs == 0 else 0.0
+    else:  # partial_minus：部分得分 + 错选按比例扣分
+        credit = max(0.0, (hits - wrongs) / len(correct_set))
+    return {
+        "correct": bool(correct_set) and selected_set == correct_set,
+        "partial_credit": round(credit, 4),
+        "scoring": scoring,
+        "selected": sorted(selected_set),
+        "correct_keys": sorted(correct_set),
+    }
+
+
 def _grade_one(snapshot: Dict[str, Any], answer: Any) -> Dict[str, Any]:
     """按快照 answer_spec 判单题，返回 {correct, correct_answer}（确定性题型）。"""
     spec = snapshot.get("answer_spec") or {}
     kind = spec.get("kind")
     correct = False
+    graded_extra: Dict[str, Any] = {}
     if kind == "choice":
         correct = str(spec.get("correct")) == str(answer)
+    elif kind == "multi_choice":
+        graded = _grade_multi_choice(spec, answer)
+        correct = graded.pop("correct")
+        graded_extra = graded
     elif kind == "judge":
         norm = _norm_bool(answer)
         correct = norm is not None and norm == bool(spec.get("correct"))
@@ -187,15 +234,17 @@ def _grade_one(snapshot: Dict[str, Any], answer: Any) -> Dict[str, Any]:
         correct = _num_close(str(answer or ""), spec.get("value"))
     elif kind == "expression_fill":
         correct = _expr_equiv(str(answer or ""), spec.get("canonical"), spec.get("variables"))
-    return {
-        "correct": correct,
-        "correct_answer": {
-            "choice": spec.get("correct"),
-            "judge": "对" if spec.get("correct") else "错",
-            "numeric_fill": spec.get("value"),
-            "expression_fill": spec.get("canonical"),
-        }.get(kind, ""),
-    }
+    correct_answer = {
+        "choice": spec.get("correct"),
+        "multi_choice": "、".join(str(item) for item in (spec.get("correct") or [])),
+        "judge": "对" if spec.get("correct") else "错",
+        "numeric_fill": spec.get("value"),
+        "expression_fill": spec.get("canonical"),
+    }.get(kind, "")
+    result = {"correct": correct, "correct_answer": correct_answer}
+    if graded_extra:
+        result.update(graded_extra)
+    return result
 
 
 async def grade_paper_submission(paper: Paper, answers: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,8 +257,13 @@ async def grade_paper_submission(paper: Paper, answers: Dict[str, Any]) -> Dict[
         max_score += float(pq.score or 0)
         student_answer = answers.get(pq.question_id)
         graded = _grade_one(snap, student_answer)
+        # multi_choice 部分计分：按 partial_credit 折算该题得分（其余题型 correct 全对全分/错 0 分）
+        credit = float(graded.get("partial_credit", 1.0)) if graded["correct"] or graded.get("partial_credit") is not None else 0.0
+        earned = round(float(pq.score or 0) * credit, 2)
         if graded["correct"]:
             score += float(pq.score or 0)
+        elif credit > 0:
+            score += earned
         results.append(
             {
                 "position": pq.position,
@@ -218,8 +272,11 @@ async def grade_paper_submission(paper: Paper, answers: Dict[str, Any]) -> Dict[
                 "your_answer": student_answer if student_answer not in (None, "") else "（未作答）",
                 "correct": graded["correct"],
                 "correct_answer": graded["correct_answer"],
+                "partial_credit": graded.get("partial_credit"),
+                "scoring": graded.get("scoring"),
                 "analysis": snap.get("analysis") or "",
                 "score": pq.score,
+                "earned_score": earned,
             }
         )
     return {
