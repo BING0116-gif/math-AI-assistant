@@ -346,7 +346,10 @@ async def test_profile_analyzer():
                 delete(LearningRecord).where(LearningRecord.user_id == user.id)
             )
             await session.commit()
-            await user_repo.delete(user.id)
+            # 必须绑定当前 session 的 repo：user_repo 绑定的是上方已关闭的
+            # session，在其上操作会让旧 session 复活并持有一条无人归还的
+            # 连接（GC 时触发 SAWarning non-checked-in connection）。
+            await UserRepository(session).delete(user.id)
 
     finally:
         await close_db()
