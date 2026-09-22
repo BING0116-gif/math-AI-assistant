@@ -18,7 +18,7 @@ from app.api.animation_api import router as animation_router
 from app.api.chat_api import router as chat_router
 from app.api.content_import_api import router as content_import_router
 from app.api.content_ai_api import router as content_ai_router
-from app.api.paper_api import router as paper_router
+from app.api.paper_api import question_template_router, router as paper_router
 from app.api.paper_student_api import router as paper_student_router
 from app.api.practice_api import router as practice_router
 from app.api.assessment_api import router as assessment_router
@@ -80,6 +80,7 @@ def _register_routers(target_app: FastAPI) -> None:
         content_import_router,
         content_ai_router,
         paper_router,
+        question_template_router,
         paper_student_router,
         practice_router,
         assessment_router,

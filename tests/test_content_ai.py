@@ -382,7 +382,7 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "d1e2f3a4b5c6"  # T15 动画任务持久化
+        assert script.get_current_head() == "f8a9b0c1d2e3"  # add question_templates（§5.3 参数化变式题模板）
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3

@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import random
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from openai import AsyncOpenAI
@@ -33,6 +34,8 @@ from app.services.error_review import capture_wrong_attempt
 from app.services.practice_service import PracticeError, SUPPORTED_TYPES, _question_snapshot
 from app.services.profile_service import get_profile_service
 from app.services.session_report import build_session_report
+
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "assessment-blueprint-deepseek-v2"
 BLUEPRINT_SCHEMA_VERSION = "2"
@@ -364,7 +367,7 @@ def _blueprint_public(blueprint: AssessmentBlueprint | None) -> tuple[Any, dict[
 def _student_session(session: PracticeSession, include_results: bool = False) -> dict[str, Any]:
     drafts = {d.session_question_id: d for d in session.draft_answers}
     blueprint_summary, quota_summary, deviations = _blueprint_public(session.blueprint)
-    base = {"session_id": session.id, "mode": session.mode, "status": session.status, "course_id": session.course_id, "version_id": session.version_id, "duration_limit_seconds": session.duration_limit_seconds, "started_at": session.started_at, "completed_at": session.completed_at, "planning_source": session.blueprint.planning_source if session.blueprint else None, "blueprint_schema_version": session.blueprint.schema_version if session.blueprint else None, "blueprint_summary": blueprint_summary, "quota_summary": quota_summary, "blueprint_deviations": deviations, "questions": []}
+    base = {"session_id": session.id, "mode": session.mode, "status": session.status, "course_id": session.course_id, "version_id": session.version_id, "duration_limit_seconds": session.duration_limit_seconds, "started_at": session.started_at, "completed_at": session.completed_at, "completion_reason": session.completion_reason, "server_time": datetime.now(timezone.utc), "deadline_at": _deadline(session), "planning_source": session.blueprint.planning_source if session.blueprint else None, "blueprint_schema_version": session.blueprint.schema_version if session.blueprint else None, "blueprint_summary": blueprint_summary, "quota_summary": quota_summary, "blueprint_deviations": deviations, "questions": []}
     for row in session.questions:
         snap = row.snapshot or {}
         item = {key: snap.get(key) for key in ("question_id", "content", "question_type", "options", "difficulty", "estimated_time", "knowledge_point_codes")}
@@ -376,6 +379,13 @@ def _student_session(session: PracticeSession, include_results: bool = False) ->
     if include_results:
         base.update(_assessment_result(session))
     return base
+
+
+def _deadline(session: PracticeSession):
+    if not session.started_at or not session.duration_limit_seconds:
+        return None
+    started = session.started_at if session.started_at.tzinfo else session.started_at.replace(tzinfo=timezone.utc)
+    return started + timedelta(seconds=session.duration_limit_seconds)
 
 
 def _session_expired(session: PracticeSession) -> bool:
@@ -440,6 +450,19 @@ async def _select_questions(db, user_id: str, course_id: str, version_id: str, p
     buckets: dict[str, list[Question]] = defaultdict(list)
     all_questions: dict[str, Question] = {}
     for q, code in rows: buckets[code].append(q); all_questions[q.id] = q
+    # §5.3 模板题补齐：已发布参数化模板实例化题并入候选桶（蓝图与配额校验不变，
+    # 题荒知识点减少 difficulty/knowledge_point deviations）
+    try:
+        from app.services.question_template_service import materialize_pool
+        template_questions = await materialize_pool(course_id, version_id, list(SUPPORTED_TYPES), sorted(codes), seed)
+        if template_questions:
+            code_map = await _question_codes(db, [q.id for q in template_questions])
+            for q in template_questions:
+                all_questions[q.id] = q
+                for code in code_map.get(q.id, []):
+                    if code in codes: buckets[code].append(q)
+    except Exception:  # noqa: BLE001 — 模板补齐失败不阻断组卷
+        logger.warning("[智能组卷] 模板题补齐失败，仅用正式题库选题", exc_info=True)
     recent_ids = set((await db.execute(select(PracticeAttempt.question_id).where(PracticeAttempt.user_id == user_id).order_by(PracticeAttempt.submitted_at.desc()).limit(100))).scalars())
     rng = random.Random(seed); chosen=[]; used=set(); deviations=[]
     for bucket in plan.buckets:
@@ -478,11 +501,61 @@ async def _question_codes(db, ids: list[str]):
     return result
 
 
+async def _finalize(db, session: PracticeSession, reason: str, key: str | None = None):
+    """Server-authoritative completion shared by submit and timeout fallbacks.
+
+    Grades every draft, persists wrong-answer capture + learning records,
+    marks the session completed and returns the outbox event (if any) for the
+    caller to dispatch after commit.
+    """
+    if session.status == "completed":
+        return None
+    drafts = {d.session_question_id: d for d in session.draft_answers}
+    user_id = session.user_id
+    for row in session.questions:
+        answer = drafts[row.id].answer if row.id in drafts else None
+        graded = _grade_one(row.snapshot or {}, answer)
+        classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
+        attempt_key = f"{key}:{row.question_id}" if key else f"assessment-finalize:{session.id}:{row.question_id}"
+        snapshot = {"question_id": row.question_id, "question_content": (row.snapshot or {}).get("content") or "", "your_answer": answer if answer not in (None, "") else "（未作答）", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "selection_reason": (row.snapshot or {}).get("selection_reason"), "selection_explanation": (row.snapshot or {}).get("selection_explanation"), "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": {"attempt_kind": "regular", "hint_used": False, "solution_viewed": False}}
+        attempt = PracticeAttempt(user_id=user_id, session_id=session.id, session_question_id=row.id, question_id=row.question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=snapshot, idempotency_key=attempt_key)
+        db.add(attempt)
+        if not graded["correct"]:
+            await capture_wrong_attempt(
+                db, attempt=attempt, question_snapshot=row.snapshot or {},
+                classification=classification,
+            )
+        db.add(_learning_record(user_id, row, answer, graded["correct"], graded["correct_answer"], session.id, "assessment"))
+    session.status = "completed"; session.completed_at = datetime.now(timezone.utc); session.completion_reason = reason
+    await db.flush()
+    from app.services.learning_projection import rebuild_learning_projections_in_session
+    await rebuild_learning_projections_in_session(db, user_id)
+    from app.services.outbox import enqueue_outbox
+    outbox_event = await enqueue_outbox(
+        db, event_type="learning.refresh", aggregate_type="practice_session",
+        aggregate_id=session.id, user_id=user_id,
+        idempotency_key=f"learning-refresh:assessment:{session.id}",
+    )
+    await db.flush(); await db.refresh(session, attribute_names=["attempts"])
+    return outbox_event
+
+
+async def _refresh_learning(user_id: str) -> None:
+    # Compatibility hook: durable outbox events are emitted by _finalize.
+    from app.services.outbox import process_outbox_batch
+    await process_outbox_batch()
+
+
 async def get_assessment(user_id: str, session_id: str, *, results: bool = False):
+    finalized = False
     async with get_db_session() as db:
         session=(await db.execute(_assessment_stmt(session_id,user_id))).scalar_one_or_none()
         if not session: raise PracticeError("SESSION_NOT_FOUND","检测会话不存在")
-        return _student_session(session, include_results=results and session.status=="completed")
+        if session.status=="in_progress" and _session_expired(session):
+            await _finalize(db, session, "timeout"); finalized = True
+        return_session = _student_session(session, include_results=results and session.status=="completed")
+    if finalized: await _refresh_learning(user_id)
+    return return_session
 
 
 async def start_assessment(user_id: str, session_id: str):
@@ -495,20 +568,28 @@ async def start_assessment(user_id: str, session_id: str):
 
 
 async def save_draft(user_id: str, session_id: str, question_id: str, answer: Any, expected_version: int):
+    finalized = False
     async with get_db_session() as db:
         session=(await db.execute(_assessment_stmt(session_id,user_id))).scalar_one_or_none()
         if not session: raise PracticeError("SESSION_NOT_FOUND","检测会话不存在")
-        if session.status!="in_progress": raise PracticeError("SESSION_STATE_CONFLICT","检测不在作答状态")
-        if _session_expired(session):
-            raise PracticeError("SESSION_EXPIRED", "检测时间已结束，请交卷")
-        row=next((q for q in session.questions if q.question_id==question_id),None)
-        if not row: raise PracticeError("VALIDATION_FAILED","题目不属于当前检测")
-        draft=next((d for d in session.draft_answers if d.session_question_id==row.id),None)
-        current=draft.version if draft else 0
-        if expected_version!=current: raise PracticeError("SESSION_STATE_CONFLICT","答案已在其他设备更新",{"current_version":current})
-        if draft: draft.answer=answer; draft.version+=1
-        else: draft=PracticeSessionDraftAnswer(user_id=user_id,session_id=session.id,session_question_id=row.id,answer=answer,version=1); db.add(draft)
-        await db.flush(); return {"question_id":question_id,"version":draft.version,"saved_at":draft.updated_at}
+        if session.status=="in_progress" and _session_expired(session):
+            await _finalize(db, session, "timeout"); finalized = True
+        if session.status == "completed":
+            # Idempotent for clients that keep typing after a server-side timeout.
+            result = {"question_id": question_id, "completed": True, "completion_reason": session.completion_reason}
+        elif session.status != "in_progress":
+            raise PracticeError("SESSION_STATE_CONFLICT","检测不在作答状态")
+        else:
+            row=next((q for q in session.questions if q.question_id==question_id),None)
+            if not row: raise PracticeError("VALIDATION_FAILED","题目不属于当前检测")
+            draft=next((d for d in session.draft_answers if d.session_question_id==row.id),None)
+            current=draft.version if draft else 0
+            if expected_version!=current: raise PracticeError("SESSION_STATE_CONFLICT","答案已在其他设备更新",{"current_version":current})
+            if draft: draft.answer=answer; draft.version+=1
+            else: draft=PracticeSessionDraftAnswer(user_id=user_id,session_id=session.id,session_question_id=row.id,answer=answer,version=1); db.add(draft)
+            await db.flush(); result = {"question_id":question_id,"version":draft.version,"saved_at":draft.updated_at}
+    if finalized: await _refresh_learning(user_id)
+    return result
 
 
 async def submit_assessment(user_id: str, session_id: str, key: str):
@@ -518,35 +599,11 @@ async def submit_assessment(user_id: str, session_id: str, key: str):
         if not session: raise PracticeError("SESSION_NOT_FOUND","检测会话不存在")
         if session.status=="completed": return _assessment_result(session)
         if session.status!="in_progress": raise PracticeError("SESSION_STATE_CONFLICT","检测尚未开始")
-        drafts={d.session_question_id:d for d in session.draft_answers}
-        for row in session.questions:
-            answer=drafts.get(row.id).answer if row.id in drafts else None
-            graded=_grade_one(row.snapshot or {},answer)
-            classification=classify_error(row.snapshot or {},answer,correct=graded["correct"])
-            snapshot={"question_id":row.question_id,"question_content":(row.snapshot or {}).get("content") or "","your_answer":answer if answer not in (None,"") else "（未作答）","correct":graded["correct"],"needs_review":bool(graded.get("needs_review")),"correct_answer":graded["correct_answer"],"analysis":(row.snapshot or {}).get("analysis") or "","difficulty":(row.snapshot or {}).get("difficulty") or 3,"estimated_time":(row.snapshot or {}).get("estimated_time"),"knowledge_point_codes":(row.snapshot or {}).get("knowledge_point_codes") or [],"selection_reason":(row.snapshot or {}).get("selection_reason"),"selection_explanation":(row.snapshot or {}).get("selection_explanation"),"error_category":classification["category"] if classification else None,"error_classification":classification,"learning_signals":{"attempt_kind":"regular","hint_used":False,"solution_viewed":False}}
-            attempt=PracticeAttempt(user_id=user_id,session_id=session.id,session_question_id=row.id,question_id=row.question_id,user_answer=answer,correct=graded["correct"],grading_snapshot=snapshot,idempotency_key=f"{key}:{row.question_id}")
-            db.add(attempt)
-            if not graded["correct"]:
-                await capture_wrong_attempt(
-                    db, attempt=attempt, question_snapshot=row.snapshot or {},
-                    classification=classification,
-                )
-            db.add(_learning_record(user_id,row,answer,graded["correct"],graded["correct_answer"],session.id,"assessment"))
-        expired = _session_expired(session)
-        session.status="completed"; session.completed_at=datetime.now(timezone.utc); session.completion_reason="timeout" if expired else "submitted"
-        await db.flush()
-        from app.services.learning_projection import rebuild_learning_projections_in_session
-        await rebuild_learning_projections_in_session(db, user_id)
-        from app.services.outbox import enqueue_outbox
-        outbox_event = await enqueue_outbox(
-            db, event_type="learning.refresh", aggregate_type="practice_session",
-            aggregate_id=session.id, user_id=user_id,
-            idempotency_key=f"learning-refresh:assessment:{session.id}",
-        )
-        await db.flush(); await db.refresh(session, attribute_names=["attempts"])
+        outbox_event = await _finalize(db, session, "timeout" if _session_expired(session) else "submitted", key)
         completed_result = _assessment_result(session)
-    from app.services.outbox import dispatch_outbox_best_effort
-    dispatch_outbox_best_effort(outbox_event.id)
+    if outbox_event is not None:
+        from app.services.outbox import dispatch_outbox_best_effort
+        dispatch_outbox_best_effort(outbox_event.id)
     return completed_result
 
 

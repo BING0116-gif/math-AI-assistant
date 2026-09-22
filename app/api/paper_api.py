@@ -107,6 +107,32 @@ async def generate_paper(request: Request, body: Dict[str, Any]):
     return {"code": 0, "data": serialize_paper(paper)}
 
 
+@router.get("")
+@router.get("/")
+async def list_papers(request: Request, limit: int = 50):
+    """试卷列表（admin），含每卷题数与分值合计。"""
+    require_admin_role(request)
+    limit = max(1, min(int(limit), 100))
+    rows = await PaperGenerator().list_papers(limit)
+    return {
+        "code": 0,
+        "data": [
+            {
+                "id": paper.id,
+                "template_id": paper.template_id,
+                "title": paper.title,
+                "course_id": paper.course_id,
+                "version_id": paper.version_id,
+                "status": paper.status,
+                "question_total": int(total or 0),
+                "total_score": round(sum(float(pq.score or 0) for pq in (paper.questions or [])), 2),
+                "created_at": paper.created_at.isoformat() if paper.created_at else None,
+            }
+            for paper, total in rows
+        ],
+    }
+
+
 @router.get("/{paper_id}")
 async def get_paper(request: Request, paper_id: str):
     """试卷详情（含卷内题目快照）。"""
@@ -115,3 +141,105 @@ async def get_paper(request: Request, paper_id: str):
     if paper is None:
         raise HTTPException(status_code=404, detail="试卷不存在")
     return {"code": 0, "data": serialize_paper(paper)}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# §5.3 参数化变式题模板管理（仅 admin）：draft → 试生成抽检 → published 入池
+# ──────────────────────────────────────────────────────────────────────────────
+question_template_router = APIRouter(prefix="/api/admin/question-templates", tags=["题目模板"])
+
+
+def _template_http_error(error) -> HTTPException:
+    status_map = {
+        "NOT_FOUND": 404,
+        "VALIDATION_FAILED": 422,
+        "ANSWER_EVALUATION_FAILED": 422,
+        "SAMPLING_EXHAUSTED": 422,
+        "STATE_CONFLICT": 409,
+    }
+    return HTTPException(status_code=status_map.get(error.code, 400), detail={"code": error.code, "message": error.message})
+
+
+@question_template_router.post("")
+async def create_question_template(request: Request, body: Dict[str, Any]):
+    """创建参数化变式题模板（draft，需试生成抽检后发布）。"""
+    require_admin_role(request)
+    from app.services.question_template_service import QuestionTemplateError, create_template, serialize_template
+
+    admin_user_id = getattr(request.state, "user_id", None)
+    if not admin_user_id:
+        raise HTTPException(status_code=401, detail="未认证")
+    try:
+        template = await create_template(admin_user_id, body)
+    except QuestionTemplateError as e:
+        raise _template_http_error(e)
+    return {"code": 0, "data": serialize_template(template)}
+
+
+@question_template_router.get("")
+async def list_question_templates(request: Request, course_id: Optional[str] = None, status: Optional[str] = None):
+    """模板列表（可按课程/状态过滤）。"""
+    require_admin_role(request)
+    from app.services.question_template_service import QuestionTemplateError, list_templates, serialize_template
+
+    try:
+        rows = await list_templates(course_id=course_id, status=status)
+    except QuestionTemplateError as e:
+        raise _template_http_error(e)
+    return {"code": 0, "data": [serialize_template(t) for t in rows]}
+
+
+@question_template_router.get("/{template_id}")
+async def get_question_template(request: Request, template_id: str):
+    """模板详情。"""
+    require_admin_role(request)
+    from app.services.question_template_service import QuestionTemplateError, get_template, serialize_template
+
+    try:
+        template = await get_template(template_id)
+    except QuestionTemplateError as e:
+        raise _template_http_error(e)
+    return {"code": 0, "data": serialize_template(template)}
+
+
+@question_template_router.post("/{template_id}/sample")
+async def sample_question_template(request: Request, template_id: str, body: Dict[str, Any] | None = None):
+    """试生成样例（默认 10 个，不落库）供人工抽检；seed 可复现。"""
+    require_admin_role(request)
+    from app.services.question_template_service import QuestionTemplateError, get_template, sample_preview
+
+    body = body or {}
+    try:
+        template = await get_template(template_id)
+        count = int(body.get("count") or 10)
+        seed = body.get("seed")
+        previews = sample_preview(template, count=count, seed=int(seed) if seed is not None else None)
+    except QuestionTemplateError as e:
+        raise _template_http_error(e)
+    return {"code": 0, "data": previews}
+
+
+@question_template_router.post("/{template_id}/publish")
+async def publish_question_template(request: Request, template_id: str):
+    """发布模板：实例化题进入组卷候选池（人工抽检通过后调用）。"""
+    require_admin_role(request)
+    from app.services.question_template_service import QuestionTemplateError, serialize_template, set_template_status
+
+    try:
+        template = await set_template_status(template_id, "publish")
+    except QuestionTemplateError as e:
+        raise _template_http_error(e)
+    return {"code": 0, "data": serialize_template(template)}
+
+
+@question_template_router.post("/{template_id}/retire")
+async def retire_question_template(request: Request, template_id: str):
+    """下架模板：阻止后续实例化，已生成题与快照不受影响。"""
+    require_admin_role(request)
+    from app.services.question_template_service import QuestionTemplateError, serialize_template, set_template_status
+
+    try:
+        template = await set_template_status(template_id, "retire")
+    except QuestionTemplateError as e:
+        raise _template_http_error(e)
+    return {"code": 0, "data": serialize_template(template)}

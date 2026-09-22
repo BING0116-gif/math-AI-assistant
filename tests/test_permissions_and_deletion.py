@@ -15,8 +15,6 @@ from app.data.models import (
     ChatMessage,
     ChatSession,
     ErrorItem,
-    ExamPaper,
-    ExamSubmission,
     LearningRecord,
     Memory,
     MemoryAccessLog,
@@ -136,9 +134,6 @@ async def test_delete_user_data_is_complete_and_isolated():
             category="math",
         )
         chat = ChatSession(id="chat-a", user_id="user-a")
-        paper = ExamPaper(
-            id="paper-a", user_id="user-a", config={}, question_ids=["q1"]
-        )
         memory = Memory(
             user_id="user-a",
             content="memory",
@@ -152,8 +147,6 @@ async def test_delete_user_data_is_complete_and_isolated():
                 other_record,
                 chat,
                 ChatMessage(session=chat, role="user", content="hello"),
-                paper,
-                ExamSubmission(paper=paper, question_id="q1"),
                 ErrorItem(user_id="user-a", item_id="e1", question="wrong"),
                 memory,
                 UserProfile(
@@ -181,13 +174,11 @@ async def test_delete_user_data_is_complete_and_isolated():
         counts = await delete_user_data(session, "user-a")
         await session.commit()
 
-        assert sum(counts.values()) == 10
+        assert sum(counts.values()) == 8
         for model in (
             LearningRecord,
             ChatSession,
             ChatMessage,
-            ExamPaper,
-            ExamSubmission,
             ErrorItem,
             Memory,
             MemoryTag,

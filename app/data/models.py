@@ -72,6 +72,10 @@ class Chapter(Base):
     description = Column(Text, default="")
     sort_order = Column(Integer, nullable=False, default=0)
     level = Column(Integer, nullable=False, default=1)
+    # Phase 5 chapter-level release switch. Existing rows migrate as published.
+    status = Column(String(20), nullable=False, default="published", index=True)
+    published_by = Column(String(36), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -129,16 +133,26 @@ class KnowledgePointResource(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     knowledge_point_id = Column(String(36), ForeignKey("knowledge_points.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_document_id = Column(String(36), ForeignKey("source_documents.id", ondelete="RESTRICT"), nullable=True, index=True)
+    external_key = Column(String(160), nullable=True, unique=True)
+    source_locator = Column(String(300), nullable=True)
+    content_hash = Column(String(64), nullable=True, index=True)
     resource_type = Column(String(30), nullable=False, index=True)
     title = Column(String(200), nullable=False)
     body = Column(Text, nullable=False, default="")
     metadata_ = Column("metadata", JSON, nullable=False, default=dict)
     sort_order = Column(Integer, nullable=False, default=0)
-    status = Column(String(20), nullable=False, default="published")
+    # draft -> reviewed -> published; only published rows are student/RAG visible.
+    status = Column(String(20), nullable=False, default="draft")
+    math_validation_status = Column(String(20), nullable=False, default="pending")
+    reviewed_by = Column(String(36), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     knowledge_point = relationship("KnowledgePoint", back_populates="resources")
+    source_document = relationship("SourceDocument")
     __table_args__ = (
         UniqueConstraint("knowledge_point_id", "resource_type", "title", name="uq_point_resource_type_title"),
         Index("idx_point_resource_order", "knowledge_point_id", "resource_type", "sort_order"),
@@ -174,9 +188,6 @@ class User(Base):
     )
     learning_records = relationship(
         "LearningRecord", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
-    )
-    exam_papers = relationship(
-        "ExamPaper", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
     )
     error_items = relationship(
         "ErrorItem", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
@@ -337,6 +348,8 @@ class VariantGeneration(Base):
     variation_dimensions = Column(JSON, nullable=False, default=list)
     template_version = Column(String(40), nullable=False)
     generation_provider = Column(String(80), nullable=False)
+    # §5.3 生成来源标识：template（确定性模板）/ llm / hybrid
+    generation_source = Column(String(20), nullable=False, default="template", server_default="template")
     generation_model = Column(String(100), nullable=True)
     prompt_version = Column(String(40), nullable=True)
     review_status = Column(String(20), nullable=False, default="draft")
@@ -351,6 +364,48 @@ class VariantGeneration(Base):
         UniqueConstraint("user_id", "idempotency_key", name="uq_variant_generation_owner_idem"),
         UniqueConstraint("user_id", "duplicate_fingerprint", name="uq_variant_generation_owner_fingerprint"),
         Index("ix_variant_generation_owner_created", "user_id", "created_at"),
+    )
+
+
+class QuestionTemplate(Base):
+    """§5.3 参数化变式题模板（PrairieLearn generate() 模式，纯确定性、无 AI 依赖）。
+
+    模板经 draft → published 状态机人工抽检后，其实例化题才进入组卷候选池；
+    retired 一键下架只阻止后续实例化，已生成题与快照不受影响（生成审计走
+    Question.source=f"template:{id}" + variant_blueprint 参数指纹）。
+    """
+    __tablename__ = "question_templates"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    course_id = Column(String(36), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=False, index=True)
+    version_id = Column(String(36), ForeignKey("knowledge_graph_versions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    # 模板原型题（可选）：继承题型/难度/知识点等元数据的来源题
+    base_question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=True)
+    name = Column(String(120), nullable=False)
+    # 生成的题型：numeric_fill / expression_fill / choice / judge
+    question_type = Column(String(20), nullable=False)
+    # 参数定义契约：{name: {"type": "int"|"float"|"enum", "range": [min, max]|null, "values": [...]|null, "precision": int|None}}
+    params_schema = Column(JSON, nullable=False)
+    # 题干模板，{{param}} 占位（Markdown/LaTeX 混排，渲染走现有题干管线）
+    body_template = Column(Text, nullable=False)
+    # 答案模板，{{param}} 占位；渲染后经 safe_math 求值固化 answer_spec（复用判分契约）
+    answer_template = Column(Text, nullable=False)
+    # choice 题可选：选项模板 [{"id": "A", "text": "{{a}}+1"}, ...]
+    options_template = Column(JSON, nullable=True)
+    knowledge_point_codes = Column(JSON, nullable=False, default=list)
+    difficulty = Column(Integer, nullable=False, default=3)
+    # 与题库同款状态机：draft / reviewed / published / retired
+    review_status = Column(String(20), nullable=False, default="draft", index=True)
+    created_by = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    notes = Column(Text, nullable=True)
+    # 审计：累计实例化次数与最近实例化时间
+    generation_count = Column(Integer, nullable=False, default=0, server_default="0")
+    last_generated_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        Index("ix_question_templates_scope_status", "course_id", "version_id", "review_status"),
     )
 
 
@@ -654,62 +709,6 @@ class AIInteractionRun(Base):
 
     __table_args__ = (
         Index("ix_ai_interaction_owner_created", "user_id", "created_at"),
-    )
-
-
-class ExamPaper(Base):
-    __tablename__ = "exam_papers"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(
-        String(36), ForeignKey("users.id"), nullable=False, index=True
-    )
-
-    user = relationship("User", back_populates="exam_papers")
-    submissions = relationship(
-        "ExamSubmission", back_populates="paper", lazy="dynamic", cascade="all, delete-orphan"
-    )
-
-    title = Column(String(200))
-    config = Column(JSON, nullable=False)
-    question_ids = Column(JSON, nullable=False)
-    status = Column(String(20), default="pending")
-    score = Column(Float)
-    max_score = Column(Float, default=100)
-    started_at = Column(DateTime(timezone=True))
-    completed_at = Column(DateTime(timezone=True))
-    total_time_spent = Column(Integer)
-    created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        index=True,
-    )
-
-
-class ExamSubmission(Base):
-    __tablename__ = "exam_submissions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    paper_id = Column(
-        String(36), ForeignKey("exam_papers.id"), nullable=False
-    )
-    question_id = Column(
-        String(20), ForeignKey("questions.id"), nullable=False
-    )
-
-    paper = relationship("ExamPaper", back_populates="submissions")
-    question = relationship("Question")
-
-    user_answer = Column(Text)
-    is_correct = Column(Boolean)
-    score = Column(Float)
-    max_score = Column(Float, default=10)
-    time_spent = Column(Integer)
-    hints_used = Column(Integer, default=0)
-    attempts = Column(Integer, default=1)
-    submitted_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
     )
 
 

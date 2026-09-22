@@ -125,6 +125,60 @@ def test_rule_plan_prioritizes_due_review():
 
 
 @pytest.mark.asyncio
+async def test_expired_assessment_is_finalized_server_side(monkeypatch):
+    """GET / save_draft after the deadline must finalize like the exam mode."""
+    from datetime import datetime, timedelta, timezone as tz
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    import app.data.database as database
+    monkeypatch.setattr(database, "async_session_factory", factory)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with factory() as db:
+        db.add_all([
+            Course(id="course-1", code="calculus", name="高等数学", subject="math", default_version_id="version-1"),
+            KnowledgeGraphVersion(id="version-1", course_id="course-1", version="1.0", name="V1", status="published"),
+            Chapter(id="chapter-1", course_id="course-1", version_id="version-1", code="c1", name="极限"),
+            KnowledgePoint(id="point-1", course_id="course-1", version_id="version-1", chapter_id="chapter-1", code="limit", name="极限"),
+            User(id="user-1", username="student", email="s@example.test", password_hash="x"),
+        ])
+        await db.flush()
+        for i in range(5):
+            q = Question(id=f"A-{i}", content=f"检测题{i}", question_type="choice", options=[{"id": "A", "text": "正确"}], answer="A", analysis="解析", category="高数", difficulty=2, course_id="course-1", version_id="version-1", review_status="published", grading_mode="deterministic", practice_eligible=True, exam_eligible=True, auto_grading_eligible=True, answer_spec={"kind": "choice", "correct": "A"})
+            db.add(q)
+            await db.flush()
+            db.add(QuestionKnowledgePoint(question_id=q.id, knowledge_point_id="point-1"))
+        await db.commit()
+    config = {"goal": "weakness_check", "course_id": "course-1", "version_id": "version-1", "scope": {"chapter_ids": ["chapter-1"]}, "duration_minutes": 15, "intensity": "standard", "question_count": 5, "idempotency_key": "assessment-expired-1", "random_seed": 7}
+    session = await create_assessment("user-1", config, planner=StubPlanner())
+    await start_assessment("user-1", session["session_id"])
+    question_id = session["questions"][0]["question_id"]
+    await save_draft("user-1", session["session_id"], question_id, "A", 0)
+
+    # Push started_at beyond the deadline, then verify server-side finalization.
+    from app.data.models import PracticeSession
+    async with factory() as db:
+        stored = await db.get(PracticeSession, session["session_id"])
+        stored.started_at = datetime.now(tz.utc) - timedelta(minutes=30)
+        await db.commit()
+
+    finalized = await get_assessment("user-1", session["session_id"])
+    assert finalized["status"] == "completed"
+    assert finalized["completion_reason"] == "timeout"
+    assert finalized["deadline_at"] is not None and finalized["server_time"] is not None
+
+    draft_after = await save_draft("user-1", session["session_id"], question_id, "B", 1)
+    assert draft_after["completed"] is True
+    assert draft_after["completion_reason"] == "timeout"
+
+    report = await submit_assessment("user-1", session["session_id"], "submit-key")
+    assert report["status"] == "completed"
+    assert report["total"] == 5 and report["correct"] == 1
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_assessment_planner_requests_deepseek_model(monkeypatch):
     import app.services.assessment_service as service
     monkeypatch.setattr(service, "is_assessment_ai_available", lambda: True)

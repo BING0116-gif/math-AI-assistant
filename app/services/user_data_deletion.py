@@ -12,8 +12,6 @@ from app.data.models import (
     ChatSession,
     ErrorItem,
     ErrorReviewEvent,
-    ExamPaper,
-    ExamSubmission,
     LearningRecord,
     Memory,
     MemoryAccessLog,
@@ -31,7 +29,6 @@ async def delete_user_data(session: AsyncSession, user_id: str) -> Dict[str, int
     """Delete all learning data for a user while retaining the account."""
     memory_ids = select(Memory.id).where(Memory.user_id == user_id)
     session_ids = select(ChatSession.id).where(ChatSession.user_id == user_id)
-    paper_ids = select(ExamPaper.id).where(ExamPaper.user_id == user_id)
 
     statements = (
         ("variant_generations", delete(VariantGeneration).where(VariantGeneration.user_id == user_id)),
@@ -52,11 +49,6 @@ async def delete_user_data(session: AsyncSession, user_id: str) -> Dict[str, int
             delete(ChatMessage).where(ChatMessage.session_id.in_(session_ids)),
         ),
         ("chat_sessions", delete(ChatSession).where(ChatSession.user_id == user_id)),
-        (
-            "exam_submissions",
-            delete(ExamSubmission).where(ExamSubmission.paper_id.in_(paper_ids)),
-        ),
-        ("exam_papers", delete(ExamPaper).where(ExamPaper.user_id == user_id)),
         ("error_review_events", delete(ErrorReviewEvent).where(ErrorReviewEvent.user_id == user_id)),
         ("error_items", delete(ErrorItem).where(ErrorItem.user_id == user_id)),
         ("review_schedules", delete(ReviewSchedule).where(ReviewSchedule.user_id == user_id)),

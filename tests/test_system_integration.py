@@ -45,7 +45,7 @@ async def test_models_import():
     print("\n[测试] 数据模型导入...")
     from app.data.models import (
         Base, User, LearningRecord, Question,
-        ChatSession, ChatMessage, ExamPaper, ExamSubmission,
+        ChatSession, ChatMessage,
     )
     print("  ✅ 所有数据模型导入成功")
 

@@ -6,13 +6,12 @@ from .models import (
     ChatSession,
     ChatMessage,
     AIInteractionRun,
-    ExamPaper,
-    ExamSubmission,
     PaperTemplate,
     Paper,
     PaperQuestion,
     QuestionAuditLog,
     ContentTask,
+    QuestionTemplate,
 )
 from .database import (
     engine,
@@ -28,8 +27,6 @@ from .repositories import (
     QuestionRepository,
     ChatSessionRepository,
     ChatMessageRepository,
-    ExamPaperRepository,
-    ExamSubmissionRepository,
 )
 
 __all__ = [
@@ -40,13 +37,12 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "AIInteractionRun",
-    "ExamPaper",
-    "ExamSubmission",
     "PaperTemplate",
     "Paper",
     "PaperQuestion",
     "QuestionAuditLog",
     "ContentTask",
+    "QuestionTemplate",
     "engine",
     "async_session_factory",
     "get_db_session",
@@ -58,6 +54,4 @@ __all__ = [
     "QuestionRepository",
     "ChatSessionRepository",
     "ChatMessageRepository",
-    "ExamPaperRepository",
-    "ExamSubmissionRepository",
 ]

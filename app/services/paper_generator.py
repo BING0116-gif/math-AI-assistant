@@ -275,6 +275,15 @@ class PaperGenerator:
         pool = await _load_eligible(
             course_id, version_id, list(cfg["type_mix"].keys()), cfg["kp_codes"]
         )
+        # §5.3 候选池合并：已发布参数化模板实例化题与题库直选题同池参与配额分配
+        from app.services.question_template_service import materialize_pool
+
+        try:
+            pool = pool + await materialize_pool(
+                course_id, version_id, list(cfg["type_mix"].keys()), cfg["kp_codes"], cfg["random_seed"],
+            )
+        except Exception:  # noqa: BLE001 — 模板实例化失败不阻断组卷（题库直选题仍可用）
+            logger.warning("[组卷] 模板题实例化失败，仅用正式题库选题", exc_info=True)
         rng = random.Random(cfg["random_seed"])
         return _select_by_quotas(pool, cfg["type_mix"], cfg.get("difficulty"), rng)
 
@@ -342,6 +351,22 @@ class PaperGenerator:
                 )
             )
             return (await db.execute(stmt)).scalar_one_or_none()
+
+    async def list_papers(self, limit: int = 50) -> List[Tuple[Paper, int]]:
+        """List recently generated papers with eagerly loaded questions (admin list view)."""
+        from sqlalchemy import func
+
+        async with get_db_session() as db:
+            stmt = (
+                select(Paper, func.count(PaperQuestion.id).label("question_total"))
+                .outerjoin(PaperQuestion, PaperQuestion.paper_id == Paper.id)
+                .group_by(Paper.id)
+                .options(selectinload(Paper.questions))
+                .order_by(Paper.created_at.desc())
+                .limit(limit)
+            )
+            rows = (await db.execute(stmt)).all()
+            return rows
 
 
 def serialize_paper(paper: Paper) -> Dict[str, Any]:

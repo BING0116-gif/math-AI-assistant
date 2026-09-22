@@ -47,7 +47,7 @@ def _user(request: Request) -> str:
 
 
 def _raise(error: PracticeError):
-    status = 404 if error.code == "SESSION_NOT_FOUND" else 409 if error.code in {"SESSION_STATE_CONFLICT","IDEMPOTENCY_CONFLICT"} else 422
+    status = 404 if error.code == "SESSION_NOT_FOUND" else 409 if error.code in {"SESSION_STATE_CONFLICT","IDEMPOTENCY_CONFLICT"} else 410 if error.code == "SESSION_EXPIRED" else 422
     raise HTTPException(status_code=status, detail={"code":error.code,"message":error.message,**error.extra})
 
 

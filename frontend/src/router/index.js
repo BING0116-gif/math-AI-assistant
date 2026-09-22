@@ -78,6 +78,12 @@ const routes = [
     meta: { title: '题库审核工作台 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
   },
   {
+    path: '/admin/papers',
+    name: 'AdminPapers',
+    component: () => import('@/views/AdminPapersView.vue'),
+    meta: { title: '组卷工作台 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: '/admin/readiness',
     name: 'AdminReadiness',
     component: () => import('@/views/AdminReadinessView.vue'),

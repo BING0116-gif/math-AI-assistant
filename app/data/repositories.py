@@ -9,8 +9,6 @@ from app.data.models import (
     Question,
     ChatSession,
     ChatMessage,
-    ExamPaper,
-    ExamSubmission,
 )
 
 T = TypeVar("T", bound=DeclarativeBase)
@@ -411,43 +409,6 @@ class ChatMessageRepository(BaseRepository[ChatMessage]):
             )
             .order_by(ChatMessage.created_at.desc())
             .limit(limit)
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
-
-class ExamPaperRepository(BaseRepository[ExamPaper]):
-    def __init__(self, session: AsyncSession):
-        super().__init__(session, ExamPaper)
-
-    async def get_by_user(
-        self, user_id: str, status: Optional[str] = None, limit: int = 20
-    ) -> List[ExamPaper]:
-        conditions = [ExamPaper.user_id == user_id]
-        if status:
-            conditions.append(ExamPaper.status == status)
-
-        stmt = (
-            select(ExamPaper)
-            .where(and_(*conditions))
-            .order_by(ExamPaper.created_at.desc())
-            .limit(limit)
-        )
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
-
-class ExamSubmissionRepository(BaseRepository[ExamSubmission]):
-    def __init__(self, session: AsyncSession):
-        super().__init__(session, ExamSubmission)
-
-    async def get_by_paper(
-        self, paper_id: str
-    ) -> List[ExamSubmission]:
-        stmt = (
-            select(ExamSubmission)
-            .where(ExamSubmission.paper_id == paper_id)
-            .order_by(ExamSubmission.id.asc())
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
