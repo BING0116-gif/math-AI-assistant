@@ -21,8 +21,11 @@ from app.data.models import Base
 config = context.config
 
 # Interpret the config file for Python logging
+# disable_existing_loggers=False：fileConfig 默认会禁用所有不在 ini 中声明的
+# 已创建 logger（如 app.services.*）。进程内执行迁移（测试或启动时自动升级）
+# 会因此静默丢失应用日志；math_verifier 曾为此打过自愈合补丁，此处根治。
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # 设置 target_metadata
 target_metadata = Base.metadata
