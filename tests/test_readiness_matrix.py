@@ -11,7 +11,9 @@
 """
 
 import asyncio
+import contextlib
 import json
+from types import SimpleNamespace
 
 import pytest
 from starlette.requests import Request
@@ -44,6 +46,26 @@ def _request(user=None, path="/api/admin/readiness/capabilities"):
 def _set(monkeypatch, name, value):
     """安全修改 settings 字段（兼容 pydantic 只读模型）。"""
     monkeypatch.setattr(settings, name, value, raising=False)
+
+
+def _patch_chapter_count(monkeypatch, count):
+    """把 check_assessment 的章节计数查询替换为确定值。
+
+    check_assessment 内部经 app.data.database.get_db_session 查询全局
+    async_session_factory：单文件运行时工厂为 None（查询抛错走 except），
+    全量运行时可能残留先前测试的活工厂（真实查询）。两种环境行为不一致，
+    测试必须自带确定的 DB mock 而非依赖全局状态。
+    """
+    import app.data.database as db_mod
+
+    @contextlib.asynccontextmanager
+    async def _factory():
+        async def _scalar(_query):
+            return count
+
+        yield SimpleNamespace(scalar=_scalar)
+
+    monkeypatch.setattr(db_mod, "get_db_session", _factory)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -155,11 +177,26 @@ async def test_assessment_qwen_math_model_is_warning(monkeypatch):
     _set(monkeypatch, "LLM_API_KEY", "sk-" + "z" * 30)
     _set(monkeypatch, "DASHSCOPE_API_KEY", "sk-" + "z" * 30)
     _set(monkeypatch, "LLM_MATH_MODEL", "qwen-turbo")
+    _patch_chapter_count(monkeypatch, count=5)
 
     result = await check_assessment()
 
     assert result.status == "warning"
     assert "qwen" in result.reason
+
+
+@pytest.mark.asyncio
+async def test_assessment_empty_chapter_data_is_warning(monkeypatch):
+    """章节数据为空时告警并给出补救建议，优先级高于模型配置检查。"""
+    _set(monkeypatch, "LLM_API_KEY", "sk-" + "z" * 30)
+    _set(monkeypatch, "LLM_MATH_MODEL", "deepseek-v4-flash")
+    _patch_chapter_count(monkeypatch, count=0)
+
+    result = await check_assessment()
+
+    assert result.status == "warning"
+    assert "章节" in result.reason
+    assert result.details["chapter_count"] == 0
 
 
 # ══════════════════════════════════════════════════════════════════
