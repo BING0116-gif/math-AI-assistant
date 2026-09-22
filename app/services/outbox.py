@@ -11,7 +11,7 @@ from sqlalchemy import func, or_, select
 
 from app.config.settings import settings
 from app.data.database import get_db_session
-from app.data.models import Memory, OutboxEvent, Question
+from app.data.models import KnowledgePoint, KnowledgePointResource, Memory, OutboxEvent, Question
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,43 @@ async def _handle_question_delete(event: OutboxEvent) -> None:
             raise RuntimeError("question vector delete failed")
 
 
+async def _handle_knowledge_resource_upsert(event: OutboxEvent) -> None:
+    """Project a reviewed learning resource into the rebuildable vector index."""
+    async with get_db_session() as db:
+        resource = await db.get(KnowledgePointResource, event.aggregate_id)
+        if resource is None or resource.status != "published":
+            should_delete = True
+            text, metadata = "", {}
+        else:
+            point = await db.get(KnowledgePoint, resource.knowledge_point_id)
+            if point is None:
+                should_delete = True
+                text, metadata = "", {}
+            else:
+                should_delete = False
+                text = "\n".join((point.name, resource.title, resource.body))
+                metadata = {
+                    "content_kind": "knowledge_resource",
+                    "resource_id": resource.id,
+                    "resource_type": resource.resource_type,
+                    "knowledge_point_id": point.id,
+                    "knowledge_point_code": point.code,
+                    "course_id": point.course_id,
+                    "version_id": point.version_id,
+                    "review_status": resource.status,
+                    "content_hash": resource.content_hash,
+                }
+    from app.services.vector_store import get_vector_store
+    store = await get_vector_store()
+    vector_id = f"knowledge-resource:{event.aggregate_id}"
+    if should_delete:
+        if not await store.delete_question(vector_id) and not await store.check_availability():
+            raise RuntimeError("knowledge resource vector delete failed")
+        return
+    if not await store.add_question(vector_id, text, metadata):
+        raise RuntimeError("knowledge resource vector upsert failed")
+
+
 async def _handle_memory_upsert(event: OutboxEvent) -> None:
     async with get_db_session() as db:
         memory = await db.get(Memory, int(event.aggregate_id))
@@ -138,6 +175,7 @@ async def _handle_review_complete(event: OutboxEvent) -> None:
 _HANDLERS = {
     "question.vector.upsert": _handle_question_upsert,
     "question.vector.delete": _handle_question_delete,
+    "knowledge_resource.vector.upsert": _handle_knowledge_resource_upsert,
     "memory.vector.upsert": _handle_memory_upsert,
     "memory.vector.delete": _handle_memory_delete,
     "learning.refresh": _handle_learning_refresh,

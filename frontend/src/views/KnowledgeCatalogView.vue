@@ -26,7 +26,7 @@
           <span class="legend-hint">默认显示当前章节与必要前置，选择节点可查看前置和后续。</span>
           <div class="view-toggle">
             <button :class="{ active: viewMode === '2d' }" @click="viewMode = '2d'">依赖图</button>
-            <button :class="{ active: viewMode === '3d' }" @click="viewMode = '3d'">3D 球体</button>
+            <button v-if="threeDEnabled" :class="{ active: viewMode === '3d' }" @click="viewMode = '3d'">3D 实验视图</button>
           </div>
         </div>
 
@@ -48,10 +48,11 @@
               <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.8" class="detail-empty-icon" aria-hidden="true">
                 <path d="M8 37V17l16-8 16 8v20l-16 8-16-8Z"/><path d="m8 17 16 8 16-8M24 25v20"/>
               </svg>
-              <p class="start-kicker">推荐起点</p>
+              <p class="start-kicker">{{ primaryRecommendation ? '今日主推荐' : '推荐起点' }}</p>
               <h2>{{ startingPoint?.name || '从当前章节开始' }}</h2>
-              <p>{{ startingPoint?.description || '按章节顺序建立基础，再沿箭头进入下一步。' }}</p>
-              <ul><li>先理解当前知识点</li><li>沿实线箭头检查必要前置</li><li>学习后进入正式练习</li></ul>
+              <p>{{ primaryRecommendation?.reason || startingPoint?.description || '按章节顺序建立基础，再沿箭头进入下一步。' }}</p>
+              <ul v-if="primaryRecommendation"><li>推荐依据：{{ primaryRecommendation.reason_code }}</li><li>同一时刻只保留一个主行动</li><li>完成练习后会重新计算路径</li></ul>
+              <ul v-else><li>先理解当前知识点</li><li>沿实线箭头检查必要前置</li><li>学习后进入正式练习</li></ul>
               <button v-if="startingPoint" type="button" class="start-button" @click="selectPoint(startingPoint.id)">查看学习起点</button>
             </div>
 
@@ -69,6 +70,15 @@
               </div>
 
               <p class="detail-desc">{{ selectedPoint.description }}</p>
+
+              <div v-if="selectedLearningState?.status === 'locked'" class="unlock-notice" role="status">
+                <strong>尚未解锁</strong>
+                <p>还需掌握：{{ missingPrerequisiteNames.join('、') }}</p>
+              </div>
+              <div v-else-if="selectedLearningState?.review_due" class="review-notice" role="status">
+                <strong>到期复习优先</strong>
+                <p>现在复习这个知识点，有助于降低遗忘。</p>
+              </div>
 
               <!-- 掌握度 -->
               <div class="detail-section">
@@ -144,6 +154,7 @@
               <div class="detail-actions">
                 <button class="action-btn primary" @click="openLearning(selectedPoint)">进入学习空间</button>
                 <button class="action-btn" @click="goToPractice(selectedPoint)">推荐练习</button>
+                <button class="action-btn" @click="askAi(selectedPoint)">让 AI 讲解</button>
                 <button class="action-btn" @click="goToRelatedErrors(selectedPoint)">查看全部关联错题</button>
               </div>
             </article>
@@ -172,13 +183,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppShell from '@/components/shell/AppShell.vue'
-import KnowledgeGalaxy from '@/components/knowledge/KnowledgeGalaxy.vue'
 import KnowledgeGraph2D from '@/components/knowledge/KnowledgeGraph2D.vue'
-import { getCourseTree, getKnowledgeMastery, getKnowledgePoint, getKnowledgePointLearning, listCourses } from '@/api/knowledge'
+import { getCourseLearningMap, getCourseTree, getKnowledgePoint, getKnowledgePointLearning, listCourses } from '@/api/knowledge'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
@@ -188,6 +198,11 @@ const route = useRoute()
 const errorBookStore = useErrorBookStore()
 const authStore = useAuthStore()
 const { openLogin } = useLoginDialog()
+// The legacy Three.js prototype is opt-in until student trials demonstrate
+// that it matches the 2D path's navigation success rate. Dynamic import keeps
+// Three.js out of the default learning-path request.
+const threeDEnabled = import.meta.env.VITE_ENABLE_KNOWLEDGE_3D === 'true'
+const KnowledgeGalaxy = defineAsyncComponent(() => import('@/components/knowledge/KnowledgeGalaxy.vue'))
 const tree = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -197,6 +212,7 @@ const selectedBranch = ref(null)
 const pointLoading = ref(false)
 const viewMode = ref('2d')
 const masteryMap = ref({}) // { code: { mastery, attempts, correct, status } }
+const learningMap = ref(null)
 const selectedResources = ref([])
 const activeChapterId = ref('')
 
@@ -224,9 +240,16 @@ const allPoints = computed(() => (tree.value?.chapters || []).flatMap(chapter =>
 ].map(point => ({ ...point, chapterId: chapter.id }))))
 
 const startingPoint = computed(() => {
+  const recommendedId = learningMap.value?.primary_recommendation?.knowledge_point_id
+  const recommended = allPoints.value.find(point => point.id === recommendedId)
+  if (recommended) return recommended
   const inChapter = allPoints.value.filter(point => point.chapterId === activeChapterId.value)
   return inChapter.find(point => !(point.prerequisites || []).length) || inChapter[0] || allPoints.value[0] || null
 })
+const primaryRecommendation = computed(() => learningMap.value?.primary_recommendation || null)
+const learningStateByCode = computed(() => Object.fromEntries((learningMap.value?.points || []).map(point => [point.code, point])))
+const selectedLearningState = computed(() => selectedPoint.value ? learningStateByCode.value[selectedPoint.value.code] : null)
+const missingPrerequisiteNames = computed(() => (selectedLearningState.value?.missing_prerequisites || []).map(code => allPoints.value.find(point => point.code === code)?.name || code))
 
 const branchPoints = computed(() => {
   if (!selectedBranch.value) return []
@@ -294,7 +317,9 @@ async function loadCatalog() {
     tree.value = (await getCourseTree(courseId)).data
     const requestedPoint = allPoints.value.find(point => point.id === route.query.point)
     activeChapterId.value = requestedPoint?.chapterId || (chapterList.value.some(chapter => chapter.id === route.query.chapter) ? route.query.chapter : chapterList.value[0]?.id || '')
-    await loadMastery(courseId)
+    await loadLearningMap(courseId)
+    const recommended = allPoints.value.find(point => point.id === learningMap.value?.primary_recommendation?.knowledge_point_id)
+    if (!requestedPoint && recommended?.chapterId) activeChapterId.value = recommended.chapterId
     if (requestedPoint) await selectPoint(requestedPoint.id, { updateRoute: false })
   } catch (err) {
     requiresAuth.value = err.response?.status === 401
@@ -306,12 +331,14 @@ async function loadCatalog() {
   }
 }
 
-async function loadMastery(courseId) {
+async function loadLearningMap(courseId) {
   try {
-    const { data } = await getKnowledgeMastery(courseId)
-    masteryMap.value = data.mastery || {}
+    const { data } = await getCourseLearningMap(courseId)
+    learningMap.value = data
+    masteryMap.value = Object.fromEntries((data.points || []).map(point => [point.code, { ...point, status: point.status === 'unlearned' ? 'untouched' : point.status }]))
   } catch {
-    // 掌握度加载失败不影响图谱浏览（节点按未学显示）
+    // 个人投影失败不影响公共课程结构浏览。
+    learningMap.value = null
     masteryMap.value = {}
   }
 }
@@ -372,7 +399,11 @@ function goToRelatedErrors(point) {
 }
 
 function goToPractice(point) {
-  router.push({ path: '/apply/practice', query: { category: point.name } })
+  router.push({ path: '/apply/practice', query: { knowledge_point: point.code } })
+}
+
+function askAi(point) {
+  router.push({ path: '/chat', query: { course_id: tree.value.course.id, version_id: tree.value.version.id, knowledge_point: point.code, q: `请结合课程内容讲解「${point.name}」，先确认我的理解，再分步引导。` } })
 }
 
 onMounted(loadCatalog)
@@ -921,7 +952,21 @@ onMounted(loadCatalog)
 
 /* 响应式 */
 @media (max-width: 1100px) {
-  .chapter-nav { width: 180px; }
+  .graph-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .chapter-nav {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px;
+  }
+  .chapter-nav-label { display: none; }
+  .chapter-nav button { min-width: 180px; margin: 0; }
   .detail-panel {
     width: 300px;
   }
@@ -929,6 +974,7 @@ onMounted(loadCatalog)
 
 @media (max-width: 900px) {
   .graph-layout {
+    display: flex;
     flex-direction: column;
   }
 
@@ -986,6 +1032,19 @@ onMounted(loadCatalog)
 
   .view-toggle button { min-height: 44px; padding-inline: 14px; }
 }
+
+.unlock-notice,
+.review-notice {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong, #8a96a3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+}
+.review-notice { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+.unlock-notice p,
+.review-notice p { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.5; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

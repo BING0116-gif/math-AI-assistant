@@ -620,6 +620,7 @@ onBeforeUnmount(() => {
       <el-tag v-if="provider" :type="provider.available && provider.provider !== 'mock' ? 'success' : 'warning'" size="small">
         AI：{{ provider.provider }}（{{ provider.available ? (provider.provider === 'mock' ? 'Mock，禁止正式发布' : '可用') : '不可用' }}）
       </el-tag>
+      <el-button size="small" text type="primary" @click="router.push('/admin/papers')">组卷</el-button>
       <el-button size="small" text type="primary" @click="router.push('/admin/readiness')">就绪度</el-button>
       <span class="wb-spacer" />
       <el-select v-model="importMode" size="small" style="width: 110px" aria-label="PDF 解析模式">

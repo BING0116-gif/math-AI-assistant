@@ -37,6 +37,9 @@ const tutorMode = ref(normalizeTutorMode(route.query.tutor_mode || store.current
 const tutorContext = {
   source_session_id: route.query.source_session_id ? String(route.query.source_session_id) : undefined,
   question_id: route.query.question_id ? String(route.query.question_id) : undefined,
+  course_id: route.query.course_id ? String(route.query.course_id) : undefined,
+  version_id: route.query.version_id ? String(route.query.version_id) : undefined,
+  knowledge_point_codes: route.query.knowledge_point ? [String(route.query.knowledge_point)] : [],
 }
 
 const errorForm = reactive({
@@ -88,7 +91,7 @@ onMounted(async () => {
   // 首页带问题进入：自动触发首次回答（文本走 query，图片走 store 暂存）
   const initQuery = typeof route.query.q === 'string' ? route.query.q.trim() : ''
   if (initQuery) {
-    router.replace({ path: `/chat/${chatId}`, query: { ...route.query, q: undefined } })
+    router.replace({ path: chatId ? `/chat/${chatId}` : '/chat', query: { ...route.query, q: undefined } })
     await nextTick()
     if (!streaming.value) handleTextSend(initQuery)
   } else if (store.pendingImage) {

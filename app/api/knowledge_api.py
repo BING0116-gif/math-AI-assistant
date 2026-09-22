@@ -1,11 +1,50 @@
+from datetime import datetime
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.data.database import get_db_session
-from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point, list_published_courses
+from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point, list_published_courses, search_published_points
 from app.services.learning_projection import read_learning_states, state_evidence
+from app.services.knowledge_learning_map import build_learning_map
 
 
 router = APIRouter(prefix="/api/knowledge", tags=["知识目录"])
+
+
+class LearningMapPoint(BaseModel):
+    id: str
+    code: str
+    status: Literal["unlearned", "learning", "weak", "mastered", "locked"]
+    mastery: float
+    attempts: int
+    correct: int
+    evidence: dict
+    missing_prerequisites: list[str]
+    review_due: bool
+    review_due_at: datetime | None
+    review_schedule_id: int | None
+    open_error_count: int
+    due_error_count: int
+
+
+class LearningMapRecommendation(BaseModel):
+    knowledge_point_id: str
+    knowledge_point_code: str
+    rank: int
+    kind: Literal["primary", "secondary"]
+    reason_code: str
+    reason: str
+
+
+class LearningMapResponse(BaseModel):
+    course_id: str
+    version_id: str
+    generated_at: datetime
+    points: list[LearningMapPoint]
+    primary_recommendation: LearningMapRecommendation | None
+    secondary_recommendations: list[LearningMapRecommendation]
 
 
 @router.get("/courses")
@@ -15,12 +54,40 @@ async def get_courses():
 
 
 @router.get("/courses/{course_id}/tree")
-async def get_course_tree(course_id: str):
+async def get_course_tree(course_id: str, version: str | None = Query(default=None, max_length=40)):
     async with get_db_session() as session:
-        tree = await get_published_course_tree(session, course_id)
+        tree = await get_published_course_tree(session, course_id, version)
     if tree is None:
         raise HTTPException(status_code=404, detail="未找到已发布课程")
     return tree
+
+
+@router.get("/courses/{course_id}/search")
+async def search_course_points(
+    course_id: str,
+    q: str = Query(..., min_length=1, max_length=100),
+    version: str | None = Query(default=None, max_length=40),
+    limit: int = Query(default=20, ge=1, le=50),
+):
+    async with get_db_session() as session:
+        tree = await get_published_course_tree(session, course_id, version)
+        if tree is None:
+            raise HTTPException(status_code=404, detail="未找到已发布课程")
+        results = await search_published_points(session, course_id, q, version, limit)
+    return {"course_id": course_id, "version": tree["version"], "query": q, "results": results}
+
+
+@router.get("/courses/{course_id}/learning-map", response_model=LearningMapResponse)
+async def get_course_learning_map(course_id: str, request: Request):
+    """Return the current authenticated user's projection; user_id is never client supplied."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "请先登录"})
+    async with get_db_session() as session:
+        projection = await build_learning_map(session, course_id, str(user_id))
+    if projection is None:
+        raise HTTPException(status_code=404, detail="未找到已发布课程")
+    return projection
 
 
 @router.get("/points/{point_id}")

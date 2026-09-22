@@ -103,6 +103,9 @@ class QdrantVectorStoreManager:
 
         self._embedding = get_embedding_service()
         self._embedder_model = embedder_model or settings.VECTOR_EMBEDDING_MODEL
+        self._initialize_lock = asyncio.Lock()
+        self._availability_lock = asyncio.Lock()
+        self._last_initialize_attempt: float = 0
 
         self._in_memory_points: Dict[str, PointStruct] = {}
         self._use_memory_fallback: bool = False
@@ -110,7 +113,17 @@ class QdrantVectorStoreManager:
     async def initialize(self) -> None:
         if self._status == VectorStoreStatus.READY:
             return
+        if self._status == VectorStoreStatus.DEGRADED and time.time() - self._last_initialize_attempt < self.availability_check_interval:
+            return
+        async with self._initialize_lock:
+            if self._status == VectorStoreStatus.READY:
+                return
+            if self._status == VectorStoreStatus.DEGRADED and time.time() - self._last_initialize_attempt < self.availability_check_interval:
+                return
+            await self._initialize_locked()
 
+    async def _initialize_locked(self) -> None:
+        self._last_initialize_attempt = time.time()
         self._status = VectorStoreStatus.INITIALIZING
         logger.info("[向量库] 开始初始化...")
 
@@ -132,17 +145,17 @@ class QdrantVectorStoreManager:
                 if not QDRANT_AVAILABLE:
                     raise ImportError("qdrant-client 未安装")
 
-                self._client = QdrantClient(host=self.host, port=self.port)
+                self._client = QdrantClient(host=self.host, port=self.port, timeout=3)
 
-                collections = self._client.get_collections()
+                collections = await asyncio.to_thread(self._client.get_collections)
                 exists = any(
                     c.name == self.collection_name for c in collections.collections
                 )
 
                 if not exists:
-                    self._create_collection()
+                    await asyncio.to_thread(self._create_collection)
 
-                collection_info = self._client.get_collection(self.collection_name)
+                collection_info = await asyncio.to_thread(self._client.get_collection, self.collection_name)
                 logger.info(
                     f"[向量库] Qdrant 就绪: collection={self.collection_name}, "
                     f"points={collection_info.points_count}, "
@@ -206,27 +219,28 @@ class QdrantVectorStoreManager:
         now = time.time()
         if now - self._last_availability_check < self.availability_check_interval:
             return self._is_available
+        async with self._availability_lock:
+            now = time.time()
+            if now - self._last_availability_check < self.availability_check_interval:
+                return self._is_available
+            self._last_availability_check = now
 
-        self._last_availability_check = now
-
-        try:
-            await self._embedding.initialize()
-            if self._client is None:
-                self._client = QdrantClient(host=self.host, port=self.port)
-            collections = self._client.get_collections()
-            if not any(row.name == self.collection_name for row in collections.collections):
-                self._create_collection()
-            self._is_available = True
-            self._use_memory_fallback = False
-            if self._status != VectorStoreStatus.READY:
-                self._status = VectorStoreStatus.READY
-                logger.info("[向量库] Qdrant 与 embedding 已恢复")
-        except Exception as e:
-            logger.warning(f"[向量库] Qdrant 不可用: {e}")
-            self._is_available = False
-            if self._status == VectorStoreStatus.READY:
+            try:
+                await self._embedding.initialize()
+                if self._client is None:
+                    self._client = QdrantClient(host=self.host, port=self.port, timeout=3)
+                collections = await asyncio.to_thread(self._client.get_collections)
+                if not any(row.name == self.collection_name for row in collections.collections):
+                    await asyncio.to_thread(self._create_collection)
+                self._is_available = True
+                self._use_memory_fallback = False
+                if self._status != VectorStoreStatus.READY:
+                    self._status = VectorStoreStatus.READY
+                    logger.info("[向量库] Qdrant 与 embedding 已恢复")
+            except Exception as e:
+                logger.warning(f"[向量库] Qdrant 不可用: {e}")
+                self._is_available = False
                 self._status = VectorStoreStatus.DEGRADED
-                logger.warning("[向量库] 降级到内存模式")
 
         return self._is_available
 
@@ -273,7 +287,8 @@ class QdrantVectorStoreManager:
                 payload=payload,
             )
 
-            self._client.upsert(
+            await asyncio.to_thread(
+                self._client.upsert,
                 collection_name=self.collection_name,
                 points=[point],
             )
@@ -418,7 +433,8 @@ class QdrantVectorStoreManager:
             return False
 
         try:
-            self._client.delete(
+            await asyncio.to_thread(
+                self._client.delete,
                 collection_name=self.collection_name,
                 points_selector=[_to_qdrant_id(question_id)],
             )

@@ -21,6 +21,11 @@ describe('knowledge graph projection', () => {
     expect(result.points[1].status).toBe('untouched')
   })
 
+  it('preserves the server locked state instead of recomputing prerequisites in the browser', () => {
+    const result = flattenKnowledgeTree(tree, { 'FUNC-02': { status: 'locked', missing_prerequisites: ['FUNC-01'] } })
+    expect(result.points[1].status).toBe('locked')
+  })
+
   it('shows only the active chapter plus a necessary cross-chapter prerequisite', () => {
     const { points } = flattenKnowledgeTree(tree)
     const projection = buildLocalProjection(points, 'chapter-b', '', 18)
