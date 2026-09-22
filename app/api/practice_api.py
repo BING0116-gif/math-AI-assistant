@@ -8,11 +8,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.services.practice_service import (
-    PracticeError, complete_session, create_session, get_session, practice_options,
-    recent_sessions, result, start_session, submit_attempt,
+    PracticeError, complete_session, create_error_book_session, create_session, get_session,
+    practice_options, recent_sessions, result, save_practice_snapshot, start_session, submit_attempt,
 )
 
 router = APIRouter(prefix="/api/practice", tags=["专项练习"])
@@ -30,6 +30,9 @@ class CreatePracticeSessionRequest(BaseModel):
     random_seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     review_schedule_id: int | None = Field(default=None, ge=1)
     review_kind: Literal["original_correct", "variant_correct", "spaced_correct"] | None = None
+    # ---- §5.1 答题行为与排序（默认值等价旧行为，向后兼容）----
+    behavior: Literal["immediate", "adaptive", "deferred"] = Field(default="immediate")
+    order_mode: Literal["sequential", "random"] = Field(default="random")
 
     @field_validator("chapter_ids", "knowledge_point_codes", "question_types")
     @classmethod
@@ -58,6 +61,22 @@ class SubmitPracticeAttemptRequest(BaseModel):
     time_spent_seconds: int | None = Field(default=None, ge=0, le=86400)
     hint_used: bool = False
     solution_viewed: bool = False
+
+
+class CreateFromErrorBookRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    course_id: str | None = Field(default=None, min_length=1, max_length=36)
+    version_id: str | None = Field(default=None, min_length=1, max_length=36)
+    behavior: Literal["immediate", "adaptive", "deferred"] = Field(default="immediate")
+    order_mode: Literal["sequential", "random"] = Field(default="sequential")
+    question_limit: int = Field(default=20, ge=1, le=50)
+    random_seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class RecoverySnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_question_id: str | None = Field(default=None, max_length=36)
 
 
 def _user_id(request: Request) -> str:
@@ -89,6 +108,28 @@ async def get_recent_sessions(request: Request, limit: int = Query(default=8, ge
 async def post_session(request: Request, body: CreatePracticeSessionRequest):
     try:
         return {"code": 0, "data": await create_session(_user_id(request), body.model_dump(exclude_none=True))}
+    except PracticeError as error:
+        _raise(error)
+
+
+@router.post("/sessions/from-error-book")
+async def post_session_from_error_book(request: Request, body: CreateFromErrorBookRequest):
+    try:
+        return {"code": 0, "data": await create_error_book_session(
+            _user_id(request),
+            course_id=body.course_id, version_id=body.version_id,
+            behavior=body.behavior, order_mode=body.order_mode,
+            question_limit=body.question_limit, random_seed=body.random_seed,
+            idempotency_key=body.idempotency_key,
+        )}
+    except PracticeError as error:
+        _raise(error)
+
+
+@router.put("/sessions/{session_id}/recovery-snapshot")
+async def put_recovery_snapshot(request: Request, session_id: str, body: RecoverySnapshotRequest):
+    try:
+        return {"code": 0, "data": await save_practice_snapshot(_user_id(request), session_id, body.current_question_id), "message": "ok"}
     except PracticeError as error:
         _raise(error)
 

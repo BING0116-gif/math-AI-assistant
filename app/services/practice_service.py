@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.data.database import get_db_session
 from app.data.models import (
-    Chapter, Course, KnowledgeGraphVersion, KnowledgePoint, LearningRecord, PracticeAttempt,
+    Chapter, Course, ErrorItem, KnowledgeGraphVersion, KnowledgePoint, LearningRecord, PracticeAttempt,
     PracticeSession, PracticeSessionQuestion, Question, QuestionKnowledgePoint,
 )
 from app.services.paper_generator import _grade_one
@@ -26,6 +26,14 @@ from app.services.error_classification import classify_error
 from app.services.error_review import capture_wrong_attempt
 
 SUPPORTED_TYPES = {"choice", "judge", "numeric_fill", "expression_fill"}
+# ---- §5.1 答题行为配置（Moodle-style behaviour）：仅影响放行/重试/反馈时序，不改判分事实 ----
+SUPPORTED_BEHAVIORS = {"immediate", "adaptive", "deferred"}
+SUPPORTED_ORDER_MODES = {"sequential", "random"}
+# immediate：答错可重试一次（共 2 次提交）；adaptive：按次衰减共 3 次提交；deferred：每题一次，统一反馈
+BEHAVIOR_MAX_SUBMISSIONS = {"immediate": 2, "adaptive": 3, "deferred": 1}
+# adaptive 衰减仅进入 learning_signals.mastery_weight（掌握度投影加权），判分事实不变
+ADAPTIVE_MASTERY_WEIGHTS = (1.0, 0.6, 0.3)
+ERROR_BOOK_MAX_QUESTIONS = 50
 
 
 class PracticeError(Exception):
@@ -47,7 +55,7 @@ def _question_snapshot(question: Question, kp_codes: list[str]) -> dict[str, Any
 
 def _student_question(row: PracticeSessionQuestion) -> dict[str, Any]:
     snap = row.snapshot or {}
-    return {key: snap.get(key) for key in ("question_id", "content", "question_type", "options", "difficulty", "estimated_time", "knowledge_point_codes")} | {"position": row.position, "score": row.score}
+    return {key: snap.get(key) for key in ("question_id", "content", "question_type", "options", "difficulty", "estimated_time", "knowledge_point_codes", "common_mistakes")} | {"position": row.position, "score": row.score}
 
 
 def _session_statement(session_id: str, user_id: str):
@@ -59,11 +67,22 @@ def _session_statement(session_id: str, user_id: str):
 
 def _session_payload(session: PracticeSession) -> dict[str, Any]:
     attempts = {a.session_question_id: a for a in session.attempts}
+    behavior = str((session.config_snapshot or {}).get("behavior") or "immediate")
+    defer_feedback = behavior == "deferred" and session.status != "completed"
+    feedback: dict[str, Any] = {}
+    for attempt in session.attempts:
+        if defer_feedback:
+            # deferred 练习在完成前不泄露任何判分信息（模拟考试语义），仅暴露已提交状态。
+            feedback[attempt.question_id] = {"question_id": attempt.question_id, "submitted": True, "feedback_deferred": True}
+        else:
+            feedback[attempt.question_id] = attempt.grading_snapshot
     return {
         "session_id": session.id, "mode": session.mode, "status": session.status,
         "course_id": session.course_id, "version_id": session.version_id,
         "config": session.config_snapshot, "started_at": session.started_at,
         "completed_at": session.completed_at,
+        "recovery_snapshot": session.recovery_snapshot or {},
+        "recovery_snapshot_at": session.recovery_snapshot_at,
         "questions": [
             _student_question(question) | {"attempted": question.id in attempts}
             for question in session.questions
@@ -71,7 +90,7 @@ def _session_payload(session: PracticeSession) -> dict[str, Any]:
         # Practice feedback is available only for already committed answers.
         # Returning it here makes a refresh recover the exact submitted state
         # without exposing material for unanswered questions.
-        "feedback": {attempt.question_id: attempt.grading_snapshot for attempt in session.attempts},
+        "feedback": feedback,
     }
 
 
@@ -109,6 +128,22 @@ async def practice_options(course_id: str | None = None) -> dict[str, Any]:
         }
 
 
+def _config_for_key_compare(config: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a config dict for idempotency comparison.
+
+    Server-injected keys are dropped, and behavior/order_mode defaults are
+    treated as absent so pre-refactor requests replay against upgraded ones.
+    """
+    normalized = dict(config)
+    normalized.pop("random_seed", None)
+    normalized.pop("resolved_knowledge_point_codes", None)
+    if normalized.get("behavior") in (None, "immediate"):
+        normalized.pop("behavior", None)
+    if normalized.get("order_mode") in (None, "random"):
+        normalized.pop("order_mode", None)
+    return normalized
+
+
 async def create_session(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
     course_id, version_id = config["course_id"], config["version_id"]
     chapter_ids = set(config.get("chapter_ids") or [])
@@ -116,19 +151,22 @@ async def create_session(user_id: str, config: dict[str, Any]) -> dict[str, Any]
     question_types = set(config.get("question_types") or SUPPORTED_TYPES)
     count = config["question_count"]
     difficulty = config.get("difficulty_band")
+    behavior = str(config.get("behavior") or "immediate")
+    order_mode = str(config.get("order_mode") or "random")
     seed = config.get("random_seed") or random.SystemRandom().randint(1, 2**31 - 1)
     key = config["idempotency_key"]
     if not chapter_ids and not explicit_codes:
         raise PracticeError("VALIDATION_FAILED", "至少选择一个章节或知识点")
     if not question_types or not question_types <= SUPPORTED_TYPES:
         raise PracticeError("VALIDATION_FAILED", "包含不支持的题型")
+    if behavior not in SUPPORTED_BEHAVIORS:
+        raise PracticeError("VALIDATION_FAILED", "不支持的答题行为")
+    if order_mode not in SUPPORTED_ORDER_MODES:
+        raise PracticeError("VALIDATION_FAILED", "不支持的排序方式")
     async with get_db_session() as db:
         prior = (await db.execute(_session_statement_by_key(user_id, key))).scalar_one_or_none()
         if prior:
-            prior_config = dict(prior.config_snapshot or {})
-            prior_config.pop("random_seed", None)
-            prior_config.pop("resolved_knowledge_point_codes", None)
-            if prior_config != config:
+            if _config_for_key_compare(prior.config_snapshot or {}) != _config_for_key_compare(config):
                 raise PracticeError("IDEMPOTENCY_CONFLICT", "该幂等键已用于不同的练习配置")
             return _session_payload(prior)
         version = await db.get(KnowledgeGraphVersion, version_id)
@@ -173,8 +211,8 @@ async def create_session(user_id: str, config: dict[str, Any]) -> dict[str, Any]
             question_codes[question.id].append(code)
         if len(questions) < count:
             raise PracticeError("INSUFFICIENT_QUESTION_POOL", "当前筛选条件下正式题目不足", {"requested": count, "available": len(questions), "suggestions": [{"action": "reduce_count", "value": max(5, len(questions))}]})
-        selected = _balanced_select(list(questions.values()), question_codes, count, seed)
-        stored_config = dict(config) | {"random_seed": seed, "resolved_knowledge_point_codes": sorted(chosen_codes)}
+        selected = _balanced_select(list(questions.values()), question_codes, count, seed, order_mode)
+        stored_config = dict(config) | {"behavior": behavior, "order_mode": order_mode, "random_seed": seed, "resolved_knowledge_point_codes": sorted(chosen_codes)}
         session = PracticeSession(user_id=user_id, mode="practice", course_id=course_id, version_id=version_id, status="created", config_snapshot=stored_config, random_seed=seed, idempotency_key=key)
         db.add(session)
         await db.flush()
@@ -231,11 +269,12 @@ async def create_session_from_questions(
                 {"requested": len(ids), "available": 0},
             )
         ordered = [questions[i] for i in ids if i in questions]
-        seed = random.SystemRandom().randint(1, 2**31 - 1)
         base = dict(config or {})
         key = base.pop("idempotency_key", None) or f"rag-session-{uuid.uuid4().hex[:16]}"
+        seed = base.pop("random_seed", None) or random.SystemRandom().randint(1, 2**31 - 1)
+        selection = base.pop("selection", "rag")
         stored_config = base | {
-            "selection": "rag",
+            "selection": selection,
             "source_question_ids": list(questions),
             "random_seed": seed,
         }
@@ -260,7 +299,103 @@ def _session_statement_by_key(user_id: str, key: str):
     return select(PracticeSession).where(PracticeSession.user_id == user_id, PracticeSession.idempotency_key == key).options(selectinload(PracticeSession.questions), selectinload(PracticeSession.attempts))
 
 
-def _balanced_select(questions: list[Question], codes: dict[str, list[str]], count: int, seed: int) -> list[Question]:
+async def create_error_book_session(
+    user_id: str,
+    *,
+    course_id: str | None = None,
+    version_id: str | None = None,
+    behavior: str = "immediate",
+    order_mode: str = "sequential",
+    random_seed: int | None = None,
+    idempotency_key: str | None = None,
+    max_questions: int = 20,
+) -> dict[str, Any]:
+    """ApplyHub「错题重练」入口：服务端自查未掌握错题关联题目创建会话。
+
+    The server resolves the question list itself (owner-scoped unmastered
+    ErrorItem → published practice-eligible question), so the client never
+    assembles question IDs. Ordering: sequential by most recent wrong-attempt
+    time descending (stable), or deterministic shuffle via random_seed.
+    """
+    behavior = str(behavior or "immediate")
+    order_mode = str(order_mode or "sequential")
+    if behavior not in SUPPORTED_BEHAVIORS:
+        raise PracticeError("VALIDATION_FAILED", "不支持的答题行为")
+    if order_mode not in SUPPORTED_ORDER_MODES:
+        raise PracticeError("VALIDATION_FAILED", "不支持的排序方式")
+    limit = max(1, min(int(max_questions or 20), ERROR_BOOK_MAX_QUESTIONS))
+    async with get_db_session() as db:
+        if idempotency_key:
+            prior = (await db.execute(_session_statement_by_key(user_id, idempotency_key))).scalar_one_or_none()
+            if prior:
+                return _session_payload(prior)
+        if not course_id:
+            course = (await db.execute(select(Course).where(Course.status == "active").order_by(Course.name))).scalars().first()
+            if course is None:
+                raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程不可用")
+            course_id = course.id
+        if not version_id:
+            course = await db.get(Course, course_id)
+            version_id = (course.default_version_id if course else None) or (await db.execute(
+                select(KnowledgeGraphVersion.id).where(KnowledgeGraphVersion.course_id == course_id).order_by(KnowledgeGraphVersion.created_at.desc())
+            )).scalar()
+        if not version_id:
+            raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程尚未发布知识版本")
+        version = await db.get(KnowledgeGraphVersion, version_id)
+        if version is None or version.course_id != course_id:
+            raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程与知识版本不匹配")
+        rows = (await db.execute(
+            select(ErrorItem.question_id, func.max(ErrorItem.updated_at).label("last_wrong_at"))
+            .join(Question, Question.id == ErrorItem.question_id)
+            .where(
+                ErrorItem.user_id == user_id,
+                ErrorItem.is_mastered.is_(False),
+                ErrorItem.question_id.isnot(None),
+                Question.course_id == course_id, Question.version_id == version_id,
+                Question.review_status == "published", Question.practice_eligible.is_(True),
+                Question.grading_mode == "deterministic", Question.question_type.in_(SUPPORTED_TYPES),
+            )
+            .group_by(ErrorItem.question_id)
+            .order_by(func.max(ErrorItem.updated_at).desc())
+        )).all()
+        question_ids = [row.question_id for row in rows if row.question_id]
+        if not question_ids:
+            raise PracticeError("INSUFFICIENT_QUESTION_POOL", "暂无待重练的错题", {"requested": limit, "available": 0})
+        question_ids = question_ids[:limit]
+        seed = int(random_seed) if random_seed is not None else random.SystemRandom().randint(1, 2**31 - 1)
+        if order_mode == "random":
+            random.Random(seed).shuffle(question_ids)
+    config: dict[str, Any] = {
+        "selection": "error_book", "source": "error_book",
+        "behavior": behavior, "order_mode": order_mode, "random_seed": seed,
+    }
+    if idempotency_key:
+        config["idempotency_key"] = idempotency_key
+    return await create_session_from_questions(user_id, question_ids, course_id, version_id, config)
+
+
+async def save_practice_snapshot(user_id: str, session_id: str, current_question_id: str | None) -> dict[str, Any]:
+    """Persist the resumable UI position for practice sessions (mirrors exam)."""
+    async with get_db_session() as db:
+        session = (await db.execute(_session_statement(session_id, user_id))).scalar_one_or_none()
+        if not session: raise PracticeError("SESSION_NOT_FOUND", "练习会话不存在")
+        if session.status == "completed":
+            return {"completed": True, "completion_reason": session.completion_reason}
+        if session.status != "in_progress":
+            raise PracticeError("SESSION_STATE_CONFLICT", "会话尚未开始")
+        if current_question_id and not any(row.question_id == current_question_id for row in session.questions):
+            raise PracticeError("VALIDATION_FAILED", "题目不属于该练习会话")
+        now = datetime.now(timezone.utc)
+        session.recovery_snapshot = {"current_question_id": current_question_id}
+        session.recovery_snapshot_at = now
+        await db.flush()
+        return {"completed": False, "current_question_id": current_question_id, "saved_at": now}
+
+
+def _balanced_select(questions: list[Question], codes: dict[str, list[str]], count: int, seed: int, order_mode: str = "random") -> list[Question]:
+    if order_mode == "sequential":
+        # 顺序模式：按题号稳定排序后直接截取，可复现且不依赖随机种子。
+        return sorted(questions, key=lambda q: q.id)[:count]
     rng = random.Random(seed)
     buckets: dict[str, list[Question]] = defaultdict(list)
     for question in questions:
@@ -298,6 +433,88 @@ async def start_session(user_id: str, session_id: str) -> dict[str, Any]:
         return _session_payload(session)
 
 
+def _attempt_kind_of(session_context: dict[str, Any]) -> str:
+    return {
+        "original_correct": "original_retry", "variant_correct": "variant",
+        "spaced_correct": "spaced_review",
+    }.get(session_context.get("review_kind"), "regular")
+
+
+def _compose_signals(session_context: dict[str, Any], learning_signals: dict[str, Any] | None, behavior: str, submission_index: int) -> dict[str, Any]:
+    """Merge client signals with server context; adaptive decay only weights mastery, never the grade."""
+    signals = dict(learning_signals or {})
+    signals["attempt_kind"] = _attempt_kind_of(session_context)
+    if session_context.get("review_interval_days") is not None:
+        signals["review_interval_days"] = session_context["review_interval_days"]
+    if behavior == "adaptive":
+        signals["mastery_weight"] = ADAPTIVE_MASTERY_WEIGHTS[min(submission_index, len(ADAPTIVE_MASTERY_WEIGHTS) - 1)]
+    return signals
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _retry_attempt(db, session: PracticeSession, row: PracticeSessionQuestion, attempt: PracticeAttempt, answer: Any, key: str, learning_signals: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
+    """Behavior-driven retry: reuse the single attempt row and keep both grades.
+
+    The per-question attempt row (uq_practice_attempt_session_question) is
+    updated in place: submissions history preserves every graded answer while
+    ``correct``/``user_answer``/``idempotency_key`` reflect the latest one.
+    Returns (grading snapshot, outbox ids) — dispatch happens after commit.
+    """
+    context = session.config_snapshot or {}
+    behavior = str(context.get("behavior") or "immediate")
+    history = list((attempt.grading_snapshot or {}).get("submissions") or [])
+    limit = BEHAVIOR_MAX_SUBMISSIONS.get(behavior, 1)
+    if behavior == "deferred" or attempt.correct or len(history) >= limit:
+        raise PracticeError("ANSWER_ALREADY_COMMITTED", "该题已提交")
+    graded = _grade_one(row.snapshot or {}, answer)
+    from app.observability import GRADING_RESULTS
+    outcome = "needs_review" if graded.get("needs_review") else ("correct" if graded.get("correct") else "incorrect")
+    GRADING_RESULTS.labels(outcome).inc()
+    classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
+    history.append({"answer": answer, "correct": bool(graded["correct"]), "submitted_at": _now_iso()})
+    signals = _compose_signals(context, learning_signals, behavior, len(history) - 1)
+    signals["retry"] = True
+    result = {**(attempt.grading_snapshot or {}), "question_id": row.question_id, "correct": bool(graded["correct"]), "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals, "submissions": history, "retry_count": len(history) - 1}
+    attempt.user_answer = answer
+    attempt.correct = bool(graded["correct"])
+    attempt.idempotency_key = key
+    attempt.grading_snapshot = result
+    await db.flush()
+    db.add(LearningRecord(
+        user_id=session.user_id, question_id=row.question_id, event_type="practice_answer",
+        question_content=(row.snapshot or {}).get("content") or "",
+        category=((row.snapshot or {}).get("knowledge_point_codes") or ["高等数学"])[0],
+        difficulty=(row.snapshot or {}).get("difficulty") or 3,
+        user_answer=json.dumps(answer, ensure_ascii=False) if not isinstance(answer, str) else answer,
+        correct_answer=str(graded["correct_answer"]), is_correct=bool(graded["correct"]),
+        metadata_={"session_id": session.id, "attempt_id": attempt.id, "learning_signals": signals, "retry": True, "mode": "practice", "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or []},
+    ))
+    category = ((row.snapshot or {}).get("knowledge_point_codes") or [""])[0]
+    await db.flush()
+    from app.services.learning_projection import rebuild_learning_projections_in_session
+    await rebuild_learning_projections_in_session(db, session.user_id)
+    from app.services.outbox import enqueue_outbox
+    outbox_ids: list[str] = []
+    refresh = await enqueue_outbox(
+        db, event_type="learning.refresh", aggregate_type="practice_attempt",
+        aggregate_id=attempt.id, user_id=session.user_id, payload={"category": category},
+        idempotency_key=f"learning-refresh:attempt:{attempt.id}:retry-{len(history)}",
+    )
+    outbox_ids.append(refresh.id)
+    if graded["correct"] and context.get("review_schedule_id"):
+        review = await enqueue_outbox(
+            db, event_type="review.complete", aggregate_type="practice_attempt",
+            aggregate_id=attempt.id, user_id=session.user_id,
+            payload={"review_schedule_id": int(context["review_schedule_id"]), "attempt_id": attempt.id},
+            idempotency_key=f"auto-review:{attempt.id}:retry-{len(history)}",
+        )
+        outbox_ids.append(review.id)
+    return result, outbox_ids
+
+
 async def submit_attempt(user_id: str, session_id: str, question_id: str, answer: Any, key: str, learning_signals: dict[str, Any] | None = None) -> dict[str, Any]:
     committed_result = None
     category = ""
@@ -308,25 +525,27 @@ async def submit_attempt(user_id: str, session_id: str, question_id: str, answer
         if session.status != "in_progress": raise PracticeError("SESSION_STATE_CONFLICT", "会话尚未开始或已结束")
         row = next((q for q in session.questions if q.question_id == question_id), None)
         if not row: raise PracticeError("VALIDATION_FAILED", "题目不属于该练习会话")
+        session_context = session.config_snapshot or {}
+        behavior = str(session_context.get("behavior") or "immediate")
         attempt = next((a for a in session.attempts if a.session_question_id == row.id), None)
         if attempt:
-            if attempt.idempotency_key != key: raise PracticeError("ANSWER_ALREADY_COMMITTED", "该题已提交")
+            if attempt.idempotency_key != key:
+                retry_result, retry_outbox_ids = await _retry_attempt(db, session, row, attempt, answer, key, learning_signals)
+                from app.services.outbox import dispatch_outbox_best_effort
+                for event_id in retry_outbox_ids:
+                    dispatch_outbox_best_effort(event_id)
+                return retry_result
+            if behavior == "deferred":
+                # Idempotent replay under deferred must not leak the grade either.
+                return {"question_id": question_id, "submitted": True, "feedback_deferred": True}
             return attempt.grading_snapshot
         graded = _grade_one(row.snapshot or {}, answer)
         from app.observability import GRADING_RESULTS
         outcome = "needs_review" if graded.get("needs_review") else ("correct" if graded.get("correct") else "incorrect")
         GRADING_RESULTS.labels(outcome).inc()
         classification = classify_error(row.snapshot or {}, answer, correct=graded["correct"])
-        session_context = session.config_snapshot or {}
-        attempt_kind = {
-            "original_correct": "original_retry", "variant_correct": "variant",
-            "spaced_correct": "spaced_review",
-        }.get(session_context.get("review_kind"), "regular")
-        signals = dict(learning_signals or {})
-        signals["attempt_kind"] = attempt_kind
-        if session_context.get("review_interval_days") is not None:
-            signals["review_interval_days"] = session_context["review_interval_days"]
-        result = {"question_id": question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals}
+        signals = _compose_signals(session_context, learning_signals, behavior, 0)
+        result = {"question_id": question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": graded["correct"], "needs_review": bool(graded.get("needs_review")), "correct_answer": graded["correct_answer"], "analysis": (row.snapshot or {}).get("analysis") or "", "difficulty": (row.snapshot or {}).get("difficulty") or 3, "estimated_time": (row.snapshot or {}).get("estimated_time"), "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"] if classification else None, "error_classification": classification, "learning_signals": signals, "submissions": [{"answer": answer, "correct": bool(graded["correct"]), "submitted_at": _now_iso()}], "retry_count": 0}
         practice_attempt = PracticeAttempt(user_id=user_id, session_id=session.id, session_question_id=row.id, question_id=question_id, user_answer=answer, correct=graded["correct"], grading_snapshot=result, idempotency_key=key)
         db.add(practice_attempt)
         await db.flush()
@@ -369,6 +588,9 @@ async def submit_attempt(user_id: str, session_id: str, question_id: str, answer
     from app.services.outbox import dispatch_outbox_best_effort
     for event_id in outbox_ids:
         dispatch_outbox_best_effort(event_id)
+    if behavior == "deferred":
+        # 学习事实（判分/错题回流/投影）照常落库，只是完成前不向学生反馈。
+        return {"question_id": question_id, "submitted": True, "feedback_deferred": True}
     return committed_result
 
 
@@ -401,7 +623,7 @@ async def _result_for(session: PracticeSession) -> dict[str, Any]:
             item = attempt.grading_snapshot
         else:
             classification = classify_error(row.snapshot or {}, None, correct=False)
-            item = {"question_id": row.question_id, "correct": False, "your_answer": "（未作答）", "correct_answer": (row.snapshot or {}).get("answer_spec", {}).get("correct"), "analysis": (row.snapshot or {}).get("analysis") or "", "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"], "error_classification": classification}
+            item = {"question_id": row.question_id, "question_content": (row.snapshot or {}).get("content") or "", "correct": False, "your_answer": "（未作答）", "correct_answer": (row.snapshot or {}).get("answer_spec", {}).get("correct"), "analysis": (row.snapshot or {}).get("analysis") or "", "knowledge_point_codes": (row.snapshot or {}).get("knowledge_point_codes") or [], "error_category": classification["category"], "error_classification": classification}
         items.append(item)
         correct += int(bool(item["correct"]))
         for code in item.get("knowledge_point_codes") or []:
@@ -415,17 +637,19 @@ async def _result_for(session: PracticeSession) -> dict[str, Any]:
 
 
 async def recent_sessions(user_id: str, limit: int = 8) -> dict[str, Any]:
-    # Listing recent exams is also a server-authoritative deadline check.
+    # Listing recent timed sessions is also a server-authoritative deadline check.
     async with get_db_session() as db:
-        active_exam_ids = list((await db.execute(select(PracticeSession.id).where(
+        active_rows = list((await db.execute(select(PracticeSession.id, PracticeSession.mode).where(
             PracticeSession.user_id == user_id,
-            PracticeSession.mode == "exam",
+            PracticeSession.mode.in_(("exam", "assessment")),
             PracticeSession.status == "in_progress",
-        ).limit(limit))).scalars())
-    if active_exam_ids:
+        ).limit(limit))).all())
+    if active_rows:
+        from app.services.assessment_service import get_assessment
         from app.services.exam_service import get_exam
-        for session_id in active_exam_ids:
-            await get_exam(user_id, session_id)
+        for session_id, mode in active_rows:
+            checker = get_assessment if mode == "assessment" else get_exam
+            await checker(user_id, session_id)
     async with get_db_session() as db:
         sessions = list((await db.execute(select(PracticeSession).where(PracticeSession.user_id == user_id).order_by(PracticeSession.updated_at.desc()).limit(limit).options(selectinload(PracticeSession.questions), selectinload(PracticeSession.attempts), selectinload(PracticeSession.draft_answers)))).scalars())
     rows = []
