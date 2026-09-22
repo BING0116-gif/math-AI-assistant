@@ -103,7 +103,6 @@ def test_system_prompt_manager_v3():
     print(f"{PASS} 版本管理正确 (version={manager.version})")
 
     print(f"\n{PASS} 测试 1 全部通过: SystemPromptManager v3.0 四层架构正确\n")
-    return True
 
 
 def test_task_classifier():
@@ -197,7 +196,6 @@ def test_task_classifier():
     print(f"{PASS} 分类缓存正确")
 
     print(f"\n{PASS} 测试 2 全部通过: TaskClassifier 意图分类准确\n")
-    return True
 
 
 def test_dynamic_params():
@@ -250,7 +248,6 @@ def test_dynamic_params():
     print(f"{PASS} TaskType 中文标签正确")
 
     print(f"\n{PASS} 测试 3 全部通过: 动态参数映射正确\n")
-    return True
 
 
 def test_react_prompt_template():
@@ -300,7 +297,6 @@ def test_react_prompt_template():
     print(f"{PASS} parse_action 简单格式正确")
 
     print(f"\n{PASS} 测试 4 全部通过: 精简版 ReActPromptTemplate 正确\n")
-    return True
 
 
 def test_agent_integration_simulation():
@@ -361,7 +357,6 @@ def test_agent_integration_simulation():
     print(f"\n{PASS} T1轻量Prompt ({len(t1_prompt)}字) 显著短于 T5完整Prompt ({len(t5_prompt)}字)")
 
     print(f"\n{PASS} 测试 5 全部通过: agent.py 集成正确\n")
-    return True
 
 
 def run_all_tests():
@@ -372,45 +367,22 @@ def run_all_tests():
 
     results = []
 
-    try:
-        results.append(("SystemPromptManager v3.0", test_system_prompt_manager_v3()))
-    except Exception as e:
-        print(f"\n{FAIL} SystemPromptManager v3.0: {e}")
-        import traceback
-        traceback.print_exc()
-        results.append(("SystemPromptManager v3.0", False))
-
-    try:
-        results.append(("TaskClassifier", test_task_classifier()))
-    except Exception as e:
-        print(f"\n{FAIL} TaskClassifier: {e}")
-        import traceback
-        traceback.print_exc()
-        results.append(("TaskClassifier", False))
-
-    try:
-        results.append(("动态参数映射", test_dynamic_params()))
-    except Exception as e:
-        print(f"\n{FAIL} 动态参数映射: {e}")
-        import traceback
-        traceback.print_exc()
-        results.append(("动态参数映射", False))
-
-    try:
-        results.append(("ReActPromptTemplate", test_react_prompt_template()))
-    except Exception as e:
-        print(f"\n{FAIL} ReActPromptTemplate: {e}")
-        import traceback
-        traceback.print_exc()
-        results.append(("ReActPromptTemplate", False))
-
-    try:
-        results.append(("agent.py 集成", test_agent_integration_simulation()))
-    except Exception as e:
-        print(f"\n{FAIL} agent.py 集成: {e}")
-        import traceback
-        traceback.print_exc()
-        results.append(("agent.py 集成", False))
+    # 测试函数以内部 assert 判定成败：未抛异常即通过（pytest 语义一致）。
+    for name, test_fn in (
+        ("SystemPromptManager v3.0", test_system_prompt_manager_v3),
+        ("TaskClassifier", test_task_classifier),
+        ("动态参数映射", test_dynamic_params),
+        ("ReActPromptTemplate", test_react_prompt_template),
+        ("agent.py 集成", test_agent_integration_simulation),
+    ):
+        try:
+            test_fn()
+            results.append((name, True))
+        except Exception as e:
+            print(f"\n{FAIL} {name}: {e}")
+            import traceback
+            traceback.print_exc()
+            results.append((name, False))
 
     # 汇总结果
     print("\n" + "=" * 60)
