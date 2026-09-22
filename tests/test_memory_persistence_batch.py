@@ -12,6 +12,7 @@ P0-02: 批量写入队列 + 失败重试机制专项测试。
 """
 
 import asyncio
+import contextlib
 import time
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -20,13 +21,35 @@ from agent_core.memory_persistence import MemoryPersistenceFacade
 
 # 模块级初始化数据库
 @pytest.fixture(scope="module", autouse=True)
-def _setup_database():
-    """初始化数据库（供事件幂等测试使用）。"""
-    from app.data.database import init_db, close_db
+def _setup_database(tmp_path_factory):
+    """初始化数据库（供事件幂等测试使用）。
+
+    使用隔离的 sqlite 临时库，而非环境 DATABASE_URL/ASYNC_DATABASE_URL
+    （本地可能指向未启动的 PostgreSQL），也不依赖其他测试残留的全局
+    会话工厂；结束时关闭引擎并重置全局状态，避免把 sqlite 工厂泄漏
+    给后续测试模块（readiness_matrix 等对全局工厂敏感）。
+    """
+    import os
+
+    import app.data.database as db_mod
+    from app.data.database import close_db, init_db
+
+    db_file = tmp_path_factory.mktemp("idem") / "idempotency.db"
+    url = f"sqlite+aiosqlite:///{db_file.as_posix()}"
+
+    saved_env = {k: os.environ.get(k) for k in ("DATABASE_URL", "ASYNC_DATABASE_URL")}
+    os.environ["ASYNC_DATABASE_URL"] = url
+    os.environ.pop("DATABASE_URL", None)
 
     asyncio.run(init_db())
     yield
     asyncio.run(close_db())
+    db_mod.async_session_factory = None
+    for key, value in saved_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 def _drain_queue(facade):
@@ -285,9 +308,14 @@ class TestRetryMechanism:
     async def test_retry_on_failure(self):
         """测试失败时触发重试。"""
         facade = MemoryPersistenceFacade()
-        # 模拟 session_factory 抛出异常，使 _flush_batch 内部捕获异常并调用 _retry_flush
+        # 模拟 session_factory 抛出异常，使 _flush_batch 内部捕获异常并调用 _retry_flush。
+        # 生产代码以 `async with self._session_factory() as db` 消费工厂，
+        # mock 必须返回 async context manager；裸协程会触发
+        # "coroutine was never awaited" RuntimeWarning。
+        @contextlib.asynccontextmanager
         async def mock_session_factory():
             raise Exception("DB connection error")
+            yield  # pragma: no cover - unreachable；使函数成为 async generator
 
         facade._session_factory = mock_session_factory
         facade._retry_flush = AsyncMock()
