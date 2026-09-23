@@ -4,6 +4,8 @@
 
 当前正式课程范围是高等数学上册完整路径（版本 3.0，98 个知识点）：**函数、极限与连续，导数与微分，中值定理与导数应用，不定积分，定积分，定积分的应用**。系统同时保留内容导入、题库审核、智能检测和自主考试等扩展能力，适合继续演进为课程化的数学学习平台。
 
+版本 3.0 的学习资源按两档组织：第 3–6 章的 13 个金标知识点（`importance ≥ 0.92`）提供直觉、定义、公式、基础例题、迁移例题、常见错误、理解检查、分层练习、小结和来源共 10 类资源；同章节其余 39 个知识点提供直觉、定义、公式、典型例题、常见错误、小结和来源共 7 类原创资源。金标知识点另配 65 道分层练习（每点 5 题，`基础/常规/进阶`），非金标知识点目前只有讲解资源、暂无配套题目。
+
 > 当前应用版本：`1.6.0`（由 `app/config/settings.py` 提供）
 
 ## 能力概览
@@ -145,7 +147,7 @@ python -m alembic -c app/data/alembic.ini upgrade head
 python -m uvicorn app.application:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-应用启动时会再次执行幂等的 Alembic `upgrade head`，并在数据库可用时初始化第一阶段高等数学课程目录。需要手动重建本地 SQLite 开发库时，使用带确认保护的脚本：
+应用启动时会再次执行幂等的 Alembic `upgrade head`，并在数据库可用时初始化第一阶段高等数学课程目录；该初始化只补齐缺失或未发布的课程版本，不会把已经发布的 2.0 / 3.0 默认版本降级回 1.0。需要手动重建本地 SQLite 开发库时，使用带确认保护的脚本：
 
 ```powershell
 python scripts/reset_dev_db.py --dry-run
@@ -190,6 +192,10 @@ python scripts/seed_calculus_knowledge.py --include-phase5-draft
 
 # 通过逐章 content gates 发布 3.0 为默认版本（幂等，可重复执行）
 python scripts/seed_calculus_knowledge.py --publish-phase5
+
+# 3.0 内容由 app/services/phase5_content.py（13 个金标点，10 类资源 + 分层练习）
+# 与 app/services/phase5_standard_content.py（39 个标准点，7 类资源）共同定义；
+# 新增或修改正文后重新执行上面的发布命令即可原地刷新资源并重新过门禁。
 
 # 查看题库和 Qdrant 的只读对账结果
 python scripts/operations/recovery.py qdrant-sync
@@ -318,7 +324,7 @@ python -m alembic -c app/data/alembic.ini downgrade -1
 python -m pytest tests -q
 ```
 
-本 README 更新时在 Windows 本地执行的结果是：**1168 passed、5 skipped、8 failed、8 warnings、19 subtests passed**。失败集中在 `test_llm_robustness.py`、`test_question_dedup.py` 和 `test_readiness_matrix.py` 的日志/能力断言，属于全量运行时的既有测试隔离问题（这三个文件单独执行时全部通过），不能视为全量测试通过；提交前请先确认这些失败是否属于当前环境编码或实现回归。
+本 README 更新时在 Windows 本地执行的结果是：**1180 passed、5 skipped、0 failed、19 subtests passed**。此前记录的 8 个失败（`test_llm_robustness.py`、`test_question_dedup.py`、`test_readiness_matrix.py`）在当前代码上已不再复现，全量运行与这三个文件单独运行的结果一致。
 
 ### 前端
 
@@ -328,7 +334,7 @@ npm test
 npm run build
 ```
 
-本次验证结果：**21 个测试文件、76 个测试通过；生产构建通过**。构建仍会提示 Sass legacy API、`authStore` 动态/静态导入和大 chunk（约 1 MB）警告，这些是后续性能与工程清理项，不是构建失败。
+本次验证结果：**29 个测试文件、110 个测试通过；生产构建通过**。构建仍会提示 Sass legacy API、`authStore` 动态/静态导入和大 chunk（约 1 MB）警告，这些是后续性能与工程清理项，不是构建失败。
 
 ### CI
 
@@ -345,10 +351,10 @@ npm run build
 ## 已知边界
 
 - 课程当前覆盖高等数学上册（第 1–6 章，98 知识点）；第 7 章及之后（微分方程、多元微积分等）尚未建设，高中数学不属于当前正式产品范围。
+- 第 3–6 章的非金标知识点只有讲解资源、没有配套练习，学习页会显示「暂无可用练习」；为这些知识点补题时建议沿用 `app/services/phase5_practice.py` 的原创选择题格式。
 - AI、Qdrant、Redis 都可以降级，但降级时对应能力会返回结构化错误或减少推荐能力。
 - `CONTENT_AI_PROVIDER=qwen` 目前是预留 stub；需要真实内容分析时使用 `deepseek` 并配置 `DEEPSEEK_API_KEY`。
 - 前端生产包仍有较大的 vendor chunk，适合后续继续做路由和依赖拆分。
-- 全量后端测试当前存在 8 个失败，发布前应处理或明确豁免原因。
 
 ## 进一步阅读
 

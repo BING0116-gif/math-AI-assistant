@@ -13,7 +13,7 @@ CHAPTER_REF = {
     "lagrange-mvt": "第 4 章 Applications of Derivatives",
     "lhopital-rule": "第 4 章 Applications of Derivatives",
     "function-graph-analysis": "第 4 章 Applications of Derivatives",
-    "antiderivative": "第 4 章 Integration",
+    "antiderivative": "第 5 章 Integration",
     "substitution-first-kind": "第 5 章 Integration",
     "integration-by-parts": "第 5 章 Integration",
     "definite-integral-definition": "第 5 章 Integration",

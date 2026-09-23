@@ -16,7 +16,10 @@ from app.services.knowledge_content import (
     seed_calculus_phase5,
     withdraw_chapter,
 )
+from app.services.calculus_phase5 import POINTS as PHASE5_POINTS
 from app.services.phase5_content import GOLDEN as PHASE5_GOLDEN
+from app.services.phase5_standard_content import DESCRIPTIONS as PHASE5_STANDARD_DESCRIPTIONS
+from app.services.phase5_standard_content import STANDARD as PHASE5_STANDARD
 
 
 @pytest_asyncio.fixture
@@ -132,6 +135,41 @@ async def test_phase5_golden_points_carry_full_resources_and_practice(session_fa
                 assert {option["id"] for option in question.options} == {"A", "B", "C", "D"}
                 link = await session.get(QuestionKnowledgePoint, {"question_id": qid, "knowledge_point_id": point.id})
                 assert link is not None and link.is_primary
+
+
+@pytest.mark.asyncio
+async def test_phase5_standard_points_carry_authored_resources(session_factory):
+    """Every non-golden chapter 3-6 point must ship authored lesson resources."""
+    async with session_factory() as session:
+        course = await seed_calculus_phase5(session)
+        await session.commit()
+        version = await session.scalar(select(KnowledgeGraphVersion).where(
+            KnowledgeGraphVersion.course_id == course.id, KnowledgeGraphVersion.version == "3.0"
+        ))
+        all_codes = {code for code, _, _, _, _, _ in PHASE5_POINTS}
+        standard_codes = sorted(all_codes - set(PHASE5_GOLDEN))
+        assert set(standard_codes) == set(PHASE5_STANDARD)
+        assert len(standard_codes) == 39
+
+        core_types = {"intuition", "definition", "formula", "worked_example", "common_error"}
+        for code in standard_codes:
+            point = await session.scalar(select(KnowledgePoint).where(
+                KnowledgePoint.version_id == version.id, KnowledgePoint.code == code
+            ))
+            assert point is not None and 0 < point.importance < 0.9
+            assert point.description == PHASE5_STANDARD_DESCRIPTIONS[code]
+            resources = list((await session.scalars(select(KnowledgePointResource).where(
+                KnowledgePointResource.knowledge_point_id == point.id,
+                KnowledgePointResource.status == "published",
+            ))).all())
+            types = {resource.resource_type for resource in resources}
+            assert core_types <= types, (code, core_types - types)
+            assert {"summary", "source_reference"} <= types, code
+            for resource in resources:
+                assert resource.body.strip()
+                validation = (resource.metadata_ or {}).get("math_validation") or {}
+                assert validation.get("content_hash") == resource.content_hash
+                assert validation.get("validator_id") != resource.reviewed_by
 
 
 @pytest.mark.asyncio

@@ -15,6 +15,11 @@ from app.data.models import (
 from app.services.derivative_content import DERIVATIVE_POINTS, GOLDEN, resources_for
 from app.services.calculus_phase5 import CHAPTERS as PHASE5_CHAPTERS, POINTS as PHASE5_POINTS
 from app.services.phase5_content import GOLDEN as PHASE5_GOLDEN, GOLDEN_IMPORTANCE, phase5_resources_for
+from app.services.phase5_standard_content import (
+    DESCRIPTIONS as PHASE5_STANDARD_DESCRIPTIONS,
+    STANDARD as PHASE5_STANDARD,
+    phase5_standard_resources_for,
+)
 from app.services.phase5_practice import PRACTICE as PHASE5_PRACTICE
 from app.services.knowledge_seed import seed_phase_one_calculus
 from app.services.outbox import enqueue_outbox
@@ -359,7 +364,10 @@ async def seed_calculus_phase5(session, reviewer_id: str = "phase5-editor") -> C
             )
             session.add(point)
         point.chapter_id = chapters[chapter_code].id
-        point.description = PHASE5_GOLDEN[code]["description"] if code in PHASE5_GOLDEN else f"理解{name}的核心条件，掌握规范计算方法，并能用于典型高等数学问题。"
+        point.description = (
+            PHASE5_GOLDEN[code]["description"] if code in PHASE5_GOLDEN
+            else PHASE5_STANDARD_DESCRIPTIONS.get(code) or f"理解{name}的核心条件，掌握规范计算方法，并能用于典型高等数学问题。"
+        )
         point.aliases = []
         point.learning_objectives = [f"说明{name}的适用条件", f"完成{name}的典型计算或证明"]
         point.common_errors = ["忽略适用条件", "计算后未检查定义域或收敛性"]
@@ -432,6 +440,46 @@ async def seed_calculus_phase5(session, reviewer_id: str = "phase5-editor") -> C
         ))
         if exercise is not None:
             exercise.metadata_ = {**(exercise.metadata_ or {}), "question_ids": question_ids, "levels": ["基础", "常规", "进阶"]}
+
+    # Phase 5 standard lessons: every remaining chapter 3-6 point gets authored
+    # intuition / definition / formula / example / common-error resources, so the
+    # student learning page never falls back to a bare taxonomy description.
+    uncovered = sorted(
+        code for code, _, _, _, _, _ in PHASE5_POINTS
+        if code not in PHASE5_GOLDEN and code not in PHASE5_STANDARD
+    )
+    if uncovered:
+        raise ResourcePublishingError("PHASE5_STANDARD_CONTENT_MISSING:" + ",".join(uncovered))
+    divergent = sorted(set(PHASE5_STANDARD) ^ set(PHASE5_STANDARD_DESCRIPTIONS))
+    if divergent:
+        raise ResourcePublishingError("PHASE5_STANDARD_DESCRIPTION_MISMATCH:" + ",".join(divergent))
+    for code, _, _, _, _, _ in PHASE5_POINTS:
+        if code in PHASE5_GOLDEN:
+            continue
+        point = points[code]
+        for resource_order, (kind, title, body) in enumerate(phase5_standard_resources_for(code), start=1):
+            external_key = f"phase5-standard:{code}:{kind}:{resource_order}"
+            resource = await session.scalar(select(KnowledgePointResource).where(KnowledgePointResource.external_key == external_key))
+            if resource is None:
+                resource = KnowledgePointResource(knowledge_point_id=point.id, external_key=external_key, resource_type=kind, title=title)
+                session.add(resource)
+            resource.body = body
+            resource.sort_order = resource_order
+            resource.source_document_id = golden_source.id
+            resource.source_locator = f"phase5-standard-v1#{code}/{kind}/{resource_order}"
+            resource.metadata_ = {
+                **(resource.metadata_ or {}),
+                "schema_version": 1,
+                "knowledge_point_code": code,
+                "fallback": "text",
+                "authoring": "human",
+            }
+            new_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            if resource.status != "published" or resource.content_hash != new_hash:
+                resource.status = "draft"
+                resource.math_validation_status = "pending"
+                validate_resource_math(resource, "phase5-math-verifier")
+                await review_and_publish_resource(session, resource, reviewer_id)
 
     # Phase 5 stays an internal draft until every chapter passes the content
     # completeness gate via publish_calculus_phase5. Once released, re-seeding
