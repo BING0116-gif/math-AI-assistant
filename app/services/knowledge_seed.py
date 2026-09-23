@@ -154,7 +154,14 @@ async def seed_phase_one_calculus(session: AsyncSession) -> Course:
     elif graph_version.status != "published":
         graph_version.status = "published"
 
-    course.default_version_id = graph_version.id
+    # The startup seed guarantees 1.0 exists and stays published, but must not
+    # demote an already released newer default (2.0 / 3.0 published later via
+    # the chapter gates); only bootstrap or repair a missing/unpublished one.
+    current_default = (
+        await session.execute(select(KnowledgeGraphVersion).where(KnowledgeGraphVersion.id == course.default_version_id))
+    ).scalar_one_or_none() if course.default_version_id else None
+    if current_default is None or current_default.status != "published":
+        course.default_version_id = graph_version.id
     sections_by_code = {}
     for code, name, description, sort_order in SECTIONS:
         section = (await session.execute(select(Chapter).where(Chapter.version_id == graph_version.id, Chapter.code == code))).scalar_one_or_none()

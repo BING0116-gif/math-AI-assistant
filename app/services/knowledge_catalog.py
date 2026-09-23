@@ -87,6 +87,19 @@ async def get_published_learning_content(session: AsyncSession, point_id: str) -
             "published_at": resource.published_at,
         },
     } for resource in resources]
+    prerequisite_codes = list(point.get("prerequisites") or [])
+    if prerequisite_codes:
+        prerequisite_names = dict((await session.execute(
+            select(KnowledgePoint.code, KnowledgePoint.name).where(
+                KnowledgePoint.version_id == point["version"]["id"],
+                KnowledgePoint.code.in_(prerequisite_codes),
+            )
+        )).all())
+    else:
+        prerequisite_names = {}
+    point["prerequisite_points"] = [
+        {"code": code, "name": prerequisite_names.get(code, code)} for code in prerequisite_codes
+    ]
     return point
 
 

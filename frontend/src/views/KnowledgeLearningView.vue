@@ -28,8 +28,8 @@
               <p v-else>准确说明核心概念，并在适用条件下完成相关计算。</p>
             </section>
             <section id="prerequisites" class="foundation-card">
-              <span>02 · 前置检查</span><h2>{{ content.prerequisites?.length ? '开始前，确认这些前置知识' : '可以直接开始' }}</h2>
-              <ul v-if="content.prerequisites?.length"><li v-for="code in content.prerequisites" :key="code">{{ code }}</li></ul>
+              <span>02 · 前置检查</span><h2>{{ prerequisiteLabels.length ? '开始前，确认这些前置知识' : '可以直接开始' }}</h2>
+              <ul v-if="prerequisiteLabels.length"><li v-for="pre in prerequisiteLabels" :key="pre.code">{{ pre.name }}</li></ul>
               <p v-else>本知识点没有必须先完成的前置知识。</p>
             </section>
             <LearningResourceCard v-for="resource in orderedResources" :id="`resource-${resource.id}`" :key="resource.id" :resource="resource" :common-error="commonError" @ask-ai="askAi" @practice="startPractice" />
@@ -56,6 +56,8 @@ const orderedResources=computed(()=>[...(content.value?.resources||[])].sort((a,
 const exerciseResource=computed(()=>orderedResources.value.find(resource=>['exercise','exercise_set'].includes(resource.type)))
 const canPractice=computed(()=>Boolean(content.value&&exerciseResource.value))
 const commonError=computed(()=>orderedResources.value.find(resource=>resource.type==='common_error')?.body||'')
+// 前置检查优先显示后端解析的中文名；旧响应缺少映射时回退为 code。
+const prerequisiteLabels=computed(()=>content.value?.prerequisite_points?.length?content.value.prerequisite_points:(content.value?.prerequisites||[]).map(code=>({code,name:code})))
 async function load(){loading.value=true;error.value='';try{content.value=(await getKnowledgePointLearning(route.params.pointId)).data}catch(err){error.value=err.response?.data?.detail||'学习内容加载失败。'}finally{loading.value=false}}
 function backToMap(){router.push({path:'/knowledge',query:{point:content.value?.id||route.params.pointId,refresh:Date.now()}})}
 function startPractice(){if(canPractice.value)router.push({path:'/apply/practice',query:{knowledge_point:content.value.code,question_count:5,return_to:`/knowledge/points/${content.value.id}/learn`}})}
