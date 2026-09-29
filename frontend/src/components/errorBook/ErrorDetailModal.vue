@@ -2,19 +2,25 @@
   <div class="detail-overlay" @click.self="$emit('close')">
     <div class="detail-container">
       <div class="detail-header">
-        <h2>错题详情</h2>
-        <button class="close-btn" @click="$emit('close')">✕</button>
+        <h2 class="t-2">错题详情</h2>
+        <button class="icon-btn" aria-label="关闭" @click="$emit('close')">
+          <X class="ic-15" :stroke-width="1.75" />
+        </button>
       </div>
 
       <div class="detail-nav">
-        <button class="nav-btn" :disabled="currentIndex <= 0" @click="$emit('prev')">◀ 上一题</button>
-        <span class="nav-counter">{{ currentIndex + 1 }} / {{ total }}</span>
-        <button class="nav-btn" :disabled="currentIndex >= total - 1" @click="$emit('next')">下一题 ▶</button>
+        <button class="btn btn-ghost btn-sm" :disabled="currentIndex <= 0" @click="$emit('prev')">
+          <ChevronLeft class="ic-14" :stroke-width="1.75" />上一题
+        </button>
+        <span class="nav-counter num">{{ currentIndex + 1 }} / {{ total }}</span>
+        <button class="btn btn-ghost btn-sm" :disabled="currentIndex >= total - 1" @click="$emit('next')">
+          下一题<ChevronRight class="ic-14" :stroke-width="1.75" />
+        </button>
       </div>
 
       <div class="detail-body">
         <section class="d-section">
-          <h3>题目</h3>
+          <h3 class="d-label">题目</h3>
           <div class="d-content">
             <template v-if="isImage">
               <img :src="error.question" class="d-image" @click="viewerOpen = true" />
@@ -25,37 +31,63 @@
         </section>
 
         <section v-if="error.error_reason" class="d-section">
-          <h3>错误原因</h3>
+          <h3 class="d-label">错误原因</h3>
           <div class="d-content reason-box">
             <p>{{ error.error_reason }}</p>
           </div>
         </section>
 
         <section class="d-section">
-          <h3>正确解答</h3>
+          <h3 class="d-label">正确解答</h3>
           <div class="d-content answer-box math-area" ref="answerBox" v-html="answerHtml"></div>
         </section>
 
         <section v-if="error.notes" class="d-section">
-          <h3>学习笔记</h3>
+          <h3 class="d-label">学习笔记</h3>
           <div class="d-content notes-box"><p>{{ error.notes }}</p></div>
         </section>
 
         <section v-if="error.categories?.length" class="d-section">
-          <h3>分类标签</h3>
+          <h3 class="d-label">分类标签</h3>
           <div class="tag-row">
-            <span v-for="cat in error.categories" :key="cat" class="tag">{{ cat }}</span>
+            <span v-for="cat in error.categories" :key="cat" class="tag tag-soft-accent">{{ cat }}</span>
+          </div>
+        </section>
+
+        <!-- ═══ AI 错题笔记（折叠区,位于弹窗主体内）═══ -->
+        <section class="d-section">
+          <div class="notes-toggle" role="button" tabindex="0" @click="notesOpen = !notesOpen" @keydown.enter="notesOpen = !notesOpen">
+            <h3 class="d-label">AI 错题笔记</h3>
+            <ChevronDown v-if="notesOpen" class="ic-14" :stroke-width="1.75" />
+            <ChevronRight v-else class="ic-14" :stroke-width="1.75" />
+          </div>
+          <div v-if="notesOpen" class="d-content notes-box">
+            <div class="note-item">
+              <span class="note-label">知识点：</span>
+              <span class="note-value">{{ notesData.knowledgePoints }}</span>
+            </div>
+            <div class="note-item">
+              <span class="note-label">你的错误：</span>
+              <span class="note-value">{{ notesData.myError }}</span>
+            </div>
+            <div class="note-item">
+              <span class="note-label">正确思路：</span>
+              <span class="note-value">{{ notesData.correctApproach }}</span>
+            </div>
+            <div class="note-item">
+              <span class="note-label">以后注意：</span>
+              <span class="note-value">{{ notesData.futureTip }}</span>
+            </div>
           </div>
         </section>
 
         <section class="d-section">
-          <h3>元信息</h3>
+          <h3 class="d-label">元信息</h3>
           <div class="meta-grid">
             <div class="meta-cell"><strong>添加时间：</strong>{{ error.added_at || '-' }}</div>
             <div class="meta-cell">
               <strong>掌握度：</strong>
-              <span class="stars">{{ '★'.repeat(error.mastery_level || 3) }}{{ '☆'.repeat(5 - (error.mastery_level || 3)) }}</span>
-              ({{ error.mastery_level || 3 }}/5)
+              <span class="mastery-meter"><span class="progress"><i :class="masteryBarClass" :style="{ width: masteryPct + '%' }"></i></span><span class="num">{{ error.mastery_level || 3 }}/5</span></span>
             </div>
             <div class="meta-cell" :class="{ mastered: error.is_mastered }">
               <strong>状态：</strong>{{ error.is_mastered ? '已掌握' : '待复习' }}
@@ -65,48 +97,27 @@
       </div>
 
       <div class="detail-footer">
-        <button class="ft-btn primary" @click="$emit('toggleMastery')">✓ {{ error.is_mastered ? '取消掌握' : '标记为已掌握' }}</button>
-        <button class="ft-btn danger" @click="$emit('delete')">删除此错题</button>
+        <button class="ft-btn danger" type="button" @click="$emit('delete')">
+          <Trash2 class="ic-14" :stroke-width="1.75" />删除此错题
+        </button>
+        <button class="btn btn-primary" type="button" @click="$emit('toggleMastery')">
+          <CircleCheck class="ic-15" :stroke-width="1.75" />{{ error.is_mastered ? '取消掌握' : '标记为已掌握' }}
+        </button>
       </div>
     </div>
-
-    <!-- ═══ AI 错题笔记（折叠区）═══ -->
-    <section class="d-section">
-      <div class="notes-toggle" @click="notesOpen = !notesOpen">
-        <h3>AI 错题笔记</h3>
-        <span class="toggle-icon">{{ notesOpen ? '▾' : '▸' }}</span>
-      </div>
-      <div v-if="notesOpen" class="d-content notes-box">
-        <div class="note-item">
-          <span class="note-label">知识点：</span>
-          <span class="note-value">{{ notesData.knowledgePoints }}</span>
-        </div>
-        <div class="note-item">
-          <span class="note-label">你的错误：</span>
-          <span class="note-value">{{ notesData.myError }}</span>
-        </div>
-        <div class="note-item">
-          <span class="note-label">正确思路：</span>
-          <span class="note-value">{{ notesData.correctApproach }}</span>
-        </div>
-        <div class="note-item">
-          <span class="note-label">以后注意：</span>
-          <span class="note-value">{{ notesData.futureTip }}</span>
-        </div>
-      </div>
-    </section>
 
     <Teleport to="body">
       <div v-if="viewerOpen" class="img-viewer" @click="viewerOpen = false">
         <img :src="error.question" class="v-img" @click.stop />
-        <button class="v-close" @click="viewerOpen = false">✕</button>
+        <button class="v-close" aria-label="关闭预览" @click="viewerOpen = false">✕</button>
       </div>
     </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed } from 'vue'
+import { ChevronDown, ChevronLeft, ChevronRight, CircleCheck, Trash2, X } from 'lucide-vue-next'
 import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps({
@@ -133,6 +144,18 @@ const displayQuestion = computed(() =>
 const answerHtml = computed(() =>
   renderMarkdown(props.error?.correct_answer || '')
 )
+
+const masteryPct = computed(() =>
+  Math.round(((props.error?.mastery_level || 3) / 5) * 100)
+)
+
+const masteryBarClass = computed(() => {
+  const level = props.error?.mastery_level || 3
+  if (props.error?.is_mastered || level >= 5) return 'green'
+  if (level >= 4) return ''
+  if (level >= 3) return 'amber'
+  return 'rose'
+})
 
 /**
  * AI 错题笔记数据
@@ -178,160 +201,275 @@ function computeFutureTip(errorReason, categories) {
   }
   return '建议针对本知识点多做同类练习，巩固解题思路'
 }
-
-onMounted(() => {
-  // 公式已由 markdown.js 中的 @mdit/plugin-katex 在渲染阶段完成
-})
 </script>
 
-<style lang="scss" scoped>
-@use '@/styles/variables' as *;
-
+<style scoped>
+/* BaseDialog 规范(§6.3):radius 20 / shadow-3 / 遮罩 rgba(9,11,15,.5) */
 .detail-overlay {
-  position: fixed; inset: 0; background: var(--bg-overlay); z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px); animation: fadeIn 0.3s;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 11, 15, 0.5);
+  animation: fadeIn 0.2s;
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .detail-container {
-  background: var(--bg-card);
-  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
   width: min(92vw, 880px);
   height: min(90vh, 750px);
-  display: flex; flex-direction: column;
-  box-shadow: var(--shadow-lg);
-  animation: modalIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: modalIn 0.32s var(--ease-pop);
 }
 
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.95) translateY(24px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: scale(0.96) translateY(16px); }
+  to { opacity: 1; transform: none; }
 }
 
 .detail-header {
-  padding: 18px 24px; border-bottom: 1px solid var(--border-light);
-  display: flex; justify-content: space-between; align-items: center;
-  background: var(--bg-card); border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  h2 { font-size: 18px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 0;
 }
-
-.close-btn {
-  background: none; border: none; font-size: 22px; color: var(--text-tertiary);
-  cursor: pointer; padding: 4px 10px; border-radius: var(--radius-sm);
-  &:hover { background: var(--primary-ghost); color: var(--text-primary); }
+.detail-header h2 {
+  margin: 0;
 }
 
 .detail-nav {
-  padding: 10px 24px; display: flex; justify-content: space-between; align-items: center;
-  background: var(--bg-card); border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
 }
-
-.nav-btn {
-  padding: 8px 18px; border: 1px solid var(--border-default); border-radius: $radius-full;
-  background: var(--bg-card); font-size: 13px; cursor: pointer; color: var(--text-secondary);
-  font-family: inherit; display: flex; align-items: center; gap: 6px; transition: all var(--transition-fast);
-  &:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
-  &:disabled { opacity: 0.4; cursor: not-allowed; }
+.nav-counter {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
 }
-
-.nav-counter { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+.detail-nav .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 .detail-body {
-  flex: 1; overflow-y: auto; padding: 20px 24px;
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
 }
 
-.d-section { margin-bottom: 20px;
-  h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary); display: flex; align-items: center; gap: 6px; }
+.d-section {
+  margin-bottom: 18px;
+}
+.d-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-1);
+  letter-spacing: 0.01em;
 }
 
 .d-content {
-  padding: 14px 18px; background: var(--bg-card); border: 1px solid var(--border-light);
-  border-radius: var(--radius-md); line-height: 1.8;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  line-height: 1.8;
 }
 
-.d-text { font-size: 14px; color: var(--text-primary); }
+.d-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-1);
+  overflow-wrap: anywhere;
+}
 .d-image {
-  max-width: 100%; max-height: 300px; border-radius: var(--radius-sm);
-  cursor: zoom-in; border: 1px solid var(--border-default);
+  max-width: 100%;
+  max-height: 300px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: zoom-in;
 }
 
-.recognized { margin-top: 10px; font-size: 13px; color: var(--text-tertiary); font-style: italic; }
+.recognized {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-style: italic;
+}
 
-.reason-box { background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.15); }
-.answer-box { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); }
-.notes-box { background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.15); }
+/* 语义色内容盒:错因 rose / 解答 green / 笔记 amber(浅底 + 深字) */
+.reason-box {
+  background: var(--rose-soft);
+  border-color: transparent;
+}
+.reason-box p {
+  margin: 0;
+  color: var(--ink-1);
+}
+.answer-box {
+  background: var(--green-soft);
+  border-color: transparent;
+}
+.notes-box {
+  background: var(--amber-soft);
+  border-color: transparent;
+}
 
 .math-area :deep(.katex) { font-size: 1.05em !important; }
 .math-area :deep(.katex-display) { margin: 12px 0 !important; }
 
 .notes-toggle {
-  display: flex; align-items: center; justify-content: space-between;
-  cursor: pointer; padding: 4px 0; user-select: none;
-  h3 { margin: 0; }
-  &:hover { opacity: 0.8; }
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+  color: var(--ink-3);
+  border-radius: 8px;
 }
-.toggle-icon { font-size: 14px; color: var(--text-tertiary); }
+.notes-toggle:hover .d-label {
+  color: var(--brand-text);
+}
+.notes-toggle .d-label {
+  margin: 0;
+}
 
 .note-item {
-  display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px;
-  &:last-child { margin-bottom: 0; }
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.note-item:last-child {
+  margin-bottom: 0;
 }
 .note-label {
-  font-size: 12px; font-weight: 700; color: var(--text-secondary);
-  flex-shrink: 0; min-width: 72px;
+  flex-shrink: 0;
+  min-width: 72px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
 }
 .note-value {
-  font-size: 13px; color: var(--text-primary); line-height: 1.5;
+  font-size: 13px;
+  color: var(--ink-1);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
-.tag-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.tag {
-  padding: 4px 14px; background: var(--primary-ghost);
-  border-radius: $radius-full; font-size: 12px; color: var(--primary); font-weight: 500;
+.tag-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
 .meta-cell {
-  padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border-light);
-  border-radius: var(--radius-md); font-size: 13px; color: var(--text-secondary);
-  &.mastered { background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); }
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--ink-2);
 }
-.stars { color: var(--accent); letter-spacing: 1px; }
+.meta-cell strong {
+  color: var(--ink-1);
+  font-weight: 600;
+}
+.meta-cell.mastered {
+  background: var(--green-soft);
+  border-color: transparent;
+}
+.mastery-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+.mastery-meter .progress {
+  flex: 1;
+  min-width: 64px;
+}
+.mastery-meter .num {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-1);
+}
 
 .detail-footer {
-  padding: 14px 24px; border-top: 1px solid var(--border-light);
-  display: flex; justify-content: flex-end; gap: 12px;
-  background: var(--bg-card); border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
 }
 
 .ft-btn {
-  padding: 9px 22px; border-radius: $radius-full; font-size: 13px;
-  border: 1px solid var(--border-default); background: var(--bg-card); cursor: pointer;
-  font-family: inherit; font-weight: 500; transition: all var(--transition-fast);
-  color: var(--text-secondary);
-  &.primary {
-    background: var(--primary); border-color: var(--primary); color: white;
-    &:hover { background: var(--primary-hover); }
-  }
-  &.danger { color: var(--danger);
-    &:hover { background: rgba(239, 68, 68, 0.08); border-color: var(--danger); }
-  }
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  color: var(--rose);
+}
+.ft-btn:hover {
+  background: var(--rose-soft);
 }
 
 .img-viewer {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 99999;
-  display: flex; align-items: center; justify-content: center;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(9, 11, 15, 0.72);
 }
-.v-img { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: var(--radius-md); }
+.v-img {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: 12px;
+}
 .v-close {
-  position: absolute; top: 20px; right: 20px;
-  width: 44px; height: 44px; border: none; border-radius: 50%;
-  background: rgba(255,255,255,0.12); color: white;
-  font-size: 24px; cursor: pointer;
-  &:hover { background: rgba(255,255,255,0.22); }
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+}
+.v-close:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 </style>
