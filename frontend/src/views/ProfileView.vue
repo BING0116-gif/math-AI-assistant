@@ -1,167 +1,199 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import type { EChartsOption } from 'echarts'
+import { currentChartTheme, graphic, init, type ECharts } from '@/utils/charts'
 import AppShell from '@/components/shell/AppShell.vue'
-import { getLearningProfile } from '@/api/learning'
+import { getLearningDashboard, getLearningProfile } from '@/api/learning'
 import { getProfileWhy } from '@/api/profileEvidence'
 import { useRouter } from 'vue-router'
+import { apiErrorMessage } from '@/utils/apiError'
+import { formatStableDateTime } from '@/utils/dateTime'
+import { useProfileMetrics } from '@/composables/useProfileMetrics'
+import { chartAnimation, chartVar, useChartTheme } from '@/composables/useChartTheme'
+import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
+import { useAuthStore } from '@/stores/authStore'
+import { ArrowUpRight, LayoutDashboard, Sparkles, TrendingDown, Zap } from 'lucide-vue-next'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const loading = ref(true)
+const profileError = ref('')
 const canonicalProfile = ref<any>(null)
 const canonicalReviews = ref<any[]>([])
+const weekDashboard = ref<any>(null)
 const evidenceByDimension = ref<Record<string, any>>({})
 const evidenceLoading = ref<Record<string, boolean>>({})
 const evidenceErrors = ref<Record<string, string>>({})
 
+const bodyEl = ref<HTMLElement | null>(null)
 const curveChartEl = ref<HTMLElement | null>(null)
-const donutChartEl = ref<HTMLElement | null>(null)
 const barChartEl = ref<HTMLElement | null>(null)
-let curveChart: echarts.ECharts | null = null
-let donutChart: echarts.ECharts | null = null
-let barChart: echarts.ECharts | null = null
+let curveChart: ECharts | null = null
+let barChart: ECharts | null = null
 
 let resizeHandler: (() => void) | null = null
 
-// ── Date range ──
-const today = new Date()
-const weekAgo = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000)
-const formatDate = (d: Date) => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-const dateRange = computed(() => `${formatDate(weekAgo)} – ${formatDate(today)}`)
+const {
+  dateRange,
+  masteryDistribution,
+  memoryStabilityScore,
+  stabilityLevel,
+  strengthLabel,
+  longTermRetention,
+  reviewPlan,
+  reviewPlanCount,
+  reviewEstimateMinutes,
+  knowledgeMasteryTop10,
+  aiInsights,
+} = useProfileMetrics(canonicalProfile, canonicalReviews)
 
-// ── Helpers ──
-function getCSSVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+const { bindChart, refreshAll, disposeAll } = useChartTheme()
+
+/* 开屏动效:异步数据页内容渲染后手动重放;数字滚动由 v-count-up 承担 */
+const playEntrance = useEntranceAnimation(() => bodyEl.value ?? undefined, { skipCountUp: true, autoplay: false })
+
+const displayName = computed(() => (authStore.username || '').trim() || '同学')
+const avatarChar = computed(() => displayName.value.charAt(0).toUpperCase())
+
+const insightIcons = [Zap, TrendingDown, Sparkles]
+
+// ── 能力雷达(五轴全部来自真实画像聚合:掌握/记忆/迁移/正确率/复习保持)──
+
+const RADAR_CX = 140
+const RADAR_CY = 112
+const RADAR_R = 62
+
+function radarPoint(index: number, total: number, frac: number) {
+  const angle = ((-90 + (360 / total) * index) * Math.PI) / 180
+  return {
+    x: RADAR_CX + Math.cos(angle) * RADAR_R * frac,
+    y: RADAR_CY + Math.sin(angle) * RADAR_R * frac,
+  }
 }
 
-// ── Data computation from real sources ──
+function pointsToString(points: Array<{ x: number; y: number }>): string {
+  return points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+}
 
-// Collect all knowledge categories from error book
-const allCategories = computed(() => {
-  return (canonicalProfile.value?.dimensions?.mastery || []).map((item: any) => item.code)
-})
+const knowledgeTotal = computed(() => canonicalProfile.value?.dimensions?.mastery?.length ?? 0)
 
-// Mastery distribution: group errors by mastery level
-const masteryDistribution = computed(() => {
-  const dist = { mastered: 0, learning: 0, weak: 0, fragile: 0 }
-  const canonical = canonicalProfile.value?.dimensions?.mastery || []
-  if (canonical.length) {
-    canonical.forEach((item: any) => {
-      if (item.value >= .8) dist.mastered++
-      else if (item.value >= .6) dist.learning++
-      else if (item.value >= .35) dist.weak++
-      else dist.fragile++
-    })
-    return dist
-  }
-  return dist
-})
-
-// Memory stability score (0-100)
-const memoryStabilityScore = computed(() => {
-  const values = canonicalProfile.value?.dimensions?.memory_strength || []
-  if (values.length) return Math.round(values.reduce((sum: number, item: any) => sum + item.value, 0) / values.length * 100)
-  return 0
-})
-
-const stabilityLevel = computed(() => {
-  const s = memoryStabilityScore.value
-  if (s >= 80) return '良好'
-  if (s >= 60) return '中等'
-  if (s >= 40) return '较弱'
-  return '需要加强'
-})
-
-const stabilityLevelColor = computed(() => {
-  const s = memoryStabilityScore.value
-  if (s >= 80) return 'var(--mastered)'
-  if (s >= 60) return 'var(--accent)'
-  if (s >= 40) return 'var(--learning)'
-  return 'var(--weak)'
-})
-
-// Fragile knowledge points (mastery_level <= 2)
-const fragilePoints = computed(() => {
-  return (canonicalProfile.value?.dimensions?.mastery || []).filter((item: any) => item.value < .35).map((item: any) => ({ name: item.code, count: 1 }))
-})
-
-// Fragile count change (compared to estimated last week)
-const fragileDelta = computed(() => {
-  const current = fragilePoints.value.length
-  // Simple heuristic: if we have data, estimate delta
-  return current > 0 ? current : 0
-})
-
-// Long-term memory retention rate
-const longTermRetention = computed(() => {
-  const observations = canonicalProfile.value?.forgetting_curve?.observations || []
-  return observations.length ? Math.round(observations.filter((item: any) => item.retained).length / observations.length * 100) : 0
-})
-
-// Mastered rate
-const masteredRate = computed(() => {
-  const values = canonicalProfile.value?.dimensions?.mastery || []
-  return values.length ? Math.round(values.filter((item: any) => item.value >= .8).length / values.length * 100) : 0
-})
-
-// Retention trend
-const retentionTrend = computed(() => {
-  return 0
-})
-
-// Review plan
-const reviewPlan = computed(() => {
-  return canonicalReviews.value.map((item: any) => ({
-    title: item.knowledge_point_name,
-    time: new Date(item.due_at).toLocaleString(),
-    category: '间隔复习', count: 1, interval: `${item.interval_days} 天间隔`,
-  }))
-})
-
-const reviewPlanCount = computed(() => reviewPlan.value.length)
-const reviewEstimateMinutes = computed(() => reviewPlan.value.length * 12)
-
-// Forgetting curve data (simulated based on real data)
-const forgettingCurveData = computed(() => {
-  const observations = canonicalProfile.value?.forgetting_curve?.observations || []
-  return { days: observations.map((item: any) => `${item.interval_days}天`), referenceCurve: [], userCurve: observations.map((item: any) => item.retained ? 100 : 0) }
-})
-
-// Memory strength distribution data
-const memoryStrengthData = computed(() => {
+const radarAxes = computed(() => {
+  const dims = canonicalProfile.value?.dimensions ?? {}
+  const avgPct = (items: any[]) =>
+    items.length
+      ? Math.round((items.reduce((sum: number, item: any) => sum + (item.value || 0), 0) / items.length) * 100)
+      : 0
+  const accuracyInsight = (canonicalProfile.value?.insights ?? []).find(
+    (item: any) => item.evidence?.metric === 'accuracy',
+  )
+  const accuracy = accuracyInsight
+    ? Number(accuracyInsight.evidence.value)
+    : (weekDashboard.value?.metrics?.accuracy?.value ?? 0)
   return [
-    { name: '已掌握', value: masteryDistribution.value.mastered },
-    { name: '学习中', value: masteryDistribution.value.learning },
-    { name: '薄弱', value: masteryDistribution.value.weak },
-    { name: '脆弱', value: masteryDistribution.value.fragile },
+    { label: '知识掌握', value: avgPct(dims.mastery ?? []) },
+    { label: '记忆强度', value: memoryStabilityScore.value },
+    { label: '迁移应用', value: avgPct(dims.transfer ?? []) },
+    { label: '近期正确率', value: accuracy },
+    { label: '复习保持', value: longTermRetention.value },
   ]
 })
 
-const strengthOverall = computed(() => {
-  return Math.round(memoryStabilityScore.value)
+const radar = computed(() => {
+  const axes = radarAxes.value
+  const total = axes.length
+  const rings = [0.25, 0.5, 0.75, 1].map((frac) =>
+    pointsToString(axes.map((_, i) => radarPoint(i, total, frac))))
+  const spokes = axes.map((_, i) => {
+    const p = radarPoint(i, total, 1)
+    return { x1: RADAR_CX, y1: RADAR_CY, x2: p.x, y2: p.y }
+  })
+  const vertices = axes.map((axis, i) => radarPoint(i, total, Math.max(0.04, axis.value / 100)))
+  const labels = axes.map((axis, i) => {
+    const rad = ((-90 + (360 / total) * i) * Math.PI) / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+    const p = radarPoint(i, total, 1.24)
+    return {
+      text: axis.label,
+      x: p.x + (cos > 0.35 ? 6 : cos < -0.35 ? -6 : 0),
+      y: p.y + (sin > 0.35 ? 13 : sin < -0.35 ? -4 : 4),
+      anchor: (cos > 0.35 ? 'start' : cos < -0.35 ? 'end' : 'middle') as 'start' | 'middle' | 'end',
+    }
+  })
+  const values = axes.map((axis, i) => {
+    const p = radarPoint(i, total, Math.min(1.16, Math.max(0.2, axis.value / 100 + 0.14)))
+    return { x: p.x, y: p.y + 3, text: axis.value }
+  })
+  return { rings, spokes, vertices, labels, values, polygon: pointsToString(vertices) }
 })
 
-const strengthLabel = computed(() => {
-  const s = strengthOverall.value
-  if (s >= 75) return '良好'
-  if (s >= 50) return '中等'
-  return '需加强'
+/* ── 本周学习节奏(近 7 天真实学习投入,来自 learning dashboard trend)── */
+
+const weekRhythm = computed(() => {
+  const trend = weekDashboard.value?.trend ?? []
+  const labels = ['日', '一', '二', '三', '四', '五', '六']
+  const items = trend.map((row: any) => {
+    const day = new Date(row.date)
+    return {
+      key: String(row.date),
+      label: labels[day.getDay()] ?? '',
+      minutes: Math.round((row.active_seconds || 0) / 60),
+    }
+  })
+  const max = Math.max(0, ...items.map((item) => item.minutes))
+  return items.map((item) => ({
+    ...item,
+    hot: item.minutes > 0 && item.minutes === max,
+    height: item.minutes > 0 ? Math.max(6, Math.round((item.minutes / max) * 90)) : 4,
+  }))
 })
 
-// Knowledge point mastery TOP10
-const knowledgeMasteryTop10 = computed(() => {
-  const canonical = canonicalProfile.value?.dimensions?.mastery || []
-  return canonical.slice().sort((a: any, b: any) => b.value - a.value).slice(0, 10).map((item: any) => ({ category: item.code, rate: Math.round(item.value * 100), evidenceCount: item.evidence_count ?? 0 }))
+const weekPeak = computed(() => {
+  let best: { label: string; minutes: number } | null = null
+  for (const item of weekRhythm.value) {
+    if (!best || item.minutes > best.minutes) best = { label: item.label, minutes: item.minutes }
+  }
+  return best && best.minutes > 0 ? best : null
 })
 
-// AI insights
-const aiInsights = computed(() => {
-  return (canonicalProfile.value?.insights || []).map((item: any) => ({ label: item.title, value: item.conclusion, evidence: item.evidence, action: item.action }))
+const weekTotalMinutes = computed(() => weekRhythm.value.reduce((sum, item) => sum + item.minutes, 0))
+
+const headCaption = computed(() => {
+  const parts = [canonicalProfile.value?.status_message || '画像来自真实作答证据']
+  if (knowledgeTotal.value) parts.push(`已纳入 ${knowledgeTotal.value} 个知识点`)
+  const activeSeconds = weekDashboard.value?.metrics?.active_seconds?.value
+  if (activeSeconds != null) {
+    parts.push(`近 7 天学习 ${(Math.round((activeSeconds / 3600) * 10) / 10).toFixed(1)} 小时`)
+  }
+  return parts.join(' · ')
+})
+
+/* 掌握分布堆叠条(四档语义色:已掌握/学习中/薄弱/脆弱) */
+const distribution = computed(() => {
+  const d = masteryDistribution.value
+  const total = d.mastered + d.learning + d.weak + d.fragile
+  if (!total) return null
+  const pct = (n: number) => (n / total) * 100
+  const p1 = pct(d.mastered)
+  const p2 = p1 + pct(d.learning)
+  const p3 = p2 + pct(d.weak)
+  const fmt = (v: number) => v.toFixed(2)
+  return {
+    total,
+    mastered: d.mastered,
+    gradient: `linear-gradient(90deg, var(--green) 0 ${fmt(p1)}%, var(--amber) ${fmt(p1)}% ${fmt(p2)}%, var(--rose) ${fmt(p2)}% ${fmt(p3)}%, var(--ink-3) ${fmt(p3)}% 100%)`,
+    legend: [
+      { label: '已掌握', count: d.mastered, color: 'var(--green)' },
+      { label: '学习中', count: d.learning, color: 'var(--amber)' },
+      { label: '薄弱', count: d.weak, color: 'var(--rose)' },
+      { label: '脆弱', count: d.fragile, color: 'var(--ink-3)' },
+    ],
+  }
 })
 
 function formatEvidenceTime(value: string) {
-  return value ? new Date(value).toLocaleString() : '时间未知'
+  return formatStableDateTime(value)
 }
 
 async function loadDimensionEvidence(dimension: string, force = false) {
@@ -185,337 +217,171 @@ function handleEvidenceToggle(event: Event, dimension: string) {
   if ((event.currentTarget as HTMLDetailsElement).open) loadDimensionEvidence(dimension)
 }
 
-// ── Chart initialization ──
+// ── 图表(§7.2:chartVar 实时取色 + useChartTheme 主题重绘,替代旧一次性取色快照与旧墨绿 fallback)──
 
-function initCurveChart() {
-  if (!curveChartEl.value) return
-
-  const surface = getCSSVar('--surface') || '#FCFBF8'
-  const borderSubtle = getCSSVar('--border-subtle') || '#E6E3DA'
-  const textPrimary = getCSSVar('--text-primary') || '#20231F'
-  const textSecondary = getCSSVar('--text-secondary') || '#72766F'
-  const textTertiary = getCSSVar('--text-tertiary') || '#9A9D96'
-  const accent = getCSSVar('--accent') || '#416B56'
-  const danger = getCSSVar('--danger') || '#C9674C'
-  const warning = getCSSVar('--warning') || '#C8913D'
-
-  curveChart = echarts.init(curveChartEl.value)
-
-  const data = forgettingCurveData.value
-
-  curveChart.setOption({
-    grid: {
-      left: 40,
-      right: 20,
-      top: 30,
-      bottom: 30,
-      containLabel: true,
-    },
+function buildCurveOption(): EChartsOption {
+  const observations = canonicalProfile.value?.forgetting_curve?.observations ?? []
+  const data = observations.map((item: any) => (item.retained ? 100 : 0))
+  const days = observations.map((item: any) => `${item.interval_days}天`)
+  return {
+    grid: { left: 8, right: 16, top: 18, bottom: 0, containLabel: true },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: surface,
-      borderColor: borderSubtle,
-      borderWidth: 1,
-      padding: [8, 12],
-      textStyle: { color: textPrimary, fontSize: 12 },
-      extraCssText: 'box-shadow: 0 2px 8px rgba(32,35,31,0.06); border-radius: 8px;',
       formatter: (params: any) => {
-        const day = params[0].axisValue
-        const userVal = params.find((p: any) => p.seriesName === '你的保持率')
-        const refVal = params.find((p: any) => p.seriesName === '参考曲线')
-        return `<div style="font-size:12px;color:${textSecondary}">${day}</div>
-                ${userVal ? `<div style="color:${accent}">你的保持率 ${userVal.value}%</div>` : ''}
-                ${refVal ? `<div style="color:${textTertiary}">参考 ${refVal.value}%</div>` : ''}`
+        const point = (params as any[])[0]
+        if (!point) return ''
+        return `<div class="caption">${point.axisValue}</div><div style="margin-top:2px">${point.value === 100 ? '复习后保持' : '未保持'}</div>`
       },
-    },
-    legend: {
-      data: ['你的保持率', '参考曲线'],
-      top: 0,
-      right: 0,
-      textStyle: { color: textTertiary, fontSize: 11 },
-      itemWidth: 16,
-      itemHeight: 3,
-      itemGap: 16,
     },
     xAxis: {
       type: 'category',
-      data: data.days,
-      axisLine: { lineStyle: { color: borderSubtle } },
-      axisLabel: { color: textTertiary, fontSize: 11 },
+      data: days,
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: chartVar('--border-strong') } },
       axisTick: { show: false },
+      axisLabel: { color: chartVar('--ink-3'), fontSize: 11 },
     },
     yAxis: {
       type: 'value',
       min: 0,
       max: 100,
-      splitLine: { lineStyle: { color: borderSubtle, type: 'dashed' } },
-      axisLabel: { color: textTertiary, fontSize: 11, formatter: '{value}%' },
+      axisLabel: { color: chartVar('--ink-3'), fontSize: 11, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: chartVar('--border'), type: 'dashed' } },
     },
     series: [
       {
-        name: '你的保持率',
+        name: '保持率',
         type: 'line',
-        smooth: true,
+        step: 'middle',
         symbol: 'circle',
-        symbolSize: 6,
-        data: data.userCurve,
-        lineStyle: { color: accent, width: 2.5 },
-        itemStyle: { color: accent, borderColor: surface, borderWidth: 2 },
+        symbolSize: 7,
+        data,
+        lineStyle: { color: chartVar('--brand'), width: 2 },
+        itemStyle: {
+          color: (params: any) => (params.value === 100 ? chartVar('--brand') : chartVar('--rose')),
+          borderColor: chartVar('--surface'),
+          borderWidth: 1.5,
+        },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(65, 107, 86, 0.15)' },
-            { offset: 1, color: 'rgba(65, 107, 86, 0.01)' },
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: chartVar('--brand-soft-2') },
+            { offset: 1, color: 'transparent' },
           ]),
         },
-      },
-      {
-        name: '参考曲线',
-        type: 'line',
-        smooth: true,
-        symbol: 'none',
-        data: data.referenceCurve,
-        lineStyle: { color: textTertiary, width: 1.5, type: 'dashed' },
+        ...chartAnimation,
       },
     ],
-  })
+  }
 }
 
-function initDonutChart() {
-  if (!donutChartEl.value) return
-
-  const surface = getCSSVar('--surface') || '#FCFBF8'
-  const textPrimary = getCSSVar('--text-primary') || '#20231F'
-  const textSecondary = getCSSVar('--text-secondary') || '#72766F'
-  const textTertiary = getCSSVar('--text-tertiary') || '#9A9D96'
-  const mastered = getCSSVar('--mastered') || '#5F947C'
-  const accent = getCSSVar('--accent') || '#416B56'
-  const learning = getCSSVar('--learning') || '#C8913D'
-  const weak = getCSSVar('--weak') || '#C9674C'
-
-  donutChart = echarts.init(donutChartEl.value)
-
-  const data = memoryStrengthData.value
-  const colors = [mastered, accent, learning, weak]
-
-  donutChart.setOption({
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: surface,
-      borderColor: getCSSVar('--border-subtle') || '#E6E3DA',
-      borderWidth: 1,
-      padding: [8, 12],
-      textStyle: { color: textPrimary, fontSize: 12 },
-      extraCssText: 'box-shadow: 0 2px 8px rgba(32,35,31,0.06); border-radius: 8px;',
-      formatter: (params: any) => {
-        return `<div style="font-size:12px;color:${textSecondary}">${params.name}</div>
-                <div style="font-weight:600;color:${params.color}">${params.value} (${params.percent}%)</div>`
-      },
-    },
-    legend: {
-      bottom: 0,
-      left: 'center',
-      textStyle: { color: textTertiary, fontSize: 11 },
-      itemWidth: 8,
-      itemHeight: 8,
-      itemGap: 12,
-    },
-    series: [
-      {
-        name: '记忆强度',
-        type: 'pie',
-        radius: ['55%', '78%'],
-        center: ['50%', '45%'],
-        avoidLabelOverlap: false,
-        label: {
-          show: true,
-          position: 'center',
-          formatter: () => {
-            return `{value|${strengthOverall.value}}%\n{label|${strengthLabel.value}}`
-          },
-          rich: {
-            value: {
-              fontSize: 28,
-              fontWeight: 700,
-              color: textPrimary,
-              lineHeight: 36,
-            },
-            label: {
-              fontSize: 13,
-              color: textSecondary,
-              lineHeight: 20,
-            },
-          },
-        },
-        emphasis: {
-          label: { show: false },
-          itemStyle: {
-            shadowBlur: 6,
-            shadowColor: 'rgba(32, 35, 31, 0.12)',
-          },
-        },
-        labelLine: { show: false },
-        data: data.map((d, i) => ({
-          ...d,
-          itemStyle: { color: colors[i] },
-        })),
-      },
-    ],
-  })
-}
-
-function initBarChart() {
-  if (!barChartEl.value) return
-
-  const borderSubtle = getCSSVar('--border-subtle') || '#E6E3DA'
-  const textPrimary = getCSSVar('--text-primary') || '#20231F'
-  const textTertiary = getCSSVar('--text-tertiary') || '#9A9D96'
-  const accent = getCSSVar('--accent') || '#416B56'
-  const mastered = getCSSVar('--mastered') || '#5F947C'
-  const weak = getCSSVar('--weak') || '#C9674C'
-
-  barChart = echarts.init(barChartEl.value)
-
+function buildBarOption(): EChartsOption {
   const data = knowledgeMasteryTop10.value
-
-  barChart.setOption({
-    grid: {
-      left: 10,
-      right: 40,
-      top: 5,
-      bottom: 5,
-      containLabel: true,
-    },
+  return {
+    grid: { left: 8, right: 44, top: 4, bottom: 4, containLabel: true },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'none' },
-      backgroundColor: getCSSVar('--surface') || '#FCFBF8',
-      borderColor: borderSubtle,
-      borderWidth: 1,
-      padding: [8, 12],
-      textStyle: { color: textPrimary, fontSize: 12 },
-      extraCssText: 'box-shadow: 0 2px 8px rgba(32,35,31,0.06); border-radius: 8px;',
       formatter: (params: any) => {
-        const p = params[0]
-        return `<div style="font-size:12px;color:${textTertiary}">${p.name}</div>
-                <div style="font-weight:600;color:${p.color}">掌握度 ${p.value}%</div>`
+        const point = (params as any[])[0]
+        const evidence = data.find((item) => item.category === point.name)?.evidenceCount ?? 0
+        return `<div class="caption">${point.name}</div><div style="margin-top:2px">掌握度 <b class="num">${point.value}%</b> · 证据 ${evidence} 次</div>`
       },
     },
-    xAxis: {
-      type: 'value',
-      show: false,
-      max: 100,
-    },
+    xAxis: { type: 'value', show: false, max: 100 },
     yAxis: {
       type: 'category',
-      data: data.map(d => d.category).reverse(),
+      data: data.map((item) => item.category).reverse(),
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: {
-        color: getCSSVar('--text-secondary') || '#72766F',
-        fontSize: 12,
-        width: 120,
-        overflow: 'truncate',
-      },
-      inverse: false,
+      axisLabel: { color: chartVar('--ink-2'), fontSize: 12, width: 120, overflow: 'truncate' },
     },
     series: [
       {
+        name: '掌握度',
         type: 'bar',
-        data: data.map(d => d.rate).reverse(),
+        data: data.map((item) => item.rate).reverse(),
         barWidth: 10,
         itemStyle: {
+          borderRadius: [0, 4, 4, 0],
           color: (params: any) => {
             const rate = params.value
-            if (rate >= 70) return mastered
-            if (rate >= 45) return accent
-            return weak
+            if (rate >= 70) return chartVar('--green')
+            if (rate >= 45) return chartVar('--amber')
+            return chartVar('--rose')
           },
-          borderRadius: [0, 3, 3, 0],
         },
         label: {
           show: true,
           position: 'right',
           formatter: '{c}%',
-          color: textTertiary,
+          color: chartVar('--ink-3'),
           fontSize: 11,
         },
+        ...chartAnimation,
       },
     ],
-  })
+  }
 }
 
 function handleResize() {
   curveChart?.resize()
-  donutChart?.resize()
   barChart?.resize()
 }
 
-// ── Load profile data from API ──
-async function loadProfileData() {
-  const { data } = await getLearningProfile()
-  canonicalProfile.value = data
-  canonicalReviews.value = data.review_plan || []
+function destroyCharts() {
+  disposeAll()
+  curveChart = null
+  barChart = null
 }
 
-onMounted(async () => {
+/* loading 门控会卸载图表容器,数据到位后重建实例并交给 useChartTheme 管理主题重绘 */
+async function renderCharts() {
+  await nextTick()
+  if (!curveChart && curveChartEl.value) {
+    curveChart = init(curveChartEl.value, currentChartTheme())
+    bindChart(curveChart, buildCurveOption)
+  }
+  if (!barChart && barChartEl.value) {
+    barChart = init(barChartEl.value, currentChartTheme())
+    bindChart(barChart, buildBarOption)
+  }
+  refreshAll()
+}
+
+async function loadProfileData() {
+  loading.value = true
+  profileError.value = ''
+  destroyCharts()
   try {
-    await loadProfileData()
-
-    await nextTick()
-    initCurveChart()
-    initDonutChart()
-    initBarChart()
-
-    resizeHandler = () => handleResize()
-    window.addEventListener('resize', resizeHandler!)
+    const { data } = await getLearningProfile()
+    canonicalProfile.value = data
+    canonicalReviews.value = data.review_plan || []
+  } catch (error: any) {
+    profileError.value = apiErrorMessage(error, '画像加载失败，请稍后重试')
   } finally {
-    // Expired or unavailable sessions must render a recoverable state instead
-    // of leaving the whole page behind a permanent loading screen.
     loading.value = false
   }
+  if (profileError.value) return
+  // 近 7 天节奏为独立数据源,失败时静默降级为空态,不影响画像主数据
+  getLearningDashboard('7d')
+    .then(({ data }) => {
+      weekDashboard.value = data
+    })
+    .catch(() => {})
+  await renderCharts()
+  playEntrance()
+}
+
+onMounted(() => {
+  loadProfileData()
+  resizeHandler = () => handleResize()
+  window.addEventListener('resize', resizeHandler)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', resizeHandler!)
-  curveChart?.dispose()
-  donutChart?.dispose()
-  barChart?.dispose()
+  if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+  destroyCharts()
 })
-
-watch(forgettingCurveData, () => {
-  if (curveChart) {
-    curveChart.setOption({
-      xAxis: { data: forgettingCurveData.value.days },
-      series: [
-        { data: forgettingCurveData.value.userCurve },
-        { data: forgettingCurveData.value.referenceCurve },
-      ],
-    })
-  }
-}, { deep: true })
-
-watch(memoryStrengthData, () => {
-  if (donutChart) {
-    donutChart.setOption({
-      series: [{
-        data: memoryStrengthData.value.map((d, i) => ({
-          ...d,
-          itemStyle: { color: [getCSSVar('--mastered') || '#5F947C', getCSSVar('--accent') || '#416B56', getCSSVar('--learning') || '#C8913D', getCSSVar('--weak') || '#C9674C'][i] },
-        })),
-      }],
-    })
-  }
-}, { deep: true })
-
-watch(knowledgeMasteryTop10, () => {
-  if (barChart) {
-    const data = knowledgeMasteryTop10.value
-    barChart.setOption({
-      yAxis: { data: data.map(d => d.category).reverse() },
-      series: [{ data: data.map(d => d.rate).reverse() }],
-    })
-  }
-}, { deep: true })
 </script>
 
 <template>
@@ -523,163 +389,267 @@ watch(knowledgeMasteryTop10, () => {
     <template #topbar-title>
       <span>记忆画像</span>
     </template>
-    <template #topbar-actions>
-      <span class="date-range">{{ dateRange }}</span>
-    </template>
 
     <div class="profile-view">
-      <div v-if="loading" class="profile-loading">加载中...</div>
+      <div v-if="loading" class="profile-loading">正在读取画像…</div>
 
-      <div v-else class="profile-body">
-        <!-- Subtitle line (compact inline) -->
-        <div class="subtitle-line">
-          <span class="subtitle-text">{{ canonicalProfile?.status_message || '学习画像来自真实作答证据' }}</span>
-        </div>
-        <div v-if="canonicalProfile?.status === 'discovering'" class="profile-loading">尚在了解你。完成基础诊断或一次练习后，这里会展示掌握度、记忆强度、错误模式和迁移能力。</div>
-        <!-- ── KPI Row ── -->
-        <div v-else class="kpi-row">
-          <div class="kpi-card">
-            <div class="kpi-label">记忆稳定性评分</div>
-            <div class="kpi-value">{{ memoryStabilityScore }}<span class="kpi-unit">/100</span></div>
-            <div class="kpi-sub">
-              <span class="kpi-badge" :style="{ color: stabilityLevelColor }">{{ stabilityLevel }}</span>
-              <span class="kpi-count" v-if="masteryDistribution.mastered > 0">个{{ masteryDistribution.mastered }}</span>
-            </div>
-          </div>
+      <div v-else-if="profileError" class="app-state" role="alert">
+        <p>{{ profileError }}</p>
+        <button type="button" @click="loadProfileData">重试</button>
+      </div>
 
-          <div class="kpi-card">
-            <div class="kpi-label">脆弱知识点</div>
-            <div class="kpi-value fragile">{{ fragilePoints.length }}<span class="kpi-unit">个</span></div>
-            <div class="kpi-sub">
-              <span v-if="fragileDelta > 0" class="kpi-delta-up">较上周 +{{ fragileDelta }}</span>
-              <span v-else class="kpi-sub-neutral">状态良好</span>
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-label">长期记忆保持率</div>
-            <div class="kpi-value">{{ longTermRetention }}<span class="kpi-unit">%</span></div>
-            <div class="kpi-sub">
-              <span v-if="retentionTrend > 0" class="kpi-delta-up">↑ {{ retentionTrend }}%</span>
-              <span v-else class="kpi-sub-neutral">保持稳定</span>
-            </div>
-          </div>
-
-          <div class="kpi-card">
-            <div class="kpi-label">下次复习计划</div>
-            <div class="kpi-value">{{ reviewPlanCount }}<span class="kpi-unit">条</span></div>
-            <div class="kpi-sub">预计 {{ reviewEstimateMinutes }} 分钟</div>
-          </div>
+      <div v-else ref="bodyEl" class="profile-body">
+        <!-- 冷启动:尚在了解你 -->
+        <div v-if="canonicalProfile?.status === 'discovering'" class="card cold-start-card">
+          <h2 class="t-2">尚在了解你</h2>
+          <p class="muted">{{ canonicalProfile?.status_message || '完成基础诊断或一次练习后' }}，这里会展示掌握度、记忆强度、错误模式和迁移能力。</p>
+          <button class="btn btn-primary cold-start-action" type="button" @click="router.push('/dashboard')">
+            <LayoutDashboard class="ic-15" :stroke-width="1.75" />前往学习看板
+          </button>
         </div>
 
-        <!-- ── Middle Row: Curve + Donut + AI Insights ── -->
-        <div v-if="canonicalProfile?.status !== 'discovering'" class="middle-row">
-          <!-- Forgetting Curve -->
-          <div class="card card--curve">
-            <div class="card-header">
-              <h3 class="card-title">遗忘曲线</h3>
-              <span class="card-badge">总体</span>
-            </div>
-            <div v-if="canonicalProfile.forgetting_curve?.status === 'available'" ref="curveChartEl" class="chart-container chart--curve" role="img" :aria-label="`个人遗忘曲线，共 ${canonicalProfile.forgetting_curve.sample_size} 条复习证据`"></div>
-            <div v-else class="empty-state"><p class="empty-text">个人曲线数据积累中</p><p class="empty-hint">{{ canonicalProfile.forgetting_curve?.message }}</p></div>
-            <div class="card-footer">
-              <span>样本 {{ canonicalProfile.forgetting_curve?.sample_size || 0 }} 条 · 算法 {{ canonicalProfile.forgetting_curve?.algorithm_version }}</span>
-            </div>
-          </div>
-
-          <!-- Memory Strength Donut -->
-          <div class="card card--donut">
-            <div class="card-header">
-              <h3 class="card-title">记忆强度分布</h3>
-            </div>
-            <div ref="donutChartEl" class="chart-container chart--donut"></div>
-          </div>
-
-          <!-- AI Insights -->
-          <div class="card card--insights">
-            <div class="card-header">
-              <h3 class="card-title">学习洞察</h3>
-            </div>
-            <div class="insight-list">
-              <div v-for="(insight, i) in aiInsights" :key="i" class="insight-item">
-                <span class="insight-label">{{ insight.label }}</span>
-                <span class="insight-value">{{ insight.value }}</span>
-                <small class="insight-evidence">样本 {{ insight.evidence?.sample_size || 0 }} · {{ insight.evidence?.period || '全部' }}</small>
+        <template v-else>
+          <!-- 画像头 -->
+          <header class="profile-head">
+            <span class="big-avatar" aria-hidden="true">{{ avatarChar }}</span>
+            <div class="ph-main">
+              <h2 class="ph-name">
+                {{ displayName }}
+                <span class="tag tag-soft-accent">{{ stabilityLevel }}</span>
+              </h2>
+              <p class="caption ph-caption">{{ headCaption }}</p>
+              <div class="xp-track">
+                <div class="xp-labels">
+                  <span>记忆稳定性</span>
+                  <span>综合 <b class="num">{{ memoryStabilityScore }}</b>/100 · {{ strengthLabel }}</span>
+                </div>
+                <div class="progress" role="img" :aria-label="`记忆稳定性 ${memoryStabilityScore}/100`">
+                  <i :style="{ width: memoryStabilityScore + '%' }"></i>
+                </div>
               </div>
             </div>
-            <button class="insight-action" @click="router.push('/error-book')">查看真实复习计划 →</button>
-          </div>
-        </div>
-
-        <!-- ── Bottom Row: TOP10 Bar + Review Timeline ── -->
-        <div v-if="canonicalProfile?.status !== 'discovering'" class="bottom-row">
-          <!-- Knowledge Mastery TOP10 -->
-          <div class="card card--top10">
-            <div class="card-header">
-              <h3 class="card-title">知识点记忆表现</h3>
+            <div class="head-actions">
+              <span class="date-range">{{ dateRange }}</span>
             </div>
-            <div ref="barChartEl" class="chart-container chart--bar"></div>
-            <div class="evidence-dimensions" aria-label="知识点画像依据">
-              <details
-                v-for="item in knowledgeMasteryTop10"
-                :key="item.category"
-                class="evidence-panel"
-                @toggle="handleEvidenceToggle($event, item.category)"
-              >
-                <summary class="evidence-summary">
-                  <span>{{ item.category }} · 证据 {{ item.evidenceCount }} 次</span>
-                  <span class="evidence-action">依据</span>
-                </summary>
-                <div class="evidence-body" aria-live="polite">
-                  <p v-if="evidenceLoading[item.category]" class="evidence-status">正在追溯学习记录...</p>
-                  <div v-else-if="evidenceErrors[item.category]" class="evidence-status evidence-status--error">
-                    <span>{{ evidenceErrors[item.category] }}</span>
-                    <button type="button" class="evidence-retry" @click="loadDimensionEvidence(item.category, true)">重试</button>
+          </header>
+
+          <div class="grid-2">
+            <!-- 左列:能力雷达 + 本周学习节奏 -->
+            <div class="col-stack">
+              <div class="card">
+                <div class="card-head">
+                  <span class="t-3">能力雷达</span>
+                  <span class="caption">综合评级 {{ strengthLabel }} · 基于真实作答</span>
+                </div>
+                <div v-if="knowledgeTotal" class="radar-wrap">
+                  <svg width="280" height="216" viewBox="0 0 280 216" role="img" aria-label="能力雷达图">
+                    <polygon
+                      v-for="(ring, i) in radar.rings"
+                      :key="`ring-${i}`"
+                      :points="ring"
+                      fill="none"
+                      :stroke="i === radar.rings.length - 1 ? 'var(--border-strong)' : 'var(--border)'"
+                      stroke-width="1"
+                    />
+                    <line v-for="(spoke, i) in radar.spokes" :key="`spoke-${i}`" v-bind="spoke" stroke="var(--border)" />
+                    <polygon
+                      class="radar-poly"
+                      :points="radar.polygon"
+                      fill="var(--brand-soft-2)"
+                      stroke="var(--brand)"
+                      stroke-width="1.8"
+                      stroke-linejoin="round"
+                    />
+                    <circle v-for="(vertex, i) in radar.vertices" :key="`dot-${i}`" :cx="vertex.x" :cy="vertex.y" r="2.6" fill="var(--brand)" />
+                    <text
+                      v-for="(label, i) in radar.labels"
+                      :key="`label-${i}`"
+                      :x="label.x"
+                      :y="label.y"
+                      :text-anchor="label.anchor"
+                      class="radar-label"
+                    >{{ label.text }}</text>
+                    <text
+                      v-for="(value, i) in radar.values"
+                      :key="`value-${i}`"
+                      :x="value.x"
+                      :y="value.y"
+                      text-anchor="middle"
+                      class="radar-value"
+                    >{{ value.text }}</text>
+                  </svg>
+                </div>
+                <p v-else class="caption radar-empty">完成练习后，这里会基于真实作答生成能力雷达</p>
+              </div>
+
+              <div class="card">
+                <div class="card-head">
+                  <span class="t-3">本周学习节奏</span>
+                  <span class="caption">单位：分钟</span>
+                </div>
+                <div v-if="weekTotalMinutes > 0" class="week-bars" role="img" aria-label="近 7 天学习节奏">
+                  <div v-for="day in weekRhythm" :key="day.key" class="wbar" :class="{ hot: day.hot }">
+                    <i :style="{ height: day.height + 'px' }"></i>
+                    <span>{{ day.label }}</span>
                   </div>
-                  <template v-else-if="evidenceByDimension[item.category]">
-                    <p class="evidence-conclusion">{{ evidenceByDimension[item.category].conclusion }}</p>
-                    <div
-                      v-for="memory in evidenceByDimension[item.category].supporting_memories"
-                      :key="memory.memory_id"
-                      class="evidence-memory"
-                    >
-                      <p class="evidence-memory-title">支撑记忆 · {{ memory.content }}</p>
-                      <ol class="evidence-events">
-                        <li v-for="event in memory.evidence_events" :key="event.learning_record_id">
-                          <span>{{ event.summary }}</span>
-                          <time :datetime="event.at">{{ formatEvidenceTime(event.at) }}</time>
-                        </li>
-                      </ol>
-                    </div>
-                    <p v-if="!evidenceByDimension[item.category].supporting_memories.length" class="evidence-status">暂无足够的独立作答证据</p>
-                  </template>
                 </div>
-              </details>
+                <p v-else class="caption rhythm-empty">近 7 天暂无学习记录</p>
+                <div v-if="weekPeak" class="rhythm-foot">
+                  <span class="caption">单日最高 <b class="num" v-count-up="{ value: weekPeak.minutes }">{{ weekPeak.minutes }}</b> 分钟（周{{ weekPeak.label }}）</span>
+                  <span class="caption">周总计 <b class="num" v-count-up="{ value: weekTotalMinutes }">{{ weekTotalMinutes }}</b> 分钟</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右列:记忆留存曲线 + AI 画像解读 -->
+            <div class="col-stack">
+              <div class="card">
+                <div class="card-head">
+                  <span class="t-3">记忆留存曲线</span>
+                  <div class="legend">
+                    <span><i style="background:var(--brand)"></i>复习后保持</span>
+                    <span><i style="background:var(--rose)"></i>未保持</span>
+                  </div>
+                </div>
+                <div
+                  v-if="canonicalProfile?.forgetting_curve?.status === 'available'"
+                  ref="curveChartEl"
+                  class="chart-curve"
+                  role="img"
+                  :aria-label="`个人遗忘曲线，共 ${canonicalProfile.forgetting_curve.sample_size} 条复习证据`"
+                ></div>
+                <p v-else class="caption rhythm-empty">个人曲线数据积累中：{{ canonicalProfile?.forgetting_curve?.message }}</p>
+                <div class="curve-foot">
+                  <span class="caption">样本 {{ canonicalProfile?.forgetting_curve?.sample_size || 0 }} 条 · 算法 {{ canonicalProfile?.forgetting_curve?.algorithm_version }}</span>
+                  <span class="caption">当前保持率 <b class="num">{{ longTermRetention }}%</b></span>
+                </div>
+              </div>
+
+              <div class="card ai-card">
+                <div class="card-head">
+                  <span class="ai-head"><Sparkles class="ic" :stroke-width="1.75" />AI 画像解读</span>
+                  <span class="caption">基于真实作答生成</span>
+                </div>
+                <div class="ai-body">
+                  <div v-for="(insight, i) in aiInsights" :key="i" class="ai-insight">
+                    <component :is="insightIcons[i % insightIcons.length]" class="ic-14" :stroke-width="1.75" />
+                    <div>
+                      <p><b>{{ insight.label }}</b>：{{ insight.value }}</p>
+                      <small class="caption">样本 {{ insight.evidence?.sample_size || 0 }} · {{ insight.evidence?.period || '全部' }}</small>
+                      <button
+                        v-if="insight.action?.route"
+                        class="insight-more"
+                        type="button"
+                        @click="router.push(insight.action.route)"
+                      >
+                        {{ insight.action.label }}<ArrowUpRight class="ic-14" :stroke-width="1.75" />
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="!aiInsights.length" class="ai-insight">
+                    <Sparkles class="ic-14" :stroke-width="1.75" />
+                    <p>完成一次练习后，这里会基于真实作答给出画像解读。</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- Review Timeline -->
-          <div class="card card--timeline">
-            <div class="card-header">
-              <h3 class="card-title">未来复习计划</h3>
-              <span class="card-subtitle">智能间隔</span>
-            </div>
-            <div class="timeline-list" v-if="reviewPlan.length > 0">
-              <div v-for="(item, i) in reviewPlan" :key="i" class="timeline-item">
-                <div class="timeline-time">{{ item.time }}</div>
-                <div class="timeline-content">
-                  <div class="timeline-title">{{ item.title }}</div>
-                  <div class="timeline-meta">{{ item.category }}</div>
-                </div>
-                <span class="timeline-badge">{{ item.interval }}</span>
+          <!-- 知识掌握分布(四段堆叠条) -->
+          <div class="card dist-card">
+            <div class="card-head">
+              <span class="t-3">知识掌握分布</span>
+              <div v-if="distribution" class="legend">
+                <span v-for="seg in distribution.legend" :key="seg.label">
+                  <i :style="{ background: seg.color }"></i>{{ seg.label }} {{ seg.count }}
+                </span>
               </div>
             </div>
-            <div v-else class="empty-state">
-              <p class="empty-text">暂无复习计划</p>
-              <p class="empty-hint">在错题本中标记薄弱知识点后，系统会自动规划复习</p>
+            <div v-if="distribution" class="dist-rows">
+              <div class="bar-row dist-row">
+                <span class="bn">全部知识点</span>
+                <span class="progress dist-progress"><i :style="{ width: '100%', background: distribution.gradient }"></i></span>
+                <span class="bv"><b v-count-up="{ value: distribution.mastered }">{{ distribution.mastered }}</b>/{{ distribution.total }} 已掌握</span>
+              </div>
+            </div>
+            <p v-else class="caption dist-empty">暂无知识点掌握数据</p>
+          </div>
+
+          <!-- 知识点表现 + 复习计划 -->
+          <div class="grid-2 bottom-grid">
+            <div class="card">
+              <div class="card-head">
+                <span class="t-3">知识点记忆表现</span>
+                <span class="caption">TOP {{ knowledgeMasteryTop10.length }} · 按掌握度排序</span>
+              </div>
+              <div v-if="knowledgeMasteryTop10.length" ref="barChartEl" class="chart-bar"></div>
+              <p v-else class="caption dist-empty">暂无知识点掌握数据</p>
+              <div class="evidence-dimensions" aria-label="知识点画像依据">
+                <details
+                  v-for="item in knowledgeMasteryTop10"
+                  :key="item.category"
+                  class="evidence-panel"
+                  @toggle="handleEvidenceToggle($event, item.category)"
+                >
+                  <summary class="evidence-summary">
+                    <span>{{ item.category }} · 证据 {{ item.evidenceCount }} 次</span>
+                    <span class="evidence-action">依据</span>
+                  </summary>
+                  <div class="evidence-body" aria-live="polite">
+                    <p v-if="evidenceLoading[item.category]" class="evidence-status">正在追溯学习记录...</p>
+                    <div v-else-if="evidenceErrors[item.category]" class="evidence-status evidence-status--error">
+                      <span>{{ evidenceErrors[item.category] }}</span>
+                      <button type="button" class="evidence-retry" @click="loadDimensionEvidence(item.category, true)">重试</button>
+                    </div>
+                    <template v-else-if="evidenceByDimension[item.category]">
+                      <p class="evidence-conclusion">{{ evidenceByDimension[item.category].conclusion }}</p>
+                      <div
+                        v-for="memory in evidenceByDimension[item.category].supporting_memories"
+                        :key="memory.memory_id"
+                        class="evidence-memory"
+                      >
+                        <p class="evidence-memory-title">支撑记忆 · {{ memory.content }}</p>
+                        <ol class="evidence-events">
+                          <li v-for="event in memory.evidence_events" :key="event.learning_record_id">
+                            <span>{{ event.summary }}</span>
+                            <time :datetime="event.at">{{ formatEvidenceTime(event.at) }}</time>
+                          </li>
+                        </ol>
+                      </div>
+                      <p v-if="!evidenceByDimension[item.category].supporting_memories.length" class="evidence-status">暂无足够的独立作答证据</p>
+                    </template>
+                  </div>
+                </details>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="t-3">未来复习计划</span>
+                <button class="more" type="button" @click="router.push('/error-book')">
+                  去错题本<ArrowUpRight class="ic-14" :stroke-width="1.75" />
+                </button>
+              </div>
+              <div v-if="reviewPlan.length" class="timeline-list">
+                <div v-for="(item, i) in reviewPlan" :key="i" class="timeline-item">
+                  <div class="timeline-time">{{ item.time }}</div>
+                  <div class="timeline-content">
+                    <div class="timeline-title">{{ item.title }}</div>
+                    <div class="timeline-meta">{{ item.category }}</div>
+                  </div>
+                  <span class="tag tag-plain">{{ item.interval }}</span>
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                <p class="empty-text">暂无复习计划</p>
+                <p class="empty-hint">在错题本中标记薄弱知识点后，系统会自动规划复习</p>
+              </div>
+              <div v-if="reviewPlanCount" class="timeline-foot">
+                <span class="caption">共 {{ reviewPlanCount }} 条 · 预计 {{ reviewEstimateMinutes }} 分钟</span>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
   </AppShell>
@@ -690,8 +660,7 @@ watch(knowledgeMasteryTop10, () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  background: var(--canvas);
+  min-height: 0;
 }
 
 .profile-loading {
@@ -699,384 +668,350 @@ watch(knowledgeMasteryTop10, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-tertiary);
-  font-size: var(--font-size-sm);
+  color: var(--ink-3);
+  font-size: 13.5px;
 }
 
-/* ── Subtitle (compact inline) ── */
-.subtitle-line {
-  margin-bottom: var(--space-4);
-}
-.subtitle-text {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-}
-
-/* ── Date range (used in topbar) ── */
-.date-range {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
-  padding: 5px 13px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── Scrollable body ── */
+/* 滚动由 shell-content 承担;内容列限宽居中(与 Dashboard 同宽) */
 .profile-body {
   flex: 1;
-  overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
-}
-
-/* ── KPI Row ── */
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-}
-
-.kpi-card {
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
-}
-
-.kpi-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.kpi-label {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.kpi-value {
-  font-size: var(--font-size-3xl);
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: var(--space-1) 0;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi-value.fragile {
-  color: var(--weak);
-}
-
-.kpi-unit {
-  font-size: var(--font-size-base);
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-left: 4px;
-}
-
-.kpi-sub {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.kpi-badge {
-  font-weight: 600;
-}
-
-.kpi-count {
-  color: var(--text-tertiary);
-}
-
-.kpi-delta-up {
-  color: var(--mastered);
-  font-weight: 500;
-}
-
-.kpi-sub-neutral {
-  color: var(--text-tertiary);
-}
-
-/* ── Card base ── */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
-}
-
-.card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-3);
-}
-
-.card-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.card-badge {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  padding: 2px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface-muted);
-}
-
-.card-subtitle {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-}
-
-.card-footer {
-  font-size: var(--font-size-xs);
-  color: var(--text-secondary);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-  line-height: 1.6;
-}
-
-/* ── Chart containers ── */
-.chart-container {
-  flex: 1;
-  min-height: 220px;
   width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 24px clamp(16px, 3vw, 32px) 44px;
 }
 
-.chart--curve {
-  min-height: 220px;
+/* ── 冷启动 ── */
+.cold-start-card {
+  max-width: 720px;
+  padding: var(--space-5);
+}
+.cold-start-card h2 {
+  margin: 0 0 var(--space-2);
+}
+.cold-start-card p {
+  line-height: 1.7;
+}
+.cold-start-action {
+  margin-top: var(--space-4);
 }
 
-.chart--donut {
-  min-height: 220px;
-}
-
-.chart--bar {
-  min-height: 320px;
-}
-
-/* ── Middle Row ── */
-.middle-row {
-  display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-}
-
-.card--curve {
-  grid-column: span 1;
-}
-
-.card--donut {
-  grid-column: span 1;
-}
-
-.card--insights {
-  grid-column: span 1;
-}
-
-/* ── AI Insights ── */
-.insight-list {
+/* ── 画像头(profile-head 原型语言:大头像 + 名称 + 稳定性进度轨)── */
+.profile-head {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.insight-item {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-muted);
-  border-radius: var(--radius-sm);
+  gap: 18px;
+  margin-bottom: 24px;
 }
-
-.insight-label {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  font-weight: 500;
-}
-
-.insight-value {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
+.big-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  font-size: 22px;
   font-weight: 600;
-}
-
-.insight-action {
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
-  background: var(--accent);
   color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--transition-fast);
+  background: linear-gradient(135deg, #17A98A, #0B7A5E 55%, #0AA2C4);
+  box-shadow: 0 6px 20px -6px rgba(11, 122, 94, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.ph-main {
+  flex: 1;
+  min-width: 0;
+}
+.ph-name {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ph-caption {
+  margin: 6px 0 0;
+}
+.ph-caption .num {
+  color: var(--ink-2);
+}
+.xp-track {
+  width: 220px;
+  max-width: 100%;
+  margin-top: 10px;
+}
+.xp-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.xp-labels .num {
+  color: var(--ink-2);
+}
+.xp-track .progress {
+  margin-top: 5px;
+  height: 8px;
+}
+.xp-track .progress > i {
+  background: linear-gradient(90deg, var(--brand), var(--violet));
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.date-range {
+  font-size: 12px;
+  color: var(--ink-3);
+  padding: 5px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.insight-action:hover {
-  background: var(--accent-hover);
-}
-
-/* ── Bottom Row ── */
-.bottom-row {
+/* ── 能力雷达(radar-poly 交给入场动效做中心绽放)── */
+.radar-wrap {
   display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  place-items: center;
+  padding: 8px 0 14px;
+}
+.radar-empty {
+  padding: 34px 20px;
+  text-align: center;
+}
+.radar-label {
+  font-size: 10.5px;
+  fill: var(--ink-2);
+  font-weight: 600;
+}
+.radar-value {
+  font-family: var(--font-disp);
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--brand-text);
 }
 
-.card--top10 {
-  grid-column: span 1;
+/* ── 本周学习节奏(wbar 结构,入场动效 scaleY 生长)── */
+.week-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: 120px;
+  padding: 6px 20px 0;
+}
+.wbar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.wbar i {
+  width: 100%;
+  max-width: 26px;
+  border-radius: 6px 6px 3px 3px;
+  background: var(--brand-soft-2);
+  display: block;
+}
+.wbar.hot i {
+  background: linear-gradient(180deg, var(--brand), var(--brand-strong));
+}
+.wbar span {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.wbar.hot span {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.rhythm-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 20px 14px;
+  border-top: 1px dashed var(--border);
+  margin-top: 14px;
+}
+.rhythm-foot .num {
+  color: var(--ink-1);
+}
+.rhythm-empty {
+  padding: 30px 20px;
+  text-align: center;
 }
 
-.card--timeline {
-  grid-column: span 1;
+/* ── 图表卡 ── */
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--ink-2);
+  flex-wrap: wrap;
+}
+.legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  margin-right: 6px;
+}
+.chart-curve {
+  height: 190px;
+  padding: 6px 12px 0;
+}
+.curve-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 20px 14px;
+  border-top: 1px dashed var(--border);
+  margin-top: 12px;
+}
+.curve-foot .num {
+  color: var(--ink-1);
+}
+.chart-bar {
+  height: 300px;
+  padding: 8px 8px 0;
 }
 
-/* ── Timeline ── */
+/* ── AI 画像解读(ai-card 渐变描边为全局原子类)── */
+.ai-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-head .ic {
+  color: var(--brand);
+}
+.ai-body {
+  padding: 4px 20px 16px;
+}
+.insight-more {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--brand-text);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.insight-more:hover {
+  color: var(--brand);
+}
+
+/* ── 知识掌握分布(单条四段堆叠,进度条入场宽度生长)── */
+.dist-card {
+  margin-top: 16px;
+}
+.dist-rows {
+  padding: 10px 0 14px;
+}
+.dist-row {
+  grid-template-columns: 120px 1fr 110px;
+}
+.dist-progress {
+  height: 10px;
+}
+.dist-empty {
+  padding: 24px 20px;
+  text-align: center;
+}
+
+/* ── 复习计划 ── */
 .timeline-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  padding: 12px 20px 4px;
 }
-
 .timeline-item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3);
-  background: var(--surface-muted);
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast);
+  background: var(--surface-2);
+  border-radius: var(--r-s);
 }
-
-.timeline-item:hover {
-  background: var(--surface-hover);
-}
-
 .timeline-time {
-  font-size: var(--font-size-xs);
+  font-size: 12px;
   font-weight: 600;
-  color: var(--accent);
-  min-width: 70px;
+  color: var(--brand-text);
+  min-width: 88px;
+  flex: none;
   font-variant-numeric: tabular-nums;
 }
-
 .timeline-content {
   flex: 1;
   min-width: 0;
 }
-
 .timeline-title {
-  font-size: var(--font-size-sm);
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .timeline-meta {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  font-size: 11.5px;
+  color: var(--ink-3);
   margin-top: 2px;
 }
-
-.timeline-badge {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  padding: 2px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-  flex-shrink: 0;
+.timeline-foot {
+  padding: 10px 20px 14px;
 }
 
-/* ── Empty state ── */
+/* ── 空态 ── */
 .empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-8) var(--space-4);
   text-align: center;
 }
-
 .empty-text {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--ink-2);
   margin-bottom: var(--space-2);
 }
-
 .empty-hint {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  font-size: 12px;
+  color: var(--ink-3);
   line-height: 1.6;
 }
 
-/* ── Responsive ── */
-@media (max-width: 1200px) {
-  .middle-row {
-    grid-template-columns: 1fr 1fr;
-  }
-  .card--insights {
-    grid-column: span 2;
-  }
-  .bottom-row {
-    grid-template-columns: 1fr;
-  }
+.bottom-grid {
+  margin-top: 16px;
 }
 
-@media (max-width: 900px) {
-  .kpi-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .middle-row {
-    grid-template-columns: 1fr;
-  }
-  .card--insights {
-    grid-column: span 1;
-  }
-}
-
-@media (max-width: 600px) {
+/* ── 响应式(≤768 时 grid-2 单列由 global 原子类负责)── */
+@media (max-width: 768px) {
   .profile-body {
-    padding: var(--space-4);
+    padding: 20px var(--space-4) 36px;
   }
-  .kpi-row {
-    grid-template-columns: 1fr;
+  .profile-head {
+    flex-wrap: wrap;
   }
-  .chart-container {
-    min-height: 180px;
+  .ph-main {
+    flex: 1 1 220px;
   }
-  .chart--bar {
-    min-height: 260px;
+  .head-actions {
+    width: 100%;
+  }
+  .xp-track {
+    width: 100%;
+  }
+  .chart-bar {
+    height: 260px;
   }
 }
 </style>
@@ -1086,13 +1021,13 @@ watch(knowledgeMasteryTop10, () => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin-top: var(--space-3);
+  margin: var(--space-3) var(--space-5) var(--space-4);
 }
 
 .evidence-panel {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  background: var(--surface-2);
   overflow: hidden;
 }
 
@@ -1103,28 +1038,28 @@ watch(knowledgeMasteryTop10, () => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  color: var(--ink-2);
+  font-size: 12px;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .evidence-summary:hover,
 .evidence-summary:focus-visible {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-  outline: 2px solid var(--accent);
+  color: var(--ink-1);
+  background: var(--surface);
+  outline: 2px solid var(--brand);
   outline-offset: -2px;
 }
 
 .evidence-action {
-  color: var(--accent);
+  color: var(--brand-text);
   font-weight: 600;
 }
 
 .evidence-body {
   padding: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
 }
 
 .evidence-conclusion,
@@ -1135,8 +1070,8 @@ watch(knowledgeMasteryTop10, () => {
 }
 
 .evidence-conclusion {
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
+  color: var(--ink-1);
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1146,15 +1081,15 @@ watch(knowledgeMasteryTop10, () => {
 
 .evidence-memory-title,
 .evidence-status {
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  color: var(--ink-2);
+  font-size: 12px;
 }
 
 .evidence-events {
   margin: var(--space-2) 0 0;
   padding-left: var(--space-5);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  color: var(--ink-2);
+  font-size: 12px;
 }
 
 .evidence-events li {
@@ -1164,12 +1099,12 @@ watch(knowledgeMasteryTop10, () => {
 
 .evidence-events time {
   display: block;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
 .evidence-status--error {
-  color: var(--danger);
+  color: var(--rose);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1180,13 +1115,20 @@ watch(knowledgeMasteryTop10, () => {
   min-height: 44px;
   padding: 0 var(--space-3);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-s);
   background: var(--surface);
-  color: var(--text-primary);
+  color: var(--ink-1);
   cursor: pointer;
 }
 
+.evidence-retry:hover {
+  border-color: var(--brand);
+  color: var(--brand-text);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .evidence-summary { transition: none; }
+  .evidence-summary {
+    transition: none;
+  }
 }
 </style>
