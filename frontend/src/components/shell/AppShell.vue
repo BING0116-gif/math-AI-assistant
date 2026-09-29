@@ -1,24 +1,36 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/uiStore'
 import { useChatStore } from '@/stores/chatStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useLearningActivity } from '@/composables/useLearningActivity'
+import {
+  Plus, Search, LayoutDashboard, UserRound, Network, FileText, Target, BookX,
+  PanelLeftClose, PanelLeftOpen, Sun, Moon, Menu, X, Trash2,
+} from 'lucide-vue-next'
+import { formatRelativeTime } from '@/utils/dateTime'
 
 const router = useRouter()
 const route = useRoute()
 const ui = useUiStore()
 const chatStore = useChatStore()
+const authStore = useAuthStore()
+const errorBookStore = useErrorBookStore()
 useLearningActivity()
 
 const searchQuery = ref('')
+const searchInputRef = ref<HTMLInputElement | null>(null)
 
+// navItems 数据结构不变(6 项);icon 值对应 lucide 组件(§6.4)
 const navItems = [
-  { to: '/dashboard', label: '学习看板', icon: 'grid' },
-  { to: '/profile', label: '记忆画像', icon: 'user' },
-  { to: '/knowledge', label: '知识星球', icon: 'book' },
-  { to: '/apply', label: '学以致用', icon: 'pencil' },
-  { to: '/error-book', label: '错题复盘', icon: 'alert-circle' },
+  { to: '/dashboard', label: '学习看板', icon: LayoutDashboard },
+  { to: '/profile', label: '记忆画像', icon: UserRound },
+  { to: '/knowledge', label: '知识星球', icon: Network },
+  { to: '/notes', label: '智能笔记', icon: FileText },
+  { to: '/apply', label: '学以致用', icon: Target },
+  { to: '/error-book', label: '错题复盘', icon: BookX },
 ]
 
 const filteredChats = computed(() => {
@@ -27,6 +39,35 @@ const filteredChats = computed(() => {
   return chatStore.sortedChats.filter(c =>
     c.title?.toLowerCase().includes(q)
   )
+})
+
+// 错题待复盘计数:仅当本地已有数据时展示(不在此触发拉取)
+const pendingReviewCount = computed(() => {
+  const n = errorBookStore.unmasteredCount
+  return n > 0 ? n : null
+})
+
+const userInitial = computed(() => {
+  const name = authStore.username || '同'
+  return name.slice(0, 1).toUpperCase()
+})
+
+const userRoleLabel = computed(() =>
+  authStore.role === 'admin' ? '管理员' : '学生'
+)
+
+const isDark = computed(() => {
+  const t = ui.theme
+  if (t === 'system') {
+    return typeof window !== 'undefined'
+      && window.matchMedia('(prefers-color-scheme: dark)').matches
+  }
+  return t === 'dark'
+})
+
+const themeLabel = computed(() => {
+  if (ui.theme === 'system') return '跟随系统'
+  return isDark.value ? '深色模式' : '浅色模式'
 })
 
 function isActive(to: string) {
@@ -48,6 +89,34 @@ function deleteChat(e: MouseEvent, chatId: string) {
   e.stopPropagation()
   chatStore.deleteChat(chatId)
 }
+
+function recentTime(chat: { lastMessageTime?: string }): string {
+  if (!chat.lastMessageTime) return ''
+  try {
+    return formatRelativeTime(chat.lastMessageTime)
+  } catch {
+    return ''
+  }
+}
+
+function focusSearch() {
+  if (window.innerWidth <= 768) {
+    ui.mobileDrawerOpen = true
+    return
+  }
+  if (ui.sidebarCollapsed) ui.sidebarCollapsed = false
+  requestAnimationFrame(() => searchInputRef.value?.focus())
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    focusSearch()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
@@ -61,166 +130,131 @@ function deleteChat(e: MouseEvent, chatId: string) {
       :class="{ 'sidebar--collapsed': ui.sidebarCollapsed }"
       aria-label="主导航"
     >
-      <!-- 品牌标识 -->
-      <div class="sidebar__brand">
-        <div class="sidebar__logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-        </div>
-        <span v-if="!ui.sidebarCollapsed" class="sidebar__brand-name">知微</span>
+      <!-- 品牌 + 收起 -->
+      <div class="side-top">
+        <RouterLink to="/" class="brand" aria-label="知微 首页">
+          <span class="brand-mark" aria-hidden="true">∑</span>
+          <span v-if="!ui.sidebarCollapsed" class="brand-name">
+            知微<small>MATH&nbsp;AI&nbsp;ASSISTANT</small>
+          </span>
+        </RouterLink>
+        <button
+          class="icon-btn"
+          :aria-label="ui.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+          :title="ui.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+          @click="ui.toggleSidebar()"
+        >
+          <PanelLeftOpen v-if="ui.sidebarCollapsed" :size="15" :stroke-width="1.75" />
+          <PanelLeftClose v-else :size="15" :stroke-width="1.75" />
+        </button>
       </div>
 
-      <!-- 新对话按钮 -->
-      <button class="sidebar__new-chat" @click="startNewChat">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-          <path d="M12 5v14M5 12h14"/>
-        </svg>
+      <!-- 新对话主按钮 -->
+      <button class="btn btn-primary btn-block sidebar-new-chat" @click="startNewChat">
+        <Plus :size="15" :stroke-width="2" />
         <span v-if="!ui.sidebarCollapsed">新对话</span>
       </button>
 
       <!-- 搜索 -->
-      <div v-if="!ui.sidebarCollapsed" class="sidebar__search">
-        <svg class="sidebar__search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
+      <div v-if="!ui.sidebarCollapsed" class="side-search">
+        <Search :size="14" :stroke-width="1.75" aria-hidden="true" />
         <input
+          ref="searchInputRef"
           v-model="searchQuery"
-          class="sidebar__search-input"
           type="search"
-          placeholder="搜索对话..."
+          placeholder="搜索对话"
           aria-label="搜索对话历史"
-        />
+        >
+        <kbd>Ctrl K</kbd>
       </div>
 
-      <!-- 对话历史列表 -->
-      <div v-if="!ui.sidebarCollapsed" class="sidebar__history">
-        <div class="sidebar__section-label">对话历史</div>
-        <div class="sidebar__chat-list">
+      <!-- 主导航 -->
+      <div v-if="!ui.sidebarCollapsed" class="nav-label">学习空间</div>
+      <nav class="nav" aria-label="页面导航">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.to"
+          :to="item.to"
+          class="nav-item"
+          :class="{ 'nav-item--active': isActive(item.to) }"
+          :aria-current="isActive(item.to) ? 'page' : undefined"
+          :title="ui.sidebarCollapsed ? item.label : undefined"
+        >
+          <component :is="item.icon" :size="17" :stroke-width="1.75" aria-hidden="true" />
+          <span v-if="!ui.sidebarCollapsed" class="nav-item__label">{{ item.label }}</span>
+          <span
+            v-if="!ui.sidebarCollapsed && item.to === '/error-book' && pendingReviewCount"
+            class="count"
+          >{{ pendingReviewCount }}</span>
+        </RouterLink>
+      </nav>
+
+      <!-- 最近对话 -->
+      <div v-if="!ui.sidebarCollapsed" class="recent">
+        <div class="nav-label">最近对话</div>
+        <div class="recent-list">
           <div
             v-for="chat in filteredChats"
             :key="chat.id"
-            class="sidebar__chat-item"
-            :class="{ 'sidebar__chat-item--active': chat.id === chatStore.currentChatId }"
+            class="recent-item"
+            :class="{ 'recent-item--active': chat.id === chatStore.currentChatId }"
+            role="button"
+            tabindex="0"
+            @click="openChat(chat.id)"
+            @keydown.enter="openChat(chat.id)"
           >
-            <button class="sidebar__chat-open" @click="openChat(chat.id)">
-              <span class="sidebar__chat-title">{{ chat.title || '新对话' }}</span>
-            </button>
+            <span class="rt">{{ chat.title || '新对话' }}</span>
+            <span class="rs">{{ recentTime(chat) }}</span>
             <button
-              class="sidebar__chat-delete"
+              class="recent-del"
               :aria-label="`删除 ${chat.title || '对话'}`"
               @click="(e) => deleteChat(e, chat.id)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <Trash2 :size="12" :stroke-width="1.75" />
             </button>
           </div>
-          <p v-if="filteredChats.length === 0" class="sidebar__empty">
+          <p v-if="filteredChats.length === 0" class="recent-empty">
             {{ searchQuery ? '未找到匹配的对话' : '还没有对话记录' }}
           </p>
         </div>
       </div>
 
-      <!-- 主导航（底部） -->
-      <nav class="sidebar__nav" aria-label="页面导航">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          class="sidebar__nav-item"
-          :class="{ 'sidebar__nav-item--active': isActive(item.to) }"
-          :aria-current="isActive(item.to) ? 'page' : undefined"
-        >
-          <svg
-            class="sidebar__nav-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-          >
-            <template v-if="item.icon === 'grid'">
-              <rect x="3" y="3" width="7" height="7" rx="1"/>
-              <rect x="14" y="3" width="7" height="7" rx="1"/>
-              <rect x="3" y="14" width="7" height="7" rx="1"/>
-              <rect x="14" y="14" width="7" height="7" rx="1"/>
-            </template>
-            <template v-if="item.icon === 'user'">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
-            </template>
-            <template v-if="item.icon === 'book'">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-              <path d="M8 7h8M8 11h5"/>
-            </template>
-            <template v-if="item.icon === 'alert-circle'">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </template>
-            <template v-if="item.icon === 'pencil'">
-              <path d="m14 4 6 6M3 21l4.5-1 11-11a2.1 2.1 0 0 0-3-3l-11 11L3 21z"/>
-            </template>
-            <template v-if="item.icon === 'play'">
-              <circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8z"/>
-            </template>
-          </svg>
-          <span v-if="!ui.sidebarCollapsed">{{ item.label }}</span>
+      <!-- 底部:主题行 + 用户卡 -->
+      <div class="side-foot">
+        <div class="theme-row">
+          <span class="caption">{{ themeLabel }}</span>
+          <button class="icon-btn" aria-label="切换主题" @click="ui.toggleTheme()">
+            <Moon v-if="!isDark" :size="15" :stroke-width="1.75" />
+            <Sun v-else :size="15" :stroke-width="1.75" />
+          </button>
+        </div>
+        <RouterLink to="/profile" class="user-chip" aria-label="个人主页">
+          <span class="avatar" aria-hidden="true">{{ userInitial }}</span>
+          <span class="user-chip__meta">
+            <b>{{ authStore.username || '同学' }}</b>
+            <small>{{ userRoleLabel }}</small>
+          </span>
         </RouterLink>
-      </nav>
-
-      <!-- 底部辅助入口 -->
-      <div class="sidebar__footer">
-        <button
-          class="sidebar__footer-btn"
-          :aria-label="ui.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
-          @click="ui.toggleSidebar()"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-          >
-            <path :d="ui.sidebarCollapsed ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'"/>
-          </svg>
-          <span v-if="!ui.sidebarCollapsed">收起侧栏</span>
-        </button>
-        <button class="sidebar__footer-btn" aria-label="切换主题" @click="ui.toggleTheme()">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-          </svg>
-          <span v-if="!ui.sidebarCollapsed">主题</span>
-        </button>
       </div>
     </aside>
 
     <!-- 主工作区 -->
     <div class="shell-main">
       <!-- 顶部栏 -->
-      <header class="shell-topbar">
+      <header class="topbar">
         <button class="shell-menu-btn" aria-label="打开导航" @click="ui.mobileDrawerOpen = true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <Menu :size="18" :stroke-width="1.75" />
         </button>
-        <div class="shell-topbar__title">
+        <div class="topbar__title">
           <slot name="topbar-title" />
         </div>
-        <div class="shell-topbar__actions">
+        <div class="topbar__actions">
           <slot name="topbar-actions" />
         </div>
       </header>
 
-      <!-- 页面头部（可选插槽） -->
-      <div v-if="$slots['page-header']" class="shell-page-header">
+      <!-- 页面头部(可选插槽) -->
+      <div v-if="$slots['page-header']" class="page-header">
         <slot name="page-header" />
       </div>
 
@@ -230,7 +264,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
       </main>
     </div>
 
-    <!-- 右侧检查器（可选） -->
+    <!-- 右侧检查器(可选) -->
     <aside
       v-if="ui.inspectorOpen && $slots.inspector"
       class="shell-inspector"
@@ -239,7 +273,7 @@ function deleteChat(e: MouseEvent, chatId: string) {
       <div class="shell-inspector__head">
         <span class="shell-inspector__title">检查器</span>
         <button class="shell-inspector__close" aria-label="关闭检查器" @click="ui.toggleInspector()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          <X :size="16" :stroke-width="1.75" />
         </button>
       </div>
       <slot name="inspector" />
@@ -254,23 +288,35 @@ function deleteChat(e: MouseEvent, chatId: string) {
       >
         <aside class="mobile-drawer" aria-label="移动端导航" role="dialog" aria-modal="true" @click.stop>
           <div class="mobile-drawer__head">
-            <strong>知微</strong>
+            <span class="brand">
+              <span class="brand-mark" aria-hidden="true">∑</span>
+              <span class="brand-name">知微<small>MATH&nbsp;AI&nbsp;ASSISTANT</small></span>
+            </span>
             <button aria-label="关闭导航" @click="ui.mobileDrawerOpen = false">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              <X :size="20" :stroke-width="1.75" />
             </button>
           </div>
+          <button class="btn btn-primary btn-block" @click="startNewChat(); ui.mobileDrawerOpen = false">
+            <Plus :size="15" :stroke-width="2" /> 新对话
+          </button>
           <RouterLink
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
             class="mobile-drawer__link"
+            :class="{ 'mobile-drawer__link--active': isActive(item.to) }"
             @click="ui.mobileDrawerOpen = false"
           >
+            <component :is="item.icon" :size="17" :stroke-width="1.75" />
             {{ item.label }}
           </RouterLink>
-          <button class="mobile-drawer__link" @click="startNewChat(); ui.mobileDrawerOpen = false">
-            新对话
-          </button>
+          <div class="mobile-drawer__foot">
+            <button class="mobile-drawer__theme" aria-label="切换主题" @click="ui.toggleTheme()">
+              <Moon v-if="!isDark" :size="15" :stroke-width="1.75" />
+              <Sun v-else :size="15" :stroke-width="1.75" />
+              {{ themeLabel }}
+            </button>
+          </div>
         </aside>
       </div>
     </Teleport>
@@ -279,23 +325,32 @@ function deleteChat(e: MouseEvent, chatId: string) {
 
 <style scoped>
 .app-shell {
-  min-height: 100dvh;
-  display: flex;
-  background: var(--canvas);
-  color: var(--text-primary);
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink-1);
+}
+
+.app-shell:has(.sidebar--collapsed) {
+  grid-template-columns: var(--sidebar-collapsed) 1fr;
 }
 
 .skip-link {
   position: fixed;
   top: var(--space-2);
   left: var(--space-2);
-  z-index: 2000;
+  z-index: var(--z-toast);
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm);
-  background: var(--accent);
+  border-radius: var(--r-s);
+  background: var(--brand);
   color: #fff;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
   transform: translateY(-160%);
-  transition: transform var(--transition-fast);
+  transition: transform var(--dur-fast) var(--ease-standard);
 }
 .skip-link:focus {
   transform: translateY(0);
@@ -303,338 +358,372 @@ function deleteChat(e: MouseEvent, chatId: string) {
 
 /* ============ 侧栏 ============ */
 .sidebar {
-  width: var(--sidebar-width);
-  flex: 0 0 var(--sidebar-width);
-  min-height: 100dvh;
+  background: var(--side);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: var(--space-3) var(--space-3) var(--space-3);
-  background: var(--surface);
-  border-right: 1px solid var(--border-subtle);
-  transition: width var(--transition-base), flex-basis var(--transition-base), padding var(--transition-base);
+  padding: 18px 14px 14px;
+  gap: 4px;
+  min-height: 0;
   overflow: hidden;
+  transition: width var(--dur-fast) var(--ease-standard);
 }
 .sidebar--collapsed {
-  width: var(--sidebar-collapsed);
-  flex-basis: var(--sidebar-collapsed);
-  padding-inline: var(--space-2);
+  padding-inline: 10px;
 }
 
-/* ---- Logo ---- */
-.sidebar__brand {
+/* ---- 品牌行 ---- */
+.side-top {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 2px 4px;
-  min-height: 40px;
-  margin-bottom: var(--space-2);
+  justify-content: space-between;
+  padding: 2px 6px 14px;
 }
-.sidebar__logo {
-  width: 32px;
-  height: 32px;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 15.5px;
+  letter-spacing: 0.01em;
+  color: var(--ink-1);
+  text-decoration: none;
+}
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: var(--accent);
+  flex: none;
+  background: linear-gradient(135deg, #17A98A 0%, #0B7A5E 55%, #08604A 100%);
   color: #fff;
-  flex-shrink: 0;
-}
-.sidebar__logo svg { width: 18px; }
-.sidebar__brand-name {
-  font-size: 16px;
+  font-family: var(--font-disp);
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(11, 122, 94, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.brand-name {
+  display: block;
+  line-height: 1.15;
+}
+.brand-name small {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  line-height: 1.2;
 }
 
-/* ---- 新对话按钮 ---- */
-.sidebar__new-chat {
-  min-height: 42px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  padding: 0 var(--space-3);
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  margin-bottom: var(--space-2);
+/* ---- 新对话 ---- */
+.sidebar-new-chat {
+  margin-bottom: 2px;
 }
-.sidebar__new-chat:hover {
-  background: var(--accent-hover);
-}
-.sidebar__new-chat svg { width: 16px; }
 
 /* ---- 搜索 ---- */
-.sidebar__search {
-  position: relative;
-  margin-bottom: var(--space-2);
-}
-.sidebar__search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 15px;
-  height: 15px;
-  color: var(--text-tertiary);
-}
-.sidebar__search-input {
-  width: 100%;
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   height: 34px;
-  padding: 0 10px 0 30px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-  outline: none;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-.sidebar__search-input:focus {
-  border-color: var(--accent);
+  padding: 0 10px;
+  margin: 2px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--ink-3);
+  font-size: 13px;
   background: var(--surface);
+  box-shadow: var(--shadow-1);
 }
-.sidebar__search-input::placeholder {
-  color: var(--text-tertiary);
+.side-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink-1);
+  font-size: 13px;
+}
+.side-search input::placeholder {
+  color: var(--ink-3);
+}
+.side-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.side-search kbd {
+  margin-left: auto;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--ink-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  background: var(--surface-2);
 }
 
-/* ---- 对话历史 ---- */
-.sidebar__history {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.sidebar__section-label {
+/* ---- 导航 ---- */
+.nav-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   letter-spacing: 0.06em;
-  padding: 0 var(--space-1);
-  margin-bottom: var(--space-1);
+  padding: 12px 10px 6px;
 }
-.sidebar__chat-list {
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  transition: all 0.15s;
+  position: relative;
+  text-decoration: none;
+  min-height: 36px;
+}
+.nav-item:hover {
+  background: var(--brand-soft);
+  color: var(--ink-1);
+}
+.nav-item--active {
+  background: var(--brand-soft-2);
+  color: var(--brand-text);
+  font-weight: 600;
+}
+.nav-item .count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--rose-soft);
+  color: var(--rose);
+}
+
+/* ---- 最近对话 ---- */
+.recent {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   flex: 1;
+}
+.recent-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
-.sidebar__chat-item {
+.recent-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 26px 7px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.recent-item:hover {
+  background: var(--brand-soft);
+}
+.recent-item--active {
+  background: var(--brand-soft-2);
+}
+.recent-item .rt {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-item--active .rt {
+  color: var(--brand-text);
+}
+.recent-item .rs {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.recent-del {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.recent-item:hover .recent-del,
+.recent-del:focus-visible {
+  opacity: 1;
+}
+.recent-del:hover {
+  background: var(--rose-soft);
+  color: var(--rose);
+}
+.recent-empty {
+  color: var(--ink-3);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+/* ---- 底部 ---- */
+.side-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+}
+.theme-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  transition: background var(--transition-fast), color var(--transition-fast);
-  gap: var(--space-1);
+  padding: 0 6px;
 }
-.sidebar__chat-item:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-m);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  text-decoration: none;
+  color: var(--ink-1);
+  transition: border-color 0.15s;
 }
-.sidebar__chat-item--active {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-  font-weight: 500;
+.user-chip:hover {
+  border-color: var(--brand);
 }
-.sidebar__chat-title {
+.user-chip__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+.user-chip__meta b {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
 }
-.sidebar__chat-open {
-  min-width: 0;
-  flex: 1;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+.user-chip__meta small {
+  font-size: 11px;
+  color: var(--ink-3);
 }
-.sidebar__chat-delete {
-  opacity: 0;
-  width: 24px;
-  height: 24px;
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-xs);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-  transition: opacity var(--transition-fast), background var(--transition-fast);
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-.sidebar__chat-item:hover .sidebar__chat-delete {
-  opacity: 1;
-}
-.sidebar__chat-delete:hover {
-  background: var(--danger);
+  flex: none;
+  background: linear-gradient(135deg, #17A98A, #08604A);
   color: #fff;
-}
-.sidebar__chat-delete svg { width: 12px; }
-.sidebar__empty {
-  color: var(--text-tertiary);
-  font-size: var(--font-size-xs);
-  padding: var(--space-2) var(--space-1);
-}
-
-/* ---- 主导航（底部区域） ---- */
-.sidebar__nav {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-2);
-  margin-top: var(--space-2);
-}
-.sidebar__nav-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 7px 10px;
-  border-radius: var(--radius-xs);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  text-decoration: none;
-  transition: color var(--transition-fast), background var(--transition-fast);
-  min-height: 36px;
-}
-.sidebar__nav-item:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-.sidebar__nav-item--active {
-  color: var(--text-primary);
-  background: var(--accent-soft);
+  font-size: 12px;
   font-weight: 600;
 }
-.sidebar__nav-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-/* ---- 底部辅助入口 ---- */
-.sidebar__footer {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-2);
-  margin-top: var(--space-2);
-}
-.sidebar__footer-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px 10px;
-  border-radius: var(--radius-xs);
-  color: var(--text-tertiary);
-  font-size: var(--font-size-sm);
-  transition: color var(--transition-fast), background var(--transition-fast);
-  min-height: 34px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-}
-.sidebar__footer-btn:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-.sidebar__footer-btn svg { width: 18px; height: 18px; }
 
 /* ============ 主工作区 ============ */
 .shell-main {
-  min-width: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
-  /* 固定为视口高度：聊天页需要"消息区内滚、输入框固定"。
-     此前用 min-height 会被长内容撑破，导致整页滚动。 */
+  min-width: 0;
+  min-height: 0;
   height: 100dvh;
   overflow: hidden;
-  background: var(--canvas);
+  background: var(--bg);
 }
 
-.shell-topbar {
-  min-height: var(--topbar-height);
+.topbar {
+  height: var(--topbar-height);
+  flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--content-padding);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface);
+  gap: 12px;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(8px);
+  z-index: var(--z-topbar);
 }
-.shell-menu-btn {
-  display: none;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: none;
-  cursor: pointer;
-  color: var(--text-primary);
-}
-.shell-menu-btn svg { width: 18px; }
-.shell-topbar__title {
+.topbar__title {
   flex: 1;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-primary);
   min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-1);
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
-.shell-topbar__actions {
+.topbar__actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
+.shell-menu-btn {
+  display: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-s);
+  background: none;
+  cursor: pointer;
+  color: var(--ink-1);
+}
 
-.shell-page-header {
-  padding: var(--space-4) var(--content-padding);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface);
+.page-header {
+  flex: none;
+  padding: var(--space-4) 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
 }
 
 .shell-content {
   flex: 1;
-  /* min-height:0 允许 flex 子项收缩到内容高度以下（flex 布局默认不允许），
-     这是聊天页内部滚动生效的前提；长内容页面（如学习看板）在此容器内滚动。 */
+  /* min-height:0 允许 flex 子项收缩到内容高度以下(聊天页内滚的前提);
+     长内容页面在此容器内滚动。 */
   min-height: 0;
   overflow-y: auto;
   outline: none;
   display: flex;
   flex-direction: column;
-  background: var(--canvas);
+  position: relative;
 }
 
 /* ============ 检查器 ============ */
 .shell-inspector {
   width: var(--inspector-width);
   flex: 0 0 var(--inspector-width);
-  border-left: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border);
   background: var(--surface);
   display: flex;
   flex-direction: column;
@@ -645,10 +734,10 @@ function deleteChat(e: MouseEvent, chatId: string) {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 .shell-inspector__title {
-  font-size: var(--font-size-sm);
+  font-size: 13px;
   font-weight: 600;
 }
 .shell-inspector__close {
@@ -656,14 +745,14 @@ function deleteChat(e: MouseEvent, chatId: string) {
   height: 32px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-xs);
-  color: var(--text-secondary);
+  border-radius: var(--r-s);
+  color: var(--ink-2);
   background: none;
   border: none;
   cursor: pointer;
 }
 .shell-inspector__close:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
 
 /* ============ 移动端抽屉 ============ */
@@ -671,93 +760,127 @@ function deleteChat(e: MouseEvent, chatId: string) {
   display: none;
   position: fixed;
   inset: 0;
-  z-index: 500;
-  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--z-drawer-mask);
+  background: rgba(9, 11, 15, 0.5);
 }
 .mobile-drawer {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: min(320px, 86vw);
   height: 100%;
   padding: var(--space-5) var(--space-4);
-  background: var(--surface);
+  background: var(--side);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-3);
+  overflow-y: auto;
 }
 .mobile-drawer__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-4);
-  font-size: var(--font-size-lg);
-  font-weight: 700;
 }
 .mobile-drawer__head button {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-s);
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 .mobile-drawer__link {
-  display: block;
-  padding: var(--space-3) var(--space-2);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: var(--font-size-base);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px var(--space-2);
+  border-radius: var(--r-s);
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: none;
-  transition: background var(--transition-fast);
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  width: 100%;
+  transition: background var(--dur-fast);
+  min-height: 44px;
 }
 .mobile-drawer__link:hover {
-  background: var(--surface-hover);
+  background: var(--brand-soft);
+}
+.mobile-drawer__link--active {
+  background: var(--brand-soft-2);
+  color: var(--brand-text);
+}
+.mobile-drawer__foot {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+.mobile-drawer__theme {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px var(--space-2);
+  border-radius: var(--r-s);
+  color: var(--ink-2);
+  font-size: 14px;
+  min-height: 44px;
+  width: 100%;
 }
 
 /* ============ 响应式 ============ */
+/* ≤1279px:侧栏收窄为 rail(68px) */
 @media (max-width: 1279px) and (min-width: 769px) {
-  .sidebar {
-    width: var(--sidebar-collapsed);
-    flex-basis: var(--sidebar-collapsed);
-    padding-inline: var(--space-2);
+  .app-shell:not(:has(.sidebar--collapsed)) {
+    grid-template-columns: var(--sidebar-collapsed) 1fr;
   }
-  .sidebar__brand-name,
-  .sidebar__new-chat span,
-  .sidebar__search,
-  .sidebar__history,
-  .sidebar__nav-item span,
-  .sidebar__footer-btn span {
+  .sidebar:not(.sidebar--collapsed) {
+    padding-inline: 10px;
+  }
+  .sidebar .side-top,
+  .sidebar .btn span,
+  .sidebar .side-search,
+  .sidebar .nav-label,
+  .sidebar .nav-item__label,
+  .sidebar .nav-item .count,
+  .sidebar .recent,
+  .sidebar .theme-row .caption,
+  .sidebar .user-chip__meta {
     display: none;
   }
-  .sidebar--collapsed .sidebar__brand-name,
-  .sidebar--collapsed .sidebar__new-chat span,
-  .sidebar--collapsed .sidebar__search,
-  .sidebar--collapsed .sidebar__history,
-  .sidebar--collapsed .sidebar__nav-item span,
-  .sidebar--collapsed .sidebar__footer-btn span {
-    display: none;
+  .sidebar .side-top {
+    flex-direction: column;
+    gap: 8px;
+    padding-bottom: 10px;
+  }
+  .sidebar .nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+  .sidebar .side-foot {
+    align-items: center;
   }
 }
 
+/* ≤768px:侧栏隐藏,汉堡 + 抽屉,topbar 52px */
 @media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
   .sidebar {
     display: none;
   }
   .shell-menu-btn {
     display: grid;
   }
-  .shell-topbar {
+  .topbar {
+    height: var(--topbar-height-mobile);
     padding: 0 var(--space-4);
-    min-height: 52px;
   }
-  .shell-page-header {
+  .page-header {
     padding: var(--space-3) var(--space-4);
   }
   .mobile-drawer-backdrop {
@@ -769,7 +892,11 @@ function deleteChat(e: MouseEvent, chatId: string) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sidebar, .sidebar__nav-item, .sidebar__chat-item, .sidebar__footer-btn {
+  .sidebar,
+  .nav-item,
+  .recent-item,
+  .recent-del,
+  .skip-link {
     transition: none;
   }
 }
