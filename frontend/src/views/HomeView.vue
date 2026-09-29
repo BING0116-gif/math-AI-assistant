@@ -6,6 +6,9 @@ import { useErrorBookStore } from '@/stores/errorBookStore'
 import AppShell from '@/components/shell/AppShell.vue'
 import AgentComposer from '@/components/conversation/AgentComposer.vue'
 import { useAiCapability } from '@/composables/useAiCapability'
+import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
+import { Sparkles, ChevronRight, BookOpen, Route } from 'lucide-vue-next'
+import { nowIso, parseTimestamp } from '@/utils/dateTime'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -22,7 +25,7 @@ const todayStats = computed(() => {
   for (const chat of chatStore.chats) {
     for (const msg of chat.messages) {
       if (msg.sender === 'user') {
-        const ts = msg.timestamp ? new Date(msg.timestamp) : null
+        const ts = parseTimestamp(msg.timestamp)
         if (ts && ts.toDateString() === todayStr) {
           todayMessages++
           dayChats.add(chat.id)
@@ -36,12 +39,15 @@ const todayStats = computed(() => {
     todayChats: dayChats.size,
     totalChats: chatStore.chats.length,
     totalErrors: errorBookStore.totalErrors,
+    unmasteredErrors: errorBookStore.unmasteredCount,
   }
 })
 
 const recentChats = computed(() => {
-  return chatStore.sortedChats.slice(0, 4)
+  return chatStore.sortedChats.slice(0, 3)
 })
+
+const continueChat = computed(() => chatStore.sortedChats[0] || null)
 
 const greetingText = computed(() => {
   const hour = new Date().getHours()
@@ -52,19 +58,32 @@ const greetingText = computed(() => {
   return '晚上好，欢迎回来'
 })
 
+const dateLabel = computed(() => {
+  const now = new Date()
+  const weeks = ['日', '一', '二', '三', '四', '五', '六']
+  return `${now.getMonth() + 1}月${now.getDate()}日 周${weeks[now.getDay()]}`
+})
+
+const quickPrompts = [
+  '出 5 道中值定理练习题',
+  '讲讲泰勒展开的直觉',
+  '复盘今日错题',
+  '帮我制定期末复习计划',
+]
+
 function handleSend(text: string) {
   if (!text.trim()) return
   if (!isAiAvailable.value) return
   const chat = chatStore.createNewChat()
   chatStore.persistChats()
-  // 把问题作为参数带给聊天页，由 ChatView 接管「发送 + AI 回答」全流程
+  // 把问题作为参数带给聊天页,由 ChatView 接管「发送 + AI 回答」全流程
   router.push({ path: `/chat/${chat.id}`, query: { q: text.trim() } })
 }
 
 function handleSendWithImage(text: string, imageData: string) {
   if (!isAiAvailable.value) return
   const chat = chatStore.createNewChat()
-  // 图片数据较大，暂存到 store 由聊天页消费后清空
+  // 图片数据较大,暂存到 store 由聊天页消费后清空
   chatStore.pendingImage = { text: text || '', image: imageData }
   chatStore.persistChats()
   router.push(`/chat/${chat.id}`)
@@ -75,38 +94,21 @@ function openChat(chatId: string) {
   router.push(`/chat/${chatId}`)
 }
 
-function shortcutSolve() {
-  if (!isAiAvailable.value) return
-  router.push({ path: '/' })
-  setTimeout(() => {
-    const textarea = document.querySelector('.agent-composer__textarea') as HTMLElement
-    if (textarea) textarea.focus()
-  }, 100)
-}
-
-function shortcutErrorBook() {
-  router.push('/error-book')
-}
-
-function shortcutKnowledge() {
+function continueLearning() {
+  if (continueChat.value) {
+    openChat(continueChat.value.id)
+    return
+  }
   router.push('/knowledge')
 }
 
-function shortcutPractice() {
-  if (!isAiAvailable.value) return
-  const chat = chatStore.createNewChat()
-  chatStore.addMessage(chat.id, {
-    content: '请根据我近期的学习情况和错题记录，为我生成一些针对性的练习题，帮助我巩固薄弱知识点。',
-    sender: 'user',
-    timestamp: new Date().toLocaleString(),
-    type: 'text',
-  })
-  chatStore.persistChats()
-  router.push(`/chat/${chat.id}`)
+function reviewErrors() {
+  router.push('/error-book')
 }
 
 function formatTimeAgo(timestamp: string): string {
-  const date = new Date(timestamp)
+  const date = parseTimestamp(timestamp)
+  if (!date) return '时间未知'
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
@@ -120,6 +122,8 @@ function formatTimeAgo(timestamp: string): string {
   if (diffDays < 7) return `${diffDays}天前`
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
+
+useEntranceAnimation()
 </script>
 
 <template>
@@ -129,18 +133,27 @@ function formatTimeAgo(timestamp: string): string {
     </template>
 
     <div class="home-view">
-      <div class="home-content">
-        <!-- 欢迎区 -->
-        <section class="home-welcome">
-          <p class="home-welcome-greeting">{{ greetingText }}</p>
-          <h1 class="home-welcome-title">
-            我是你的数学学习助手
-            <span class="home-welcome-brand">知微</span>
+      <div class="hero-glow" aria-hidden="true"></div>
+
+      <div class="home-wrap">
+        <!-- Hero -->
+        <section class="home-hero" aria-labelledby="home-title">
+          <div class="eyebrow">
+            <Sparkles :size="14" :stroke-width="1.75" style="color: var(--brand)" aria-hidden="true" />
+            AI 驱动的高等数学学习空间
+          </div>
+          <h1 id="home-title">
+            {{ greetingText }}。<br />
+            今天想<span class="grad-text">弄懂</span>哪个知识点？
           </h1>
-          <p class="home-welcome-subtitle">有问题尽管问我，我会启发思路、讲透原理，陪你一起进步。</p>
+          <div class="sub">
+            {{ dateLabel }} · 今日已提问
+            <b class="num">{{ todayStats.todayMessages }}</b> 次 · 待复盘错题
+            <b class="num">{{ todayStats.unmasteredErrors }}</b> 道
+          </div>
         </section>
 
-        <!-- 输入框 -->
+        <!-- 提问输入(复用 AgentComposer,P2-2 重皮) -->
         <AgentComposer
           class="home-composer"
           :large="true"
@@ -150,142 +163,83 @@ function formatTimeAgo(timestamp: string): string {
           @send-image="handleSendWithImage"
         />
 
-        <!-- 快捷入口 -->
-        <section class="home-shortcuts">
-          <button class="shortcut-card" @click="shortcutSolve">
-            <div class="shortcut-card__icon shortcut-card__icon--teal">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="3"/>
-                <path d="M7 7h4M7 11h2M13 7h4v4h-4zM7 15h4v2H7z"/>
-              </svg>
-            </div>
-            <div class="shortcut-card__body">
-              <span class="shortcut-card__title">拍题解答</span>
-              <span class="shortcut-card__desc">拍照上传题目，即时解析</span>
-            </div>
+        <!-- 快捷提问 -->
+        <div class="home-quick">
+          <button
+            v-for="prompt in quickPrompts"
+            :key="prompt"
+            class="chip"
+            :disabled="!isAiAvailable"
+            @click="handleSend(prompt)"
+          >
+            {{ prompt }}
+          </button>
+        </div>
+
+        <!-- 最近对话 -->
+        <div class="home-section-label">
+          <span class="t-3">最近对话</span>
+          <RouterLink v-if="chatStore.sortedChats.length > 3" to="/dashboard" class="more">
+            查看全部
+            <ChevronRight :size="14" :stroke-width="1.75" aria-hidden="true" />
+          </RouterLink>
+        </div>
+        <div class="home-cards">
+          <button
+            v-for="chat in recentChats"
+            :key="chat.id"
+            class="card recent-card"
+            @click="openChat(chat.id)"
+          >
+            <span class="rt">{{ chat.title || '新对话' }}</span>
+            <span class="rs">{{ chat.messages.length ? `${chat.messages.length} 条消息 · ${formatTimeAgo(chat.lastMessageTime)}` : '点击继续这段对话' }}</span>
+            <span class="rf">
+              <span v-if="chat.messages.length" class="tag tag-soft-accent">{{ chat.messages.length }} 条</span>
+              <span class="caption">{{ formatTimeAgo(chat.lastMessageTime) }}</span>
+            </span>
+          </button>
+          <p v-if="recentChats.length === 0" class="recent-empty">
+            还没有对话记录，在上面提出第一个问题吧
+          </p>
+        </div>
+
+        <!-- 继续学习 -->
+        <div class="home-section-label cont-label">
+          <span class="t-3">继续学习</span>
+        </div>
+        <div class="cont-grid">
+          <button class="card cont-card" @click="continueLearning">
+            <span class="cont-head">
+              <span class="tag tag-soft-accent">
+                <BookOpen :size="12" :stroke-width="2" aria-hidden="true" />
+                {{ continueChat ? '上次对话' : '知识星球' }}
+              </span>
+              <span class="caption">{{ continueChat ? formatTimeAgo(continueChat.lastMessageTime) : '按图谱梳理脉络' }}</span>
+            </span>
+            <span class="tt">{{ continueChat ? continueChat.title || '新对话' : '开始第一次学习' }}</span>
+            <span class="meta-row">
+              <span class="caption cont-meta">{{ continueChat ? `${continueChat.messages.length} 条消息 · 点击继续` : '浏览知识点目录,选择起点' }}</span>
+              <span class="btn btn-primary btn-sm">继续</span>
+            </span>
           </button>
 
-          <button class="shortcut-card" @click="shortcutErrorBook">
-            <div class="shortcut-card__icon shortcut-card__icon--amber">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d="M12 9v4M12 17h.01"/>
-                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              </svg>
-            </div>
-            <div class="shortcut-card__body">
-              <span class="shortcut-card__title">错题复盘</span>
-              <span class="shortcut-card__desc">智能分析错因，安排复习</span>
-            </div>
+          <button class="card cont-card" @click="reviewErrors">
+            <span class="cont-head">
+              <span class="tag tag-soft-rose">
+                <Route :size="12" :stroke-width="2" aria-hidden="true" />
+                错题复盘
+              </span>
+              <span class="caption">艾宾浩斯计划</span>
+            </span>
+            <span class="tt">
+              {{ todayStats.unmasteredErrors > 0 ? `${todayStats.unmasteredErrors} 道错题待复盘` : '错题本已清空' }}
+            </span>
+            <span class="meta-row">
+              <span class="caption cont-meta">优先复习遗忘临界期的题目</span>
+              <span class="btn btn-ghost btn-sm">去复盘</span>
+            </span>
           </button>
-
-          <button class="shortcut-card" @click="shortcutKnowledge">
-            <div class="shortcut-card__icon shortcut-card__icon--teal">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <circle cx="12" cy="12" r="9"/>
-                <path d="M12 3a9 9 0 0 1 0 18M3 12h18"/>
-                <path d="M8 7c2 2.5 2 7.5 0 10M16 7c-2 2.5-2 7.5 0 10"/>
-              </svg>
-            </div>
-            <div class="shortcut-card__body">
-              <span class="shortcut-card__title">知识点梳理</span>
-              <span class="shortcut-card__desc">梳理知识脉络，构建体系</span>
-            </div>
-          </button>
-
-          <button class="shortcut-card" @click="shortcutPractice">
-            <div class="shortcut-card__icon shortcut-card__icon--primary">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                <path d="M9 7h7M9 11h5"/>
-              </svg>
-            </div>
-            <div class="shortcut-card__body">
-              <span class="shortcut-card__title">生成练习</span>
-              <span class="shortcut-card__desc">针对薄弱点生成个性化练习</span>
-            </div>
-          </button>
-
-          <button class="shortcut-card" @click="router.push('/paper/test')">
-            <div class="shortcut-card__icon shortcut-card__icon--teal">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                <path d="M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z"/>
-                <path d="M9 12l2 2 4-4"/>
-              </svg>
-            </div>
-            <div class="shortcut-card__body">
-              <span class="shortcut-card__title">组卷测试</span>
-              <span class="shortcut-card__desc">按题型组卷，客观题自动判分</span>
-            </div>
-          </button>
-
-          <button class="shortcut-card" @click="router.push('/admin/review')">
-            <div class="shortcut-card__icon shortcut-card__icon--amber">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <path d="M9 12l2 2 4-4"/>
-                <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
-              </svg>
-            </div>
-            <div class="shortcut-card__body">
-              <span class="shortcut-card__title">题库审核</span>
-              <span class="shortcut-card__desc">内容导入 · AI 分析 · 发布治理（管理员）</span>
-            </div>
-          </button>
-        </section>
-
-        <!-- 今日概览 + 最近对话 -->
-        <section class="home-grid">
-          <!-- 今日学习概览 -->
-          <div class="home-overview">
-            <h2 class="home-section-title">今日学习概览</h2>
-            <div class="home-overview-stats">
-              <div class="overview-stat">
-                <span class="overview-stat__label">今日练习</span>
-                <span class="overview-stat__value">{{ todayStats.todayMessages }}</span>
-                <span class="overview-stat__sub">条消息</span>
-              </div>
-              <div class="overview-stat">
-                <span class="overview-stat__label">对话总数</span>
-                <span class="overview-stat__value">{{ todayStats.totalChats }}</span>
-                <span class="overview-stat__sub">次对话</span>
-              </div>
-              <div class="overview-stat">
-                <span class="overview-stat__label">错题累计</span>
-                <span class="overview-stat__value">{{ todayStats.totalErrors }}</span>
-                <span class="overview-stat__sub">道错题</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 最近对话 -->
-          <div class="home-recent">
-            <div class="home-recent__header">
-              <h2 class="home-section-title">最近对话</h2>
-              <RouterLink
-                v-if="chatStore.sortedChats.length > 4"
-                to="/dashboard"
-                class="home-recent__more"
-              >
-                查看全部 →
-              </RouterLink>
-            </div>
-            <div class="home-recent-list">
-              <button
-                v-for="chat in recentChats"
-                :key="chat.id"
-                class="home-recent-item"
-                @click="openChat(chat.id)"
-              >
-                <span class="home-recent-item__title">{{ chat.title || '新对话' }}</span>
-                <span class="home-recent-item__time">{{ formatTimeAgo(chat.lastMessageTime) }}</span>
-              </button>
-              <p v-if="recentChats.length === 0" class="home-recent-empty">
-                还没有对话记录，开始第一次提问吧
-              </p>
-            </div>
-          </div>
-        </section>
+        </div>
       </div>
     </div>
   </AppShell>
@@ -294,252 +248,256 @@ function formatTimeAgo(timestamp: string): string {
 <style scoped>
 .home-view {
   flex: 1;
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--canvas);
+  background: var(--bg);
 }
 
-.home-content {
+/* 首页背景微光 */
+.hero-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.hero-glow::before {
+  content: '';
+  position: absolute;
+  top: -180px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 720px;
+  height: 420px;
+  border-radius: 50%;
+  opacity: 0.5;
+  filter: blur(60px);
+  background: radial-gradient(closest-side, rgba(11, 122, 94, 0.11), rgba(27, 191, 160, 0.06) 60%, transparent);
+}
+[data-theme='dark'] .hero-glow::before {
+  background: radial-gradient(closest-side, rgba(69, 200, 160, 0.09), rgba(27, 191, 160, 0.04) 60%, transparent);
+}
+
+.home-wrap {
+  position: relative;
   flex: 1;
-  overflow-y: auto;
-  padding: var(--space-8) var(--content-padding) var(--space-12);
-  max-width: 960px;
+  width: 100%;
+  max-width: 860px;
   margin: 0 auto;
-  width: 100%;
+  padding: 5vh 24px 56px;
+  overflow-y: auto;
 }
 
-/* ============ 欢迎区 ============ */
-.home-welcome {
-  margin-bottom: var(--space-8);
+/* ---------- Hero ---------- */
+.home-hero {
+  text-align: center;
+  margin-bottom: 34px;
 }
-.home-welcome-greeting {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
-  margin-bottom: var(--space-2);
-  letter-spacing: 0.01em;
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--ink-2);
+  font-weight: 500;
+  box-shadow: var(--shadow-1);
+  margin-bottom: 18px;
 }
-.home-welcome-title {
-  font-size: var(--font-size-3xl);
+.home-hero h1 {
+  font-size: 34px;
   font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.3;
-  margin-bottom: var(--space-3);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--ink-1);
 }
-.home-welcome-brand {
-  color: var(--accent);
-  margin-left: var(--space-2);
+.home-hero .sub {
+  font-size: 14.5px;
+  color: var(--ink-3);
+  margin-top: 8px;
 }
-.home-welcome-subtitle {
-  font-size: var(--font-size-base);
-  color: var(--text-secondary);
-  line-height: 1.6;
+.home-hero .sub .num {
+  color: var(--ink-2);
+  font-weight: 600;
 }
 
-/* ============ 输入框 ============ */
+/* ---------- Composer 占位(AgentComposer 自身皮在 P2-2) ---------- */
 .home-composer {
-  width: 100%;
-  margin-bottom: var(--space-8);
+  margin-bottom: 18px;
 }
 
-/* ============ 快捷入口 ============ */
-.home-shortcuts {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-3);
-  margin-bottom: var(--space-8);
-}
-.shortcut-card {
+/* ---------- 快捷提问 ---------- */
+.home-quick {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  text-align: left;
+  flex-wrap: wrap;
+  gap: 9px;
+  justify-content: center;
+  margin: 18px 0 40px;
+}
+.home-quick .chip {
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
-.shortcut-card:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-}
-.shortcut-card__icon {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-  color: var(--text-primary);
-}
-.shortcut-card__icon svg {
-  width: 22px;
-  height: 22px;
-}
-.shortcut-card__icon--teal {
-  background: var(--knowledge-soft);
-  color: var(--knowledge);
-}
-.shortcut-card__icon--amber {
-  background: rgba(200, 145, 61, 0.12);
-  color: var(--warning);
-}
-.shortcut-card__icon--primary {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.shortcut-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.shortcut-card__title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.shortcut-card__desc {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  line-height: 1.4;
+.home-quick .chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
-/* ============ 概览 + 最近对话 ============ */
-.home-grid {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: var(--space-4);
-}
-
-.home-overview {
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-.home-section-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: var(--space-4);
-}
-.home-overview-stats {
-  display: flex;
-  gap: var(--space-6);
-}
-.overview-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-}
-.overview-stat__label {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-}
-.overview-stat__value {
-  font-size: var(--font-size-2xl);
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.2;
-}
-.overview-stat__sub {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-}
-
-.home-recent {
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-}
-.home-recent__header {
+/* ---------- 区块标签 ---------- */
+.home-section-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-3);
+  margin: 0 2px 12px;
 }
-.home-recent__more {
-  font-size: var(--font-size-xs);
-  color: var(--accent);
-  text-decoration: none;
+.home-section-label .t-3 {
+  font-size: 14px;
 }
-.home-recent__more:hover {
-  color: var(--accent-hover);
+.cont-label {
+  margin-top: 6px;
 }
-.home-recent-list {
+.more {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 500;
+}
+.more:hover {
+  color: var(--brand-text);
+}
+
+/* ---------- 最近对话 3 卡 ---------- */
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.recent-card {
+  padding: 16px;
+  transition: all 0.16s;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
 }
-.home-recent-item {
+.recent-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-3);
+}
+.recent-card .rt {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.recent-card .rs {
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 37px;
+}
+.recent-card .rf {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-xs);
-  background: none;
-  border: none;
+  margin-top: auto;
+}
+.recent-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 24px 0;
+}
+
+/* ---------- 继续学习 2 卡 ---------- */
+.cont-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 14px;
+}
+.cont-card {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast);
-  width: 100%;
-  gap: var(--space-3);
+  font: inherit;
+  color: inherit;
+  transition: all 0.16s;
 }
-.home-recent-item:hover {
-  background: var(--surface-hover);
+.cont-card:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-3);
 }
-.home-recent-item__title {
-  flex: 1;
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
+.cont-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cont-head .tag {
+  gap: 4px;
+}
+.cont-card .tt {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.home-recent-item__time {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  flex-shrink: 0;
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.home-recent-empty {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  padding: var(--space-4) var(--space-2);
-  text-align: center;
+.cont-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-/* ============ 响应式 ============ */
-@media (max-width: 1024px) {
-  .home-shortcuts {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .home-grid {
-    grid-template-columns: 1fr;
-  }
+.meta-row .btn {
+  flex: none;
 }
 
+/* ---------- 响应式 ---------- */
 @media (max-width: 768px) {
-  .home-content {
-    padding: var(--space-4) var(--space-4) var(--space-8);
+  .home-wrap {
+    padding: 24px 16px 40px;
   }
-  .home-welcome-title {
-    font-size: var(--font-size-2xl);
+  .home-hero h1 {
+    font-size: 26px;
   }
-  .home-shortcuts {
+  .home-cards {
     grid-template-columns: 1fr;
   }
-  .home-overview-stats {
-    gap: var(--space-4);
+  .cont-grid {
+    grid-template-columns: 1fr;
   }
-  .home-grid {
-    gap: var(--space-3);
+  .home-hero .sub {
+    font-size: 13px;
   }
 }
 </style>

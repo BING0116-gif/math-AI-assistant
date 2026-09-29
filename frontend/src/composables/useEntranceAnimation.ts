@@ -165,7 +165,22 @@ export function useEntranceAnimation(scope?: RootSource, opts: EntranceOptions =
       cleanups.push(() => a.cancel())
     })
 
-    /* 9. 数字滚动 [data-count](异步数据页可传 skipCountUp 走 v-count-up) */
+    /* 9. 对话消息 / 首页区块:浮入(anim.js §10) */
+    all(
+      '.home-hero, .home-composer, .home-quick, .home-section-label, .home-cards, .cont-grid, .chat-col > .msg-user, .chat-col > .msg-ai, .chat-col > .date-chip',
+      root,
+    ).forEach((el, i) => {
+      const a = el.animate(
+        [
+          { opacity: 0, transform: 'translateY(16px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        { duration: 560, delay: 60 + i * 90, easing: EASE_STANDARD, fill: 'backwards' },
+      )
+      cleanups.push(() => a.cancel())
+    })
+
+    /* 10. 数字滚动 [data-count](异步数据页可传 skipCountUp 走 v-count-up) */
     if (!opts.skipCountUp) {
       all('[data-count]', root).forEach((el) => {
         const target = parseFloat(el.dataset.count ?? '')
