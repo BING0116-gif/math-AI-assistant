@@ -267,11 +267,11 @@ onUnmounted(() => {
   gap: 8px;
   padding: 10px 14px;
   margin-bottom: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-warning, rgba(200, 145, 61, 0.08));
-  border: 1px solid var(--border-warning, rgba(200, 145, 61, 0.2));
-  color: var(--text-warning, #b8860b);
-  font-size: var(--font-size-sm);
+  border-radius: var(--r-s);
+  background: var(--amber-soft);
+  border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+  color: var(--amber);
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -295,21 +295,39 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: var(--r-l);
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-3);
   padding: 12px 14px 10px;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+  position: relative;
+  overflow: hidden;
 }
 
 .agent-composer__box:focus-within {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-sm), var(--shadow-focus);
+  border-color: var(--brand);
+  box-shadow: var(--shadow-3), 0 0 0 3px var(--brand-soft);
 }
 
+/* 首页大输入卡:20px 圆角 + 品牌渐变描边(原型 .home-composer::after) */
 .agent-composer--large .agent-composer__box {
-  border-radius: var(--radius-lg);
+  border-radius: var(--r-xl);
   padding: 16px 18px 12px;
+}
+.agent-composer--large .agent-composer__box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgba(11, 122, 94, 0.4), rgba(27, 191, 160, 0.14) 40%, transparent 70%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+[data-theme='dark'] .agent-composer--large .agent-composer__box::after {
+  background: linear-gradient(120deg, rgba(69, 200, 160, 0.45), rgba(94, 234, 212, 0.16) 45%, transparent 70%);
 }
 
 /* 图片预览 */
@@ -323,9 +341,9 @@ onUnmounted(() => {
 .agent-composer__preview-img {
   max-width: 180px;
   max-height: 140px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-s);
   object-fit: contain;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
 }
 
 .agent-composer__preview-remove {
@@ -362,8 +380,8 @@ onUnmounted(() => {
   outline: none;
   resize: none;
   background: transparent;
-  color: var(--text-primary);
-  font-size: var(--font-size-base);
+  color: var(--ink-1);
+  font-size: 14px;
   line-height: 1.6;
   min-height: 28px;
   max-height: 160px;
@@ -372,14 +390,14 @@ onUnmounted(() => {
 }
 
 .agent-composer--large .agent-composer__textarea {
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.6;
   min-height: 44px;
   max-height: 200px;
 }
 
 .agent-composer__textarea::placeholder {
-  color: var(--text-tertiary);
+  color: var(--ink-3);
 }
 
 /* 工具栏 */
@@ -401,53 +419,57 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
   background: none;
   border: none;
   cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--dur-fast), background var(--dur-fast);
   font-family: inherit;
 }
 
 .agent-composer__tool-btn:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
+  color: var(--brand-text);
+  background: var(--brand-soft);
 }
 
 .agent-composer__tool-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 .agent-composer__tool-btn--icon {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  padding: 0;
   justify-content: center;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   background: var(--surface);
 }
 
 .agent-composer__tool-btn--icon:hover {
-  border-color: var(--border-strong);
+  border-color: var(--brand);
   background: var(--surface-hover);
 }
 
 .agent-composer__tool-btn--text {
-  padding: 6px 12px;
-  font-size: var(--font-size-sm);
+  padding: 0 10px;
+  font-size: 12.5px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .agent-composer__tool-btn--text:hover {
-  color: var(--accent);
+  color: var(--brand-text);
 }
 
 .agent-composer__hint {
   margin-left: auto;
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  font-size: 11.5px;
+  color: var(--ink-4);
   white-space: nowrap;
   user-select: none;
 }
@@ -458,28 +480,29 @@ onUnmounted(() => {
   }
 }
 
-/* 发送按钮 */
+/* 发送按钮(原型 .send-btn:34px / r10 / 橙底白字 / glow) */
 .agent-composer__send-btn {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 10px;
   background: var(--accent);
   color: #fff;
   border: none;
   cursor: pointer;
-  transition: background var(--transition-fast), transform var(--transition-fast);
+  box-shadow: var(--glow);
+  transition: background var(--dur-fast), transform var(--dur-fast);
   flex-shrink: 0;
 }
 
 .agent-composer__send-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .agent-composer__send-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--accent-strong);
 }
 
 .agent-composer__send-btn:active:not(:disabled) {
@@ -489,17 +512,18 @@ onUnmounted(() => {
 .agent-composer__send-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 @media (max-width: 768px) {
   .agent-composer__box {
     padding: 10px 12px 8px;
-    border-radius: var(--radius-md);
+    border-radius: var(--r-l);
   }
 
   .agent-composer--large .agent-composer__box {
     padding: 12px 14px 10px;
-    border-radius: var(--radius-md);
+    border-radius: var(--r-l);
   }
 
   .agent-composer__textarea {
