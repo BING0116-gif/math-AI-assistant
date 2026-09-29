@@ -15,6 +15,8 @@ export interface EntranceOptions {
   disabled?: boolean
   /** 跳过数字滚动(数据为异步加载时由 v-count-up 承担) */
   skipCountUp?: boolean
+  /** onMounted 时自动播放;异步数据页可传 false,待数据渲染后手动调用返回的 runner */
+  autoplay?: boolean
 }
 
 function resolveRoot(scope?: RootSource): HTMLElement | undefined {
@@ -28,10 +30,13 @@ function all(selector: string, root?: HTMLElement): HTMLElement[] {
   return Array.from(host.querySelectorAll<HTMLElement>(selector))
 }
 
-export function useEntranceAnimation(scope?: RootSource, opts: EntranceOptions = {}): void {
+export function useEntranceAnimation(scope?: RootSource, opts: EntranceOptions = {}): () => void {
   let cleanups: Array<() => void> = []
 
-  onMounted(() => {
+  /* runner 可被异步数据页在内容渲染完成后手动重放(如 Dashboard 加载完成时) */
+  function run() {
+    cleanups.forEach((fn) => fn())
+    cleanups = []
     if (opts.disabled || prefersReducedMotion()) return
     const root = resolveRoot(scope)
     const $ = (selector: string) => all(selector, root)
@@ -203,10 +208,16 @@ export function useEntranceAnimation(scope?: RootSource, opts: EntranceOptions =
         })
       })
     }
+  }
+
+  onMounted(() => {
+    if (opts.autoplay !== false) run()
   })
 
   onBeforeUnmount(() => {
     cleanups.forEach((fn) => fn())
     cleanups = []
   })
+
+  return run
 }
