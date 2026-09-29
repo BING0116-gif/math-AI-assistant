@@ -1,24 +1,32 @@
-@use 'variables' as *;
+/* ============================================================
+   知微 Math AI — Vue 过渡与轻量动画(V4)
+   时长/缓动读 motion.css 令牌;装饰项(glass-effect/glow-pulse/
+   float-animation/shimmer)已按 §8.3 删除
+   ============================================================ */
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity var(--dur-route) var(--ease-route);
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }
 
 .slide-fade-enter-active {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--dur-route) var(--ease-route);
 }
+
 .slide-fade-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 240ms var(--ease-route);
 }
+
 .slide-fade-enter-from {
   opacity: 0;
   transform: translateX(30px);
 }
+
 .slide-fade-leave-to {
   opacity: 0;
   transform: translateX(-30px);
@@ -27,13 +35,16 @@
 .scale-enter-active {
   transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
 .scale-leave-active {
   transition: all 0.25s ease;
 }
+
 .scale-enter-from {
   opacity: 0;
   transform: scale(0.9) translateY(10px);
 }
+
 .scale-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-5px);
@@ -42,119 +53,127 @@
 .slide-up-enter-active {
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
 .slide-up-leave-active {
   transition: all 0.25s ease;
 }
+
 .slide-up-enter-from {
   opacity: 0;
   transform: translateY(30px);
 }
+
 .slide-up-leave-to {
   opacity: 0;
   transform: translateY(-15px);
 }
 
 .list-enter-active {
-  transition: all 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.45s var(--ease-standard);
 }
+
 .list-leave-active {
   transition: all 0.25s ease;
   position: absolute;
 }
+
 .list-enter-from {
   opacity: 0;
   transform: translateY(40px) scale(0.95);
 }
+
 .list-leave-to {
   opacity: 0;
   transform: translateX(-30px) scale(0.9);
 }
 
-.bounce-enter-active {
-  animation: bounce-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+/* ---- 轻量工具动画 ---- */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-@keyframes bounce-in {
-  0% {
+@keyframes slideUp {
+  from {
     opacity: 0;
-    transform: scale(0.3);
+    transform: translateY(12px);
   }
-  50% {
-    transform: scale(1.05);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
-  70% {
-    transform: scale(0.9);
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
   }
-  100% {
+  to {
     opacity: 1;
     transform: scale(1);
   }
 }
 
-.glow-pulse {
-  animation: glow-pulse 2s ease-in-out infinite;
+.animate-fade-in {
+  animation: fadeIn var(--dur-fast) ease-out;
 }
 
-@keyframes glow-pulse {
-  0%, 100% { 
-    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
-  }
-  50% { 
-    box-shadow: 0 0 35px rgba(245, 158, 11, 0.35), 0 0 60px rgba(245, 158, 11, 0.15);
-  }
+.animate-slide-up {
+  animation: slideUp var(--dur-fast) ease-out;
 }
 
-.float-animation {
-  animation: float 3s ease-in-out infinite;
+.animate-scale-in {
+  animation: scaleIn var(--dur-fast) ease-out;
 }
 
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.4) 50%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
-}
-
+/* 聊天“正在输入”指示点 */
 .typing-dot {
   display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--primary);
+  background: var(--brand);
   margin: 0 3px;
-  
-  &:nth-child(1) { animation: typing-bounce 1.4s ease-in-out infinite; }
-  &:nth-child(2) { animation: typing-bounce 1.4s ease-in-out 0.2s infinite; }
-  &:nth-child(3) { animation: typing-bounce 1.4s ease-in-out 0.4s infinite; }
+
+  &:nth-child(1) {
+    animation: typing-bounce 1.4s ease-in-out infinite;
+  }
+
+  &:nth-child(2) {
+    animation: typing-bounce 1.4s ease-in-out 0.2s infinite;
+  }
+
+  &:nth-child(3) {
+    animation: typing-bounce 1.4s ease-in-out 0.4s infinite;
+  }
 }
 
 @keyframes typing-bounce {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     transform: translateY(0);
     opacity: 0.4;
   }
+
   30% {
     transform: translateY(-10px);
     opacity: 1;
   }
 }
 
-.hover-lift {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-scale-in,
+  .typing-dot {
+    animation: none;
   }
-}
-
-.glass-effect {
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-light);
 }

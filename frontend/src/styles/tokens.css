@@ -1,76 +1,79 @@
 /* ============================================================
-   知微 Math AI — Design System Tokens (V3.0)
-   视觉方向：高级 · 克制 · 学术 · 温和
-   色彩体系：暖米白 × 墨色文字 × 松绿主色 × 青绿/琥珀状态色
+   知微 Math AI — Design System Tokens (V4.0)
+   视觉方向:翡翠青品牌色 × 活力橙行动色
+   唯一令牌源:色彩 / 几何 / 字体 + V3 兼容别名层(P5 删除)
+   基准:design-preview/mock.css 定稿(REFACTOR_PLAN.md §3)
    ============================================================ */
 
-/* ---- 浅色主题 ---- */
-:root,
-[data-theme='light'] {
+/* ---- V4 令牌 · 亮色 ---- */
+:root {
   color-scheme: light;
 
-  /* 背景层级 — 暖米白系 */
-  --canvas: #F7F6F1;
-  --surface: #FCFBF8;
-  --surface-muted: #F1F2EC;
-  --surface-hover: #ECEAE0;
+  /* 画布与表面 */
+  --bg: #F4F5F8;
+  --bg-soft: #FAFAFC;
+  --side: #FAFAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F7F8FA;
 
-  /* 文字层级 — 墨色系，避免纯黑 */
-  --text-primary: #20231F;
-  --text-secondary: #72766F;
-  --text-tertiary: #9A9D96;
+  /* 文字层级 */
+  --ink-1: #171923;
+  --ink-2: #565D6D;
+  --ink-3: #8A91A0;
+  --ink-4: #B8BDC9;
 
-  /* 边框 — 统一 token，1px */
-  --border-subtle: #E6E3DA;
-  --border-strong: #D3CFC4;
+  /* 边框 */
+  --border: rgba(23, 25, 35, .08);
+  --border-strong: rgba(23, 25, 35, .15);
 
-  /* 语义色 — 松绿主色 */
-  --accent: #416B56;
-  --accent-hover: #355B49;
-  --accent-soft: #E8EFE9;
+  /* 品牌翡翠青 */
+  --brand: #0B7A5E;
+  --brand-strong: #08604A;
+  --brand-text: #08604A;
+  --brand-soft: rgba(11, 122, 94, .10);
+  --brand-soft-2: rgba(11, 122, 94, .16);
 
-  /* 知识/教育域 — 青绿 */
-  --knowledge: #417E7A;
-  --knowledge-soft: #E3EEE9;
+  /* 行动活力橙(橙底一律白字,≥14px/600;白底小字用 --accent-text) */
+  --accent: #F4570A;
+  --accent-bright: #F4570A;
+  --accent-strong: #E04E08;
+  --accent-text: #C2410C;
+  --accent-soft: rgba(244, 87, 10, .10);
+  --accent-soft-2: rgba(244, 87, 10, .16);
 
-  /* 学习状态 */
-  --mastered: #5F947C;
-  --learning: #C8913D;
-  --weak: #C9674C;
+  /* 语义色 */
+  --green: #1E9E6A;
+  --green-soft: rgba(30, 158, 106, .11);
+  --amber: #D08700;
+  --amber-soft: rgba(224, 158, 52, .13);
+  --rose: #DE5A63;
+  --rose-soft: rgba(222, 90, 99, .11);
+  --sky: #3E8DDD;
+  --sky-soft: rgba(62, 141, 221, .12);
+  --teal: #2FA79B;
+  --teal-soft: rgba(47, 167, 155, .12);
+  --violet: #2BB08C;
 
-  /* 状态色 */
-  --info: #417E7A;
-  --success: #5F947C;
-  --warning: #C8913D;
-  --danger: #C9674C;
+  /* 阴影与光效 */
+  --shadow-1: 0 1px 2px rgba(18, 22, 33, .05);
+  --shadow-2: 0 1px 2px rgba(18, 22, 33, .04), 0 6px 20px -8px rgba(18, 22, 33, .08);
+  --shadow-3: 0 16px 40px -14px rgba(18, 22, 33, .2);
+  --glow: 0 1px 2px rgba(244, 87, 10, .32), inset 0 1px 0 rgba(255, 255, 255, .18);
 
-  /* 阴影 — 非常克制 */
-  --shadow-sm: 0 1px 2px rgba(32, 35, 31, 0.04);
-  --shadow-md: 0 2px 8px rgba(32, 35, 31, 0.06);
-  --shadow-lg: 0 4px 16px rgba(32, 35, 31, 0.08);
-  --shadow-focus: 0 0 0 3px rgba(65, 107, 86, 0.18);
+  /* 字体(Noto Sans SC 等中文栈走系统,拉丁走 @fontsource 自托管) */
+  --font-ui: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+  --font-disp: 'Space Grotesk', 'Inter', 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --font-math: 'STIX Two Math', 'Cambria Math', 'Times New Roman', Georgia, serif;
 
-  /* 圆角 — 4px 基础网格，按语义分级 */
-  --radius-xs: 4px;
-  --radius-sm: 10px;   /* 按钮 */
-  --radius-md: 12px;   /* 输入框 */
-  --radius-lg: 16px;   /* 卡片 */
-  --radius-pill: 9999px;
+  /* 几何:圆角 */
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 16px;
+  --r-xl: 20px;
+  --r-pill: 999px;
 
-  /* 排版 */
-  --font-sans: 'Inter', 'Noto Sans SC', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'DM Mono', 'Consolas', 'Monaco', monospace;
-  --font-size-xs: 12px;
-  --font-size-sm: 13px;
-  --font-size-base: 16px;
-  --font-size-lg: 18px;
-  --font-size-xl: 20px;
-  --font-size-2xl: 24px;
-  --font-size-3xl: 28px;
-  --line-height-base: 1.7;
-  --line-height-tight: 1.4;
-
-  /* 间距 — 4px 基础网格 */
+  /* 几何:间距(4px 网格) */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -78,85 +81,212 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
   --space-12: 48px;
 
-  /* 动效 */
-  --transition-fast: 140ms ease-out;
-  --transition-base: 200ms ease-out;
-  --transition-slow: 320ms ease-out;
-
   /* 布局 */
-  --sidebar-width: 250px;
-  --sidebar-collapsed: 56px;
-  --topbar-height: 56px;
-  --content-max-width: 820px;
-  --content-padding: 32px;
+  --sidebar-width: 264px;
+  --sidebar-collapsed: 68px;
+  --topbar-height: 60px;
+  --topbar-height-mobile: 52px;
   --inspector-width: 360px;
+  --content-max: 1200px;
+  --content-padding: 32px;
 
-  /* Element Plus 兼容 */
-  --el-color-primary: var(--accent);
-  --el-color-danger: var(--danger);
-  --el-color-warning: var(--warning);
-  --el-color-success: var(--success);
-  --el-bg-color: var(--surface);
-  --el-text-color-primary: var(--text-primary);
-  --el-text-color-regular: var(--text-secondary);
-  --el-text-color-secondary: var(--text-tertiary);
-  --el-border-color: var(--border-subtle);
-  --el-border-radius-base: var(--radius-sm);
-  --el-border-radius-medium: var(--radius-md);
-  --el-fill-color-light: var(--surface-muted);
-  --el-fill-color-blank: var(--surface);
+  /* z-index 阶梯 */
+  --z-content: 0;
+  --z-sticky: 10;
+  --z-topbar: 20;
+  --z-drawer-mask: 30;
+  --z-drawer: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* 排版基础 */
+  --font-size-body: 14px;
+  --line-height-base: 1.6;
+  --line-height-tight: 1.35;
 }
 
-/* ---- 深色主题 ---- */
+/* ---- V4 令牌 · 暗色 ---- */
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --canvas: #14171A;
-  --surface: #1C2024;
-  --surface-muted: #24282D;
-  --surface-hover: #2C3137;
+  --bg: #0B0D12;
+  --bg-soft: #0E1117;
+  --side: #0E1117;
+  --surface: #14171F;
+  --surface-2: #1A1E29;
 
-  --text-primary: #EDEBE4;
-  --text-secondary: #A8ABA3;
-  --text-tertiary: #787C75;
+  --ink-1: #E8EAF2;
+  --ink-2: #9CA3B2;
+  --ink-3: #6B7280;
+  --ink-4: #4A505D;
 
-  --border-subtle: #33383E;
-  --border-strong: #454B52;
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .17);
 
-  --accent: #7DA58E;
-  --accent-hover: #92B8A2;
-  --accent-soft: #263830;
+  --brand: #45C8A0;
+  --brand-strong: #6FD9BB;
+  --brand-text: #7DDFC0;
+  --brand-soft: rgba(69, 200, 160, .14);
+  --brand-soft-2: rgba(69, 200, 160, .22);
 
-  --knowledge: #7DA59E;
-  --knowledge-soft: #233331;
+  --accent: #F4570A;
+  --accent-bright: #F4570A;
+  --accent-strong: #E04E08;
+  --accent-text: #FFB37E;
+  --accent-soft: rgba(255, 154, 87, .15);
+  --accent-soft-2: rgba(255, 154, 87, .22);
 
-  --mastered: #7DB89C;
-  --learning: #C9A86A;
-  --weak: #D48A78;
+  --green: #3FCE93;
+  --green-soft: rgba(63, 206, 147, .13);
+  --amber: #E5B567;
+  --amber-soft: rgba(229, 181, 103, .13);
+  --rose: #F08088;
+  --rose-soft: rgba(240, 128, 136, .13);
+  --sky: #6BB2F2;
+  --sky-soft: rgba(107, 178, 242, .13);
+  --teal: #4FC3B4;
+  --teal-soft: rgba(79, 195, 180, .13);
+  --violet: #5ED4AE;
 
-  --info: #7DA59E;
-  --success: #7DB89C;
-  --warning: #C9A86A;
-  --danger: #D48A78;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px -10px rgba(0, 0, 0, .5);
+  --shadow-3: 0 16px 44px -12px rgba(0, 0, 0, .6);
+  --glow: 0 1px 2px rgba(255, 154, 87, .4), inset 0 1px 0 rgba(255, 255, 255, .14);
+}
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.40);
-  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.50);
-  --shadow-focus: 0 0 0 3px rgba(125, 165, 142, 0.30);
+/* ============================================================
+   LEGACY ALIASES — V3 → V4(P0 建立,P5 随全量迁移删除)
+   ⚠️ 语义变化警示:V3 --accent 是品牌主色(靛紫),V4 --accent 是行动橙。
+   本层无法区分两种语义,未迁移组件中的 var(--accent) 将呈现橙色;
+   P2–P5 迁移时必须逐处判断改为 --brand(品牌)或保留 --accent(行动),
+   禁止盲替换。
+   ============================================================ */
+:root {
+  /* 背景层级 */
+  --canvas: var(--bg);
+  --surface-muted: var(--surface-2);
+  --bg-card: var(--surface);
+  --bg-sidebar: var(--side);
+  --bg-secondary: var(--surface-2);
+  --bg-topbar: color-mix(in srgb, var(--bg) 82%, transparent);
+  --bg-overlay: rgba(9, 11, 15, .5);
 
-  --el-color-primary: var(--accent);
-  --el-color-danger: var(--danger);
-  --el-color-warning: var(--warning);
-  --el-color-success: var(--success);
-  --el-bg-color: var(--surface);
-  --el-text-color-primary: var(--text-primary);
-  --el-text-color-regular: var(--text-secondary);
-  --el-text-color-secondary: var(--text-tertiary);
-  --el-border-color: var(--border-subtle);
-  --el-fill-color-light: var(--surface-muted);
-  --el-fill-color-blank: var(--surface);
+  /* 文字 */
+  --text-primary: var(--ink-1);
+  --text-secondary: var(--ink-2);
+  --text-tertiary: var(--ink-3);
+  --text-warning: var(--amber);
+
+  /* 边框 */
+  --border-subtle: var(--border);
+  --border-light: var(--border);
+  --border-default: var(--border-strong);
+  --border-warning: var(--amber);
+
+  /* 品牌/主色(V3 --primary / --color-agent 均为品牌语义 → 青) */
+  --primary: var(--brand);
+  --primary-hover: var(--brand-strong);
+  --primary-active: var(--brand-strong);
+  --primary-ghost: var(--brand-soft);
+  --accent-ghost: var(--brand-soft);
+  --accent-hover: var(--accent-strong);
+
+  /* 状态色 */
+  --success: var(--green);
+  --warning: var(--amber);
+  --danger: var(--rose);
+  --info: var(--brand);
+
+  /* 学习状态 */
+  --knowledge: var(--brand);
+  --knowledge-soft: var(--brand-soft);
+  --mastered: var(--green);
+  --learning: var(--amber);
+  --weak: var(--rose);
+  --surface-warning: var(--amber-soft);
+
+  /* 圆角(V3 名 → V4 值) */
+  --radius-xs: var(--r-s);
+  --radius-sm: 10px;
+  --radius-md: var(--r-m);
+  --radius-lg: var(--r-l);
+  --radius-xl: var(--r-xl);
+  --radius-pill: var(--r-pill);
+
+  /* 字号阶梯(V3 名 → V4 阶梯值) */
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 15px;
+  --font-size-xl: 17px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 30px;
+
+  /* 字体族 */
+  --font-sans: var(--font-ui);
+
+  /* 阴影 */
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
+  --shadow-glow: var(--glow);
+  --shadow-focus: 0 0 0 3px var(--brand-soft);
+
+  /* 过渡(V3 名保留,P2 起改用 §3.4 动效令牌) */
+  --transition-fast: 150ms ease-out;
+  --transition-base: 220ms ease-out;
+  --transition-slow: 360ms ease-out;
+
+  /* 布局 */
+  --content-max-width: var(--content-max);
+
+  /* 徽标 */
+  --badge-color: var(--ink-1);
+
+  /* themes.scss legacy --color-* 全集(仅现网消费的 5 个有引用,其余按映射收编) */
+  --color-canvas: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface);
+  --color-surface-muted: var(--surface-2);
+  --color-text: var(--ink-1);
+  --color-text-muted: var(--ink-2);
+  --color-text-subtle: var(--ink-3);
+  --color-text-inverse: var(--bg);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border);
+  --color-focus: var(--brand);
+  --color-action: var(--ink-1);
+  --color-action-soft: var(--surface-2);
+  --color-agent: var(--brand);
+  --color-agent-soft: var(--brand-soft);
+  --color-knowledge: var(--brand);
+  --color-knowledge-soft: var(--brand-soft);
+  --color-review: var(--amber);
+  --color-review-soft: var(--amber-soft);
+  --color-success: var(--green);
+  --color-success-soft: var(--green-soft);
+  --color-warning: var(--amber);
+  --color-warning-soft: var(--amber-soft);
+  --color-danger: var(--rose);
+  --color-danger-soft: var(--rose-soft);
+  --color-info: var(--brand);
+  --color-info-soft: var(--brand-soft);
+  --color-graph: var(--bg);
+  --color-graph-surface: var(--surface);
+}
+
+/* 别名层中需要暗色专属字面值的项 */
+[data-theme='dark'] {
+  --surface-hover: #232836;
+  --color-action-hover: #F4F5F8;
+}
+
+:root {
+  --surface-hover: #ECEEF2;
+  --color-action-hover: #3A3D42;
 }
 
 /* ---- 全局重置 ---- */
@@ -177,38 +307,46 @@ html {
 
 body {
   height: 100%;
-  font-family: var(--font-sans);
-  font-size: var(--font-size-base);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-body);
   line-height: var(--line-height-base);
-  color: var(--text-primary);
-  background: var(--canvas);
+  color: var(--ink-1);
+  background: var(--bg);
+  text-rendering: optimizeLegibility;
 }
 
 #app {
   height: 100%;
+  min-width: 0;
 }
 
-/* ---- 滚动条 ---- */
+/* ---- 滚动条(对齐原型) ---- */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: rgba(114, 118, 111, 0.28);
-  border-radius: var(--radius-pill);
+  background: var(--ink-4);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(114, 118, 111, 0.44);
+  background: var(--ink-3);
+  background-clip: content-box;
 }
 
 /* ---- 焦点 ---- */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }
 
 /* ---- 无障碍辅助 ---- */
@@ -248,18 +386,18 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .section-title {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-xl);
   font-weight: 600;
   line-height: var(--line-height-tight);
 }
 
 /* ---- 链接 ---- */
 a {
-  color: var(--accent);
+  color: var(--brand);
   text-decoration: none;
 }
 a:hover {
-  color: var(--accent-hover);
+  color: var(--brand-strong);
 }
 
 /* ---- 按钮重置 ---- */
@@ -268,6 +406,7 @@ button {
   cursor: pointer;
   border: none;
   background: none;
+  color: inherit;
 }
 
 /* ---- 输入重置 ---- */

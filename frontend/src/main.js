@@ -1,36 +1,53 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
-import 'element-plus/dist/index.css'
-import 'element-plus/theme-chalk/dark/css-vars.css'
 import 'katex/dist/katex.min.css'
 
 import App from './App.vue'
 import router from './router'
+import { setElementPlusApp } from './plugins/elementPlus'
+import { vCountUp } from './composables/useCountUp'
 
-// V2.2 设计系统 Token — 必须在 themes.scss 之前引入，确保新组件 CSS 变量生效
-import './styles/tokens.css'
-// 旧主题系统（保留兼容旧组件，提供 --color-* 系列 legacy alias）
+// 自托管字体(REFACTOR_PLAN.md §3.2):在 tokens.css 之前引入
+import '@fontsource/inter/400.css'
+import '@fontsource/inter/500.css'
+import '@fontsource/inter/600.css'
+import '@fontsource/inter/700.css'
+import '@fontsource/space-grotesk/500.css'
+import '@fontsource/space-grotesk/600.css'
+import '@fontsource/space-grotesk/700.css'
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/500.css'
+
+// V4 设计系统:legacy 主题在前、V4 令牌(+兼容别名层)在后覆盖
 import './styles/themes.scss'
+import './styles/tokens.css'
+import './styles/motion.css'
 import './styles/global.scss'
+import './styles/element-plus.scss'
+import './styles/math.scss'
 import './styles/transitions.scss'
 
 const app = createApp(App)
+setElementPlusApp(app)
+app.directive('count-up', vCountUp)
 
 const pinia = createPinia()
 app.use(pinia)
 
-// 初始化 auth store 并恢复会话
+// 初始化 auth store;先注入 API 会话处理器,再通过 HttpOnly cookie/旧会话恢复。
 import { useAuthStore } from '@/stores/authStore'
-const authStore = useAuthStore()
-authStore.restoreSession()
+import { setAuthSessionHandlers } from '@/api'
 
-// 设置 API 客户端的 token getter，确保 Authorization 头统一注入
-import { setAuthTokenGetter } from '@/api'
-setAuthTokenGetter(() => authStore.getAccessToken())
+async function bootstrap() {
+  const authStore = useAuthStore()
+  setAuthSessionHandlers({
+    getToken: () => authStore.getAccessToken(),
+    refresh: () => authStore.refresh(),
+    clearSession: () => authStore.clearSession(),
+  })
+  await authStore.restoreSession()
+  app.use(router)
+  app.mount('#app')
+}
 
-app.use(router)
-app.use(ElementPlus, { locale: zhCn })
-
-app.mount('#app')
+bootstrap()
