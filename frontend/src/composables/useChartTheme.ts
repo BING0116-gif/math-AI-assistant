@@ -14,6 +14,20 @@ export function chartVar(name: string, fallback = 'transparent'): string {
   return value || fallback
 }
 
+/** CSS 变量色值 → 0xRRGGBB 数值(three.js 材质/灯光用;alpha 丢弃,解析失败取 fallback) */
+export function cssVarToHex(name: string, fallback = 0x888888): number {
+  const value = chartVar(name, '')
+  const hex = value.match(/^#([0-9a-f]{3,8})$/i)
+  if (hex) {
+    let body = hex[1]
+    if (body.length === 3 || body.length === 4) body = [...body].map((ch) => ch + ch).join('')
+    return parseInt(body.slice(0, 6), 16)
+  }
+  const rgb = value.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
+  if (rgb) return (Math.round(Number(rgb[1])) << 16) | (Math.round(Number(rgb[2])) << 8) | Math.round(Number(rgb[3]))
+  return fallback
+}
+
 type ChartEntry = {
   chart: ECharts
   build: () => EChartsOption
