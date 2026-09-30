@@ -34,20 +34,13 @@ app.directive('count-up', vCountUp)
 const pinia = createPinia()
 app.use(pinia)
 
-// 初始化 auth store;先注入 API 会话处理器,再通过 HttpOnly cookie/旧会话恢复。
+// 初始化 auth store 并恢复会话;为 API 客户端注入统一的 token getter
 import { useAuthStore } from '@/stores/authStore'
-import { setAuthSessionHandlers } from '@/api'
+import { setAuthTokenGetter } from '@/api'
 
-async function bootstrap() {
-  const authStore = useAuthStore()
-  setAuthSessionHandlers({
-    getToken: () => authStore.getAccessToken(),
-    refresh: () => authStore.refresh(),
-    clearSession: () => authStore.clearSession(),
-  })
-  await authStore.restoreSession()
-  app.use(router)
-  app.mount('#app')
-}
+const authStore = useAuthStore()
+setAuthTokenGetter(() => authStore.getAccessToken())
+authStore.restoreSession()
 
-bootstrap()
+app.use(router)
+app.mount('#app')

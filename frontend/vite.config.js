@@ -38,12 +38,15 @@ export default defineConfig(({ mode }) => {
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks: {
-          'element-plus': ['element-plus'],
-          'katex': ['katex'],
-          'mathlive': ['mathlive']
+          'math-rendering': ['katex', 'markdown-it', '@mdit/plugin-katex', 'dompurify'],
+          'mathlive': ['mathlive'],
+          'charts': ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
+          'knowledge-graph': ['cytoscape', 'cytoscape-dagre'],
+          'three': ['three']
         }
       }
     }
