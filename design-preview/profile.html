@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>记忆画像 · 知微 Math AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mock.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ======================= 侧边栏 ======================= -->
+  <aside class="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <span class="brand-mark">∑</span>
+        <span>知微<small>MATH&nbsp;AI&nbsp;ASSISTANT</small></span>
+      </div>
+      <button class="icon-btn" title="收起侧栏"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg></button>
+    </div>
+
+    <button class="btn btn-primary btn-block"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>新对话</button>
+    <div class="side-search"><svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/></svg>搜索对话<kbd>Ctrl K</kbd></div>
+
+    <div class="nav-label">学习空间</div>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>学习看板</a>
+    <a class="nav-item active" href="#"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>记忆画像</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2 6.5 16.2"/><path d="m12 7.2 5.5 9"/><path d="M7.2 18h9.6"/></svg>知识星球</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>智能笔记</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg>学以致用</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="m10 9 4 4"/><path d="m14 9-4 4"/></svg>错题复盘<span class="count">9</span></a>
+
+    <div class="nav-label">最近对话</div>
+    <a class="recent-item" href="#"><div class="rt">Rolle 定理证明与变式</div><div class="rs">今天 14:32 · 14 条消息</div></a>
+    <a class="recent-item" href="#"><div class="rt">为什么洛必达法则会失效</div><div class="rs">昨天 · 9 条消息</div></a>
+
+    <div class="side-foot">
+      <div class="theme-row">
+        <span class="caption">浅色模式</span>
+        <button class="icon-btn"><svg class="ic ic-15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg></button>
+      </div>
+      <div class="user-chip">
+        <span class="avatar">诗</span>
+        <div><div style="font-size:13px;font-weight:600;line-height:1.3">林诗涵</div><div style="font-size:11px;color:var(--ink-3)">Lv.6 · 微分行者</div></div>
+        <button class="icon-btn" style="margin-left:auto"><svg class="ic ic-15" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ======================= 主区 ======================= -->
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb"><span class="faint">学习空间</span><svg class="ic ic-14" viewBox="0 0 24 24" style="color:var(--ink-4)"><path d="m9 18 6-6-6-6"/></svg>记忆画像</div>
+      <div class="global-search"><svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/></svg>搜索知识点、错题、对话…<kbd>Ctrl K</kbd></div>
+      <div class="top-actions">
+        <button class="icon-btn bell"><svg class="ic" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+        <span class="divider-v"></span>
+        <span class="avatar" style="width:30px;height:30px;font-size:12px">诗</span>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- 画像头部 -->
+      <div class="profile-head">
+        <span class="avatar big-avatar">诗</span>
+        <div style="flex:1">
+          <h2>林诗涵 <span class="tag tag-soft-accent">Lv.6 · 微分行者</span></h2>
+          <div style="display:flex;align-items:center;gap:16px;margin-top:7px">
+            <span class="caption">高等数学（下） · 累计学习 <b class="num" style="color:var(--ink-2)" data-count="126">126</b> 小时 · <b class="num" style="color:var(--ink-2)" data-count="586">586</b> 次对话</span>
+          </div>
+          <div class="xp-track" style="margin-top:9px">
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-3)"><span>LV 6</span><span>距离 LV 7 还差 <b class="num" data-count="660">660</b> XP</span></div>
+            <div class="progress"><i style="width:72%;background:linear-gradient(90deg,var(--brand),var(--violet))"></i></div>
+          </div>
+        </div>
+        <div class="head-actions">
+          <div class="segmented"><button class="on">概览</button><button>知识点</button><button>学习行为</button></div>
+          <button class="btn btn-ghost btn-sm"><svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>分享画像</button>
+        </div>
+      </div>
+
+      <!-- 网格 -->
+      <div class="grid-2">
+        <div class="col-stack">
+          <div class="card">
+            <div class="card-head"><span class="t-3">能力雷达</span><span class="caption">综合评级 B+ · 超过同课程 78% 学习者</span></div>
+            <div style="display:grid;place-items:center;padding:8px 0 14px">
+              <svg width="252" height="216" viewBox="-26 0 272 214">
+                <polygon points="110,30 186.1,85.3 157,174.7 63,174.7 33.9,85.3" fill="none" stroke="var(--border-strong)" stroke-width="1"/>
+                <polygon points="110,46 170.9,90.2 147.6,161.8 72.4,161.8 49.1,90.2" fill="none" stroke="var(--border)"/>
+                <polygon points="110,62 155.6,95.2 138.2,148.8 81.8,148.8 64.4,95.2" fill="none" stroke="var(--border)"/>
+                <polygon points="110,78 140.4,100.1 128.8,135.9 91.2,135.9 79.6,100.1" fill="none" stroke="var(--border)"/>
+                <polygon points="110,94 125.2,105.1 119.4,122.9 100.6,122.9 94.7,105.1" fill="none" stroke="var(--border)"/>
+                <line x1="110" y1="110" x2="110" y2="30" stroke="var(--border)"/>
+                <line x1="110" y1="110" x2="186.1" y2="85.3" stroke="var(--border)"/>
+                <line x1="110" y1="110" x2="157" y2="174.7" stroke="var(--border)"/>
+                <line x1="110" y1="110" x2="63" y2="174.7" stroke="var(--border)"/>
+                <line x1="110" y1="110" x2="33.9" y2="85.3" stroke="var(--border)"/>
+                                <polygon class="radar-poly" points="110,39.6 166.3,91.7 139.2,150.1 77.1,155.3 48.4,90" fill="var(--brand-soft-2)" stroke="var(--brand)" stroke-width="1.8" stroke-linejoin="round"/>
+                <circle cx="110" cy="39.6" r="2.6" fill="var(--brand)"/><circle cx="166.3" cy="91.7" r="2.6" fill="var(--brand)"/><circle cx="139.2" cy="150.1" r="2.6" fill="var(--brand)"/><circle cx="77.1" cy="155.3" r="2.6" fill="var(--brand)"/><circle cx="48.4" cy="90" r="2.6" fill="var(--brand)"/>
+                <text x="110" y="17" text-anchor="middle" style="font-size:10.5px;fill:var(--ink-2);font-weight:600">概念理解</text>
+                <text x="196" y="80" style="font-size:10.5px;fill:var(--ink-2);font-weight:600">计算能力</text>
+                <text x="163" y="193" text-anchor="middle" style="font-size:10.5px;fill:var(--ink-2);font-weight:600">证明推理</text>
+                <text x="57" y="193" text-anchor="middle" style="font-size:10.5px;fill:var(--ink-2);font-weight:600">应用建模</text>
+                <text x="24" y="80" text-anchor="end" style="font-size:10.5px;fill:var(--ink-2);font-weight:600">反思归纳</text>
+                <text x="110" y="34" text-anchor="middle" style="font-family:var(--font-disp);font-size:9px;font-weight:700;fill:var(--brand-text)">88</text>
+                <text x="172" y="88" style="font-family:var(--font-disp);font-size:9px;font-weight:700;fill:var(--brand-text)">74</text>
+                <text x="146" y="145" text-anchor="middle" style="font-family:var(--font-disp);font-size:9px;font-weight:700;fill:var(--brand-text)">62</text>
+                <text x="72" y="151" text-anchor="middle" style="font-family:var(--font-disp);font-size:9px;font-weight:700;fill:var(--brand-text)">70</text>
+                <text x="44" y="86" text-anchor="middle" style="font-family:var(--font-disp);font-size:9px;font-weight:700;fill:var(--brand-text)">81</text>
+              </svg>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="t-3">本周学习节奏</span><span class="caption">单位：分钟</span></div>
+            <div class="week-bars">
+              <div class="wbar"><i style="height:37px"></i><span>一</span></div>
+              <div class="wbar"><i style="height:51px"></i><span>二</span></div>
+              <div class="wbar"><i style="height:31px"></i><span>三</span></div>
+              <div class="wbar"><i style="height:60px"></i><span>四</span></div>
+              <div class="wbar"><i style="height:74px"></i><span>五</span></div>
+              <div class="wbar hot"><i style="height:99px"></i><span style="color:var(--accent-text);font-weight:600">六</span></div>
+              <div class="wbar"><i style="height:65px"></i><span>日</span></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px 22px 14px;border-top:1px dashed var(--border);margin-top:14px">
+              <span class="caption">单日最高 <b class="num" style="color:var(--ink-1)" data-count="128">128</b> 分钟（周六）</span>
+              <span class="caption">周总计 <b class="num" style="color:var(--ink-1)" data-count="510">510</b> 分钟</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-stack">
+          <div class="card">
+            <div class="card-head">
+              <span class="t-3">记忆留存曲线</span>
+              <div class="legend"><span><i style="background:var(--brand)"></i>有复习强化</span><span><i style="background:var(--ink-3)"></i>自然遗忘</span></div>
+            </div>
+            <div class="chart-wrap">
+              <svg width="100%" height="170" viewBox="0 0 460 180" preserveAspectRatio="none">
+                <line x1="20" y1="40" x2="440" y2="40" stroke="var(--border)" stroke-dasharray="3 4"/>
+                <line x1="20" y1="105" x2="440" y2="105" stroke="var(--border)" stroke-dasharray="3 4"/>
+                <line x1="20" y1="170" x2="440" y2="170" stroke="var(--border-strong)"/>
+                <polyline points="20,62 104,94 188,126 272,144 356,154 440,158" fill="none" stroke="var(--ink-3)" stroke-width="1.8" stroke-dasharray="5 5" stroke-linecap="round"/>
+                <polyline points="20,62 104,80 188,90 272,82 356,66 440,50" fill="none" stroke="var(--brand)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="188" cy="90" r="3.4" fill="var(--brand)" stroke="var(--surface)" stroke-width="2"/>
+                <circle cx="356" cy="66" r="3.4" fill="var(--brand)" stroke="var(--surface)" stroke-width="2"/>
+                <text x="188" y="76" text-anchor="middle" style="font-size:9.5px;fill:var(--accent-text);font-weight:600">第 2 次复习</text>
+                <text x="356" y="52" text-anchor="middle" style="font-size:9.5px;fill:var(--accent-text);font-weight:600">第 3 次复习</text>
+                <text x="440" y="44" text-anchor="end" style="font-family:var(--font-disp);font-size:11px;font-weight:700;fill:var(--ink-1)">86%</text>
+              </svg>
+            </div>
+            <div class="axis-x" style="padding:0 14px 6px"><span>第 1 天</span><span>第 2 天</span><span>第 4 天</span><span>第 7 天</span><span>第 15 天</span><span>第 30 天</span></div>
+          </div>
+
+          <div class="card ai-card card-pad" style="padding:18px 20px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <svg class="ic" viewBox="0 0 24 24" style="color:var(--brand)"><path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5l-1.8-5.5a2 2 0 0 0-1.2-1.2L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z"/><path d="M19 3v3"/><path d="M17.5 4.5h3"/></svg>
+              <span class="t-3">AI 画像解读</span>
+            </div>
+            <div class="ai-insight">
+              <svg class="ic ic-14" viewBox="0 0 24 24" style="color:var(--green)"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg>
+              <p><b>概念迁移能力突出</b>：能在洛必达失效场景中主动联想到泰勒展开，这类「跨知识点联想」位居全班前 10%。</p>
+            </div>
+            <div class="ai-insight">
+              <svg class="ic ic-14" viewBox="0 0 24 24" style="color:var(--amber)"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <p><b>证明题步骤完整性不足</b>：常跳过「验证定理前提」步骤，近 5 次练习平均扣 2.4 分，建议使用证明题检查清单。</p>
+            </div>
+            <div class="ai-insight" style="padding-bottom:0">
+              <svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <p><b>遗忘临界预警</b>：「级数敛散性」5 个知识点将于 <b>10 月 2 日</b> 前后跌破留存阈值，已加入本周四复习队列。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 知识掌握分布 -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-head">
+          <span class="t-3">知识掌握分布</span>
+          <div class="legend"><span><i style="background:var(--green)"></i>已掌握</span><span><i style="background:var(--amber)"></i>学习中</span><span><i style="background:var(--rose)"></i>薄弱</span></div>
+        </div>
+        <div style="padding:10px 0 14px">
+          <div class="bar-row" style="grid-template-columns:120px 1fr 110px">
+            <span class="bn">微积分</span>
+            <span class="progress" style="height:10px"><i style="width:100%;background:linear-gradient(90deg,var(--green) 0 58%,var(--amber) 58% 85%,var(--rose) 85% 100%)"></i></span>
+            <span class="bv"><b>35</b>/60 已掌握</span>
+          </div>
+          <div class="bar-row" style="grid-template-columns:120px 1fr 110px">
+            <span class="bn">线性代数</span>
+            <span class="progress" style="height:10px"><i style="width:100%;background:linear-gradient(90deg,var(--green) 0 46%,var(--amber) 46% 80%,var(--rose) 80% 100%)"></i></span>
+            <span class="bv"><b>23</b>/50 已掌握</span>
+          </div>
+          <div class="bar-row" style="grid-template-columns:120px 1fr 110px">
+            <span class="bn">概率论与数理统计</span>
+            <span class="progress" style="height:10px"><i style="width:100%;background:linear-gradient(90deg,var(--green) 0 52%,var(--amber) 52% 82%,var(--rose) 82% 100%)"></i></span>
+            <span class="bv"><b>26</b>/50 已掌握</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="anim.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能对话 · 知微 Math AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mock.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ======================= 侧边栏（对话优先） ======================= -->
+  <aside class="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <span class="brand-mark">∑</span>
+        <span>知微<small>MATH&nbsp;AI&nbsp;ASSISTANT</small></span>
+      </div>
+      <button class="icon-btn"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg></button>
+    </div>
+
+    <button class="btn btn-primary btn-block"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>新对话</button>
+    <div class="side-search"><svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/></svg>搜索对话<kbd>Ctrl K</kbd></div>
+
+    <div class="nav-label">今天</div>
+    <a class="recent-item active" href="#"><div class="rt">Rolle 定理证明与变式</div><div class="rs">14 条消息 · 引用 5 个知识点</div></a>
+    <a class="recent-item" href="#"><div class="rt">拐点判定总是出错怎么办</div><div class="rs">6 条消息</div></a>
+    <div class="nav-label">昨天</div>
+    <a class="recent-item" href="#"><div class="rt">为什么洛必达法则会失效</div><div class="rs">9 条消息</div></a>
+    <a class="recent-item" href="#"><div class="rt">特征值与相似对角化</div><div class="rs">21 条消息</div></a>
+    <a class="recent-item" href="#"><div class="rt">泰勒展开的直觉理解</div><div class="rs">12 条消息</div></a>
+    <div class="nav-label">更早</div>
+    <a class="recent-item" href="#"><div class="rt">正项级数判别法练习讲评</div><div class="rs">9月24日 · 17 条消息</div></a>
+
+    <div class="side-foot">
+      <div class="theme-row">
+        <span class="caption">深色模式</span>
+        <button class="icon-btn"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+      </div>
+      <div class="user-chip">
+        <span class="avatar">诗</span>
+        <div><div style="font-size:13px;font-weight:600;line-height:1.3">林诗涵</div><div style="font-size:11px;color:var(--ink-3)">Lv.6 · 微分行者</div></div>
+        <button class="icon-btn" style="margin-left:auto"><svg class="ic ic-15" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ======================= 对话主区 ======================= -->
+  <main class="chat-main">
+    <header class="topbar">
+      <div class="crumb">Rolle 定理证明与变式<span class="tag tag-soft-accent" style="margin-left:8px">自动存入笔记</span></div>
+      <div class="top-actions" style="margin-left:auto">
+        <button class="btn btn-ghost btn-sm"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>导出为笔记</button>
+        <button class="icon-btn"><svg class="ic ic-15" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg></button>
+      </div>
+    </header>
+
+    <div class="chat-scroll">
+      <div class="chat-col">
+        <div class="date-chip">今天 14:02</div>
+
+        <!-- 用户消息 -->
+        <div class="msg-user">
+          <div class="bubble">帮我系统讲一下 Rolle 定理，给一个严格的证明，再说明考试里常见的几种变式，谢谢！</div>
+        </div>
+
+        <!-- AI 回复 1 -->
+        <div class="msg-ai">
+          <span class="avatar">∑</span>
+          <div class="ai-body">
+            <h4>Rolle 定理（罗尔中值定理）</h4>
+            <p class="dim">已结合你的知识图谱作答：引用 3 个已掌握知识点，跳过你已熟悉的「闭区间连续函数性质」，重点补强薄弱的「费马引理」。</p>
+            <div class="formula">
+              <i>f</i>&nbsp;∈&nbsp;<i>C</i>[<i>a</i>,&nbsp;<i>b</i>]，且在 (<i>a</i>,&nbsp;<i>b</i>) 内可导，<i>f</i>(<i>a</i>)&nbsp;=&nbsp;<i>f</i>(<i>b</i>)&nbsp;⇒&nbsp;∃&nbsp;<i>ξ</i>&nbsp;∈&nbsp;(<i>a</i>,&nbsp;<i>b</i>)，使得&nbsp;<i>f</i>′(<i>ξ</i>)&nbsp;=&nbsp;0
+            </div>
+            <div class="step">
+              <span class="no">1</span>
+              <div class="sb"><b>由最值定理</b>：<i>f</i> 在闭区间 [a, b] 上连续，必取得最大值 <i>M</i> 与最小值 <i>m</i>。</div>
+            </div>
+            <div class="step">
+              <span class="no">2</span>
+              <div class="sb"><b>分类讨论</b>：若 <i>M</i> = <i>m</i>，则 <i>f</i> 为常值函数，任取 <i>ξ</i> 均有 <i>f</i>′(<i>ξ</i>) = 0；若 <i>M</i> ≠ <i>m</i>，因为端点函数值相等，最值至少有一个在内部点 <i>ξ</i> 取得。</div>
+            </div>
+            <div class="step">
+              <span class="no">3</span>
+              <div class="sb"><b>由费马引理</b>：<i>f</i> 在 <i>ξ</i> 处可导且取极值，故 <i>f</i>′(<i>ξ</i>) = 0。∎</div>
+            </div>
+            <div class="cite-chips">
+              <span class="chip"><svg class="ic ic-14" style="color:var(--green)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 5-5"/></svg>微分中值定理 · 已掌握</span>
+              <span class="chip"><svg class="ic ic-14" style="color:var(--amber)" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>费马引理 · 薄弱 42%</span>
+              <span class="chip"><svg class="ic ic-14" style="color:var(--brand-text)" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></svg>教材 §3.1 · 同济版</span>
+            </div>
+            <div class="msg-meta">
+              <button title="复制"><svg class="ic ic-14" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+              <button title="重新生成"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              <button title="收藏"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/></svg></button>
+              <button title="生成练习"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5l-1.8-5.5a2 2 0 0 0-1.2-1.2L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z"/></svg></button>
+              <span class="caption" style="margin-left:6px">知微 Pro · 1.8s · 引用 5 个知识点</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 用户消息 2 -->
+        <div class="msg-user">
+          <div class="bubble">第 3 步能不能从"最值"的角度直观解释一下？考试里常见的变式是哪三种？</div>
+        </div>
+
+        <!-- AI 回复 2 -->
+        <div class="msg-ai">
+          <span class="avatar">∑</span>
+          <div class="ai-body">
+            <h4>直观理解与三种高频变式</h4>
+            <p>想象一段<b>两端等高的山路</b>：不管中间怎么起伏，总存在一个位置，切线恰好水平——那就是山顶或山谷。Rolle 定理说的正是这件事。</p>
+            <p class="dim" style="margin-bottom:6px">考试高频变式：</p>
+            <div class="step">
+              <span class="no">①</span>
+              <div class="sb"><b>构造辅助函数</b>：证明 <i>f</i>(<i>a</i>) = <i>f</i>(<i>b</i>) 时，先构造 F(x) = <i>f</i>(x) − g(x)，使 F 满足端点相等，再套用 Rolle。</div>
+            </div>
+            <div class="step">
+              <span class="no">②</span>
+              <div class="sb"><b>多个中值点</b>：结论含两个 <i>ξ</i>、<i>η</i> 时，在不同区间分别应用 Rolle，或与 Lagrange 定理联立。</div>
+            </div>
+            <div class="step">
+              <span class="no">③</span>
+              <div class="sb"><b>与积分结合</b>：由积分中值定理找出 <i>f</i>(<i>ξ</i>) = 0 的区间端点，回归 Rolle 框架。</div>
+            </div>
+            <div class="cite-chips">
+              <span class="chip" style="border-color:var(--brand);background:var(--brand-soft);color:var(--brand-text)"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5l-1.8-5.5a2 2 0 0 0-1.2-1.2L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z"/></svg>生成 5 道变式练习</span>
+              <span class="chip">加入今日复习计划</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 输入区 -->
+    <div class="composer-wrap">
+      <div class="composer">
+        <div class="row1">
+          <input placeholder="继续提问，或输入 / 快速插入公式…">
+        </div>
+        <div class="row2">
+          <button class="tool"><span style="font-family:var(--font-disp);font-weight:600">∑</span>公式</button>
+          <button class="tool"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/></svg>拍照</button>
+          <button class="tool"><svg class="ic ic-14" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5a2 2 0 0 0-2.8 0L6 21"/></svg>图片</button>
+          <button class="tool on"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>深度思考</button>
+          <span class="tag tag-plain" style="margin-left:8px">知微 Pro</span>
+          <button class="send-btn"><svg class="ic ic-15" viewBox="0 0 24 24" style="stroke-width:2"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
+        </div>
+      </div>
+      <div class="composer-hint"><b>Enter</b> 发送 · <b>Shift + Enter</b> 换行 · 数学公式支持 LaTeX 语法 · 内容由 AI 生成，请自行核验</div>
+    </div>
+  </main>
+</div>
+<script src="anim.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

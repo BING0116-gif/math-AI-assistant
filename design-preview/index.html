@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知微 · 前端重设计效果图总览</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F4F5F8; --surface:#fff; --ink:#171923; --ink2:#565D6D; --ink3:#8A91A0;
+    --border:rgba(23,25,35,.08); --accent:#5E6AD2; --soft:rgba(94,106,210,.1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,'Noto Sans SC','Microsoft YaHei UI',sans-serif;background:var(--bg);color:var(--ink);padding:56px 48px}
+  .head{max-width:1200px;margin:0 auto 36px}
+  .eyebrow{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface);font-size:12px;color:var(--ink2);font-weight:500;margin-bottom:16px}
+  h1{font-size:28px;font-weight:700;letter-spacing:-.01em}
+  .sub{font-size:14px;color:var(--ink3);margin-top:8px}
+  .grid{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px}
+  a.tile{display:block;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;text-decoration:none;color:inherit;transition:all .18s;box-shadow:0 1px 2px rgba(18,22,33,.04),0 6px 20px -8px rgba(18,22,33,.08)}
+  a.tile:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 16px 40px -14px rgba(18,22,33,.2)}
+  a.tile img{width:100%;display:block;border-bottom:1px solid var(--border)}
+  .tile .cap{padding:14px 18px}
+  .tile .t{font-size:14.5px;font-weight:600}
+  .tile .d{font-size:12.5px;color:var(--ink3);margin-top:3px}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="eyebrow">∑ 知微 · 视觉重设计 2026 · 效果图预览</div>
+    <h1>重设计方向预览</h1>
+    <div class="sub">方向：翡翠青品牌主色 #0B7A5E × 橙色行动色（CTA/打卡/待复习）· Inter + Space Grotesk + 思源黑体 · 发丝线边框 + 克制阴影 · 每页带开屏入场动效（点进任意页面即可看到，刷新重放；URL 加 &noanim=1 可关闭）</div>
+  </div>
+  <div class="grid">
+    <a class="tile" href="home.html"><img src="screenshots/00-home.png" alt="首页"><div class="cap"><div class="t">首页 · Hero 提问入口</div><div class="d">问候语 + 沉浸式提问框 + 快捷指令 + 继续学习</div></div></a>
+    <a class="tile" href="dashboard.html"><img src="screenshots/01-dashboard.png" alt="学习看板"><div class="cap"><div class="t">学习看板</div><div class="d">KPI 统计 + 投入趋势 + 章节掌握度 + AI 洞察 + 打卡热力</div></div></a>
+    <a class="tile" href="chat.html"><img src="screenshots/02-chat-dark.png" alt="智能对话"><div class="cap"><div class="t">智能对话（暗色主题）</div><div class="d">定理卡片 + 步骤证明 + 知识点引用 + 深度思考输入区</div></div></a>
+    <a class="tile" href="error-book.html"><img src="screenshots/03-error-book.png" alt="错题复盘"><div class="cap"><div class="t">错题复盘</div><div class="d">统计条 + AI 错因画像 + 艾宾浩斯复习计划 + 掌握分布</div></div></a>
+    <a class="tile" href="profile.html"><img src="screenshots/04-profile.png" alt="记忆画像"><div class="cap"><div class="t">记忆画像</div><div class="d">能力雷达 + 记忆留存曲线 + 学习节奏 + AI 画像解读</div></div></a>
+  </div>
+</body>
+</html>
