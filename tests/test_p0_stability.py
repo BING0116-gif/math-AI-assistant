@@ -172,7 +172,7 @@ async def test_memory_sql_fact_and_vector_events_share_transaction(monkeypatch):
     memory_id = await store.create_error_memory(
         user_id="memory-user", question_id="question-1", question_content="求函数极限", user_answer="0",
         correct_answer="1", error_type="calculation", high_category="高等数学",
-        category="极限",
+        category="极限", knowledge_points=["极限定义"],
     )
     assert memory_id is not None
     async with factory() as db:
@@ -182,10 +182,72 @@ async def test_memory_sql_fact_and_vector_events_share_transaction(monkeypatch):
         ))
         assert memory.status == "active"
         assert event.event_type == "memory.vector.upsert" and event.status == "pending"
+
+    captured = {}
+
+    class FakeMemoryVectorStore:
+        async def upsert(self, memory, *, tags=None):
+            captured["memory_id"] = memory.id
+            captured["tags"] = tags
+
+    import app.services.memory_vector_store as memory_vector_store_module
+    from app.services.outbox import _handle_memory_upsert
+
+    monkeypatch.setattr(
+        memory_vector_store_module,
+        "get_memory_vector_store",
+        lambda: FakeMemoryVectorStore(),
+    )
+    await _handle_memory_upsert(event)
+    assert captured == {"memory_id": memory_id, "tags": ["极限定义"]}
+
+    milestone_id = await store.create_milestone_memory(
+        user_id="memory-user",
+        milestone_type="chapter_mastered",
+        description="掌握极限章节",
+    )
+    profile_id = await store.create_profile_memory(
+        user_id="memory-user",
+        summary_text="偏好图形解释",
+        full_profile_json='{"style":"visual"}',
+    )
+    from app.data.models import MemoryTag
+    async with factory() as db:
+        persisted_tags = set((await db.execute(
+            select(MemoryTag.memory_id, MemoryTag.tag_name).where(
+                MemoryTag.memory_id.in_([milestone_id, profile_id])
+            )
+        )).all())
+    assert persisted_tags == {
+        (milestone_id, "chapter_mastered"),
+        (profile_id, "profile"),
+    }
+
+    assert not await store.update_memory_access(
+        memory_id,
+        strength_increment=0.4,
+        user_id="different-user",
+    )
+    assert await store.update_memory_access(
+        memory_id,
+        strength_increment=0.4,
+        user_id="memory-user",
+    )
+    assert not await store.update_memory_strength(999_999, 0.5)
+    assert not await store.update_memory_content(999_999, "missing", "missing")
+    async with factory() as db:
+        memory = await db.get(Memory, memory_id)
+        assert memory.memory_strength == pytest.approx(1.0)
+        assert memory.access_count == 1
+        assert memory.last_accessed >= memory.created_at
+
     assert await store.archive_memory(memory_id)
+    assert not await store.archive_memory(memory_id)
     async with factory() as db:
         events = list((await db.execute(select(OutboxEvent).where(
             OutboxEvent.aggregate_id == str(memory_id)
         ))).scalars())
         assert {row.event_type for row in events} == {"memory.vector.upsert", "memory.vector.delete"}
+        assert len(events) == 2
+    assert not await store.soft_delete_memory(999_999)
     await engine.dispose()

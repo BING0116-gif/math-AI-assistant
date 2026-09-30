@@ -138,7 +138,7 @@ REDIS_URL=
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-生产环境必须使用强随机的 `JWT_SECRET_KEY` 和持久化的 `ENCRYPTION_KEY`，不能依赖默认值或启动时生成的临时密钥。
+生产环境必须使用强随机的 `JWT_SECRET_KEY` 和持久化的 `ENCRYPTION_KEY`，不能依赖默认值或启动时生成的临时密钥。Refresh token 使用 HttpOnly cookie；`APP_ENV=production` 时自动启用 `Secure`，反向代理必须以 HTTPS 对外提供服务。
 
 ### 3. 迁移数据库并启动后端
 
@@ -285,7 +285,7 @@ powershell -ExecutionPolicy Bypass -File scripts/stop_with_animation.ps1
 
 ## API 分组
 
-所有业务接口都以 `/api` 开头，前端客户端会统一注入和刷新 JWT。
+所有业务接口都以 `/api` 开头。前端只在内存中保存 access token，并通过后端签发的 HttpOnly cookie 轮换 refresh token；兼容窗口内 API 仍接受旧客户端在请求体提交 refresh token。
 
 | 分组 | 典型路径 | 用途 |
 |---|---|---|
@@ -351,7 +351,7 @@ npm run build
 ## 已知边界
 
 - 课程当前覆盖高等数学上册（第 1–6 章，98 知识点）；第 7 章及之后（微分方程、多元微积分等）尚未建设，高中数学不属于当前正式产品范围。
-- 第 3–6 章的非金标知识点只有讲解资源、没有配套练习，学习页会显示「暂无可用练习」；为这些知识点补题时建议沿用 `app/services/phase5_practice.py` 的原创选择题格式。
+- 第 3–6 章的 39 个非金标知识点均已配套 2 道基础、2 道常规、1 道进阶原创选择题；学习页可直接进入正式练习。
 - AI、Qdrant、Redis 都可以降级，但降级时对应能力会返回结构化错误或减少推荐能力。
 - `CONTENT_AI_PROVIDER=qwen` 目前是预留 stub；需要真实内容分析时使用 `deepseek` 并配置 `DEEPSEEK_API_KEY`。
 - 前端生产包仍有较大的 vendor chunk，适合后续继续做路由和依赖拆分。

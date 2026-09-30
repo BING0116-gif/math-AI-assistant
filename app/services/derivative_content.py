@@ -88,12 +88,34 @@ GOLDEN = {
 }
 
 
+TANGENT_VISUAL_SPEC = {
+    "type": "tangent_line",
+    "title": "抛物线 y=x² 在 x=1 处的切线",
+    "viewport": {"x_min": -3, "x_max": 3, "y_min": -7, "y_max": 9},
+    "series": [
+        {
+            "kind": "curve",
+            "label": "曲线 y=x²",
+            "points": [[x / 2, (x / 2) ** 2] for x in range(-6, 7)],
+        },
+        {
+            "kind": "line",
+            "label": "切线 y=2x-1",
+            "points": [[-3, -7], [3, 5]],
+        },
+    ],
+    "annotations": [{"kind": "point", "x": 1, "y": 1, "label": "切点 (1, 1)"}],
+    "teaching_note": "切点处的导数 f'(1)=2，就是切线 y=2x-1 的斜率。",
+}
+
+
 def resources_for(code: str) -> list[tuple[str, str, str]]:
     item = GOLDEN[code]
     rows = [
         ("intuition", "一句话直觉", item["intuition"]),
         ("definition", "定义与适用条件", item["definition"]),
         ("formula", "核心公式", item["formula"]),
+        *([("visual", "曲线、割线与切线", "静态图展示曲线 y=x² 与它在 x=1 处的切线；即使动画服务不可用，仍可用此图核对切点与斜率。")] if code == "derivative-geometric-meaning" else []),
         ("worked_example", "基础例题", item["examples"][0]),
         ("worked_example", "迁移例题", item["examples"][1]),
         ("common_error", "常见错误与反例", item["errors"]),

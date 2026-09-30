@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from langchain_openai import ChatOpenAI
@@ -25,8 +24,6 @@ from app.config.settings import settings
 from agent_core.strategies import AgentStrategy, LangChainReActStrategy
 from agent_core.orchestrator import MathOrchestrator, CapabilityRoute
 from agent_core.thought import ThoughtRecorder
-from prompts.system_prompt import SystemPromptManager
-from prompts.react_prompt import ReActPromptTemplate
 from prompts.dynamic_params import (
     TaskClassifier,
     ClassificationResult,
@@ -39,62 +36,19 @@ from prompts.dynamic_params import (
     init_dynamic_llm_factory,
 )
 from tools import get_registry, ToolRegistry, BaseTool, ToolInput
-from tools.tool_description import ToolDescriptionGenerator
 from agent_core.memory_persistence import MemoryPersistenceFacade, UserProfile
 from app.services.behavior_tracker import LearningBehaviorTracker
 from app.services.memory_application import MemoryApplicationService
+from agent_core.config import (
+    DynamicParamsConfig,
+    LLMConfig,
+    MathAgentConfig,
+    StrategyConfig,
+)
+from agent_core.profile_prompt import format_skill_profile_for_llm
+from agent_core.system_prompt_builder import build_system_prompt
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# 配置数据类 (Configuration Objects)
-# ============================================================================
-
-@dataclass
-class LLMConfig:
-    """LLM 相关配置（默认跟随 settings：主文本模型 DeepSeek，识图走 vision_tool 千问 VL）。"""
-    model: str = field(default_factory=lambda: settings.LLM_MODEL or "deepseek-chat")
-    temperature: float = 0
-    base_url: str = field(
-        default_factory=lambda: settings.LLM_API_BASE or "https://api.deepseek.com/v1"
-    )
-
-
-@dataclass
-class StrategyConfig:
-    """执行策略配置。"""
-    max_iterations: int = 5
-    stream: bool = True
-
-
-@dataclass
-class DynamicParamsConfig:
-    """动态参数配置。"""
-    enabled: bool = True
-
-
-@dataclass
-class MathAgentConfig:
-    """
-    MathAgent 完整配置对象。
-
-    将分散的构造函数参数整合为结构化配置，
-    支持按功能分组（LLM / 策略 / 动态参数）。
-
-    Example:
-        config = MathAgentConfig(api_key="your-key")
-        agent = MathAgent(config)
-    """
-    api_key: str
-    llm: LLMConfig = field(default_factory=LLMConfig)
-    strategy: StrategyConfig = field(default_factory=StrategyConfig)
-    dynamic_params: DynamicParamsConfig = field(default_factory=DynamicParamsConfig)
-    registry: Optional[ToolRegistry] = None
-
-    def __post_init__(self):
-        if not self.api_key:
-            raise ValueError("api_key 不能为空")
 
 
 class MathAgent:
@@ -426,80 +380,8 @@ class MathAgent:
 
     @staticmethod
     def _format_skill_profile_for_llm(profile) -> str:
-        """
-        将用户技能画像格式化为 LLM 可理解的指令文本。
-
-        设计原则：
-        - 紧凑（<300 tokens），不浪费上下文窗口
-        - 可操作：告诉 LLM 如何根据技能水平调整行为
-        - 容错：数据不足时降级为通用指令
-        """
-        lines = ["【用户学习档案】(基于历史学习数据分析)"]
-
-        cr = profile.correct_rate or 0
-        if cr >= 0.85:
-            level, level_hint = "优秀", "可挑战高难度，引入竞赛/拓展内容"
-        elif cr >= 0.7:
-            level, level_hint = "良好", "保持当前节奏，适当增加深度"
-        elif cr >= 0.5:
-            level, level_hint = "中等", "注重基础巩固，循序渐进"
-        elif cr >= 0.3:
-            level, level_hint = "初学", "从基础概念讲起，多用例子"
-        else:
-            level, level_hint = "入门", "用最简单的语言，一步步引导"
-
-        lines.append(f"- 当前水平: {level} (正确率 {cr:.0%}) → {level_hint}")
-
-        weak_skills = []
-        if profile.weak_points:
-            for wp in profile.weak_points[:4]:
-                cat = wp.get("category", "")
-                m = wp.get("mastery", 0)
-                weak_skills.append(f"{cat}({m:.0%})")
-        if profile.skills:
-            for s in sorted(profile.skills, key=lambda x: x.get("mastery_level", 0))[:4]:
-                m = s.get("mastery_level", 0)
-                name = s.get("skill_code", s.get("display_name", ""))
-                st = s.get("status", "")
-                if m < 0.35 and st != "mastered":
-                    weak_skills.append(f"{name}({m:.0%})")
-
-        if weak_skills:
-            unique_weak = list(dict.fromkeys(weak_skills))[:5]
-            lines.append(f"- 薄弱知识点: {', '.join(unique_weak)} → 请重点讲解基础概念，多给示例和类比")
-
-        strong_skills = []
-        if profile.strong_points:
-            strong_skills = list(profile.strong_points)[:3]
-        if profile.skills:
-            for s in sorted(profile.skills, key=lambda x: x.get("mastery_level", 0), reverse=True)[:3]:
-                if s.get("status") == "mastered":
-                    name = s.get("skill_code", s.get("display_name", ""))
-                    if name not in strong_skills:
-                        strong_skills.append(name)
-
-        if strong_skills:
-            lines.append(f"- 已掌握: {', '.join(strong_skills[:3])} → 可适当提高深度，引入关联知识")
-
-        rec_diff = int(profile.recommended_difficulty or 3)
-        lines.append(f"- 推荐答题难度: T{rec_diff}")
-
-        # error_patterns 兼容两种形态：旧版 List / 新版 ProfileSnapshot(私有 List 字段)
-        if isinstance(profile.error_patterns, list):
-            ep_list = profile.error_patterns
-        else:
-            ep_list = getattr(profile, "error_pattern_list", None) or []
-        if ep_list:
-            patterns = [ep.get("pattern", "") for ep in ep_list[:3] if ep.get("pattern")]
-            if patterns:
-                lines.append(f"- 常见易错: {', '.join(patterns)} → 回答时主动提醒这些错误")
-
-        if profile.cognitive_style:
-            style_hint = profile.cognitive_style.get("style_hint", "")
-            if style_hint:
-                lines.append(f"- 学习偏好: {style_hint}")
-
-        return "\n".join(lines)
+        """Backward-compatible proxy for the standalone profile formatter."""
+        return format_skill_profile_for_llm(profile)
 
     def _build_system_prompt(
         self,
@@ -525,20 +407,7 @@ class MathAgent:
                 else []
             )
 
-        prompt_manager = SystemPromptManager()
-        tool_descs = ToolDescriptionGenerator().generate_for_registry(tools)
-        prompt_manager.update_tools(tool_descs)
-
-        react_instruction = ReActPromptTemplate.build_instruction(
-            tool_names=[t.name for t in tools] if tools else []
-        )
-        prompt_manager.update_react_instruction(react_instruction)
-        prompt_manager.update_style_instruction(style)
-
-        if skill_profile:
-            prompt_manager.update_skill_profile(skill_profile)
-
-        return prompt_manager.get_prompt()
+        return build_system_prompt(tools, style=style, skill_profile=skill_profile)
 
     def _classify_intent(self, user_input: str) -> ClassificationResult:
         """

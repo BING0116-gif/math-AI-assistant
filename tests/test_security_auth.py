@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from starlette.responses import Response
 from starlette.requests import Request
 
 from app.api.error_api import get_error_book
@@ -118,17 +119,32 @@ async def test_refresh_token_revocation(monkeypatch):
         "type": "http",
         "method": "POST",
         "path": "/api/auth/logout",
-        "headers": [(b"authorization", b"Bearer access-token")],
+        "headers": [
+            (b"authorization", b"Bearer access-token"),
+            (
+                b"cookie",
+                f"{auth_api.settings.AUTH_REFRESH_COOKIE_NAME}=refresh-token".encode(),
+            ),
+        ],
     }
     await auth_api.logout(
         Request(scope),
-        auth_api.RefreshRequest(refresh_token="refresh-token"),
+        Response(),
     )
     assert revoked == {"access-token", "refresh-token"}
 
     with pytest.raises(HTTPException) as exc:
         await auth_api.refresh(
-            auth_api.RefreshRequest(refresh_token="refresh-token")
+            Request({
+                "type": "http",
+                "method": "POST",
+                "path": "/api/auth/refresh",
+                "headers": [(
+                    b"cookie",
+                    f"{auth_api.settings.AUTH_REFRESH_COOKIE_NAME}=refresh-token".encode(),
+                )],
+            }),
+            Response(),
         )
     assert exc.value.status_code == 401
 
@@ -293,14 +309,87 @@ class TestAuthContract:
             "type": "http",
             "method": "POST",
             "path": "/api/auth/logout",
-            "headers": [(b"authorization", b"Bearer access-token")],
+            "headers": [
+                (b"authorization", b"Bearer access-token"),
+                (
+                    b"cookie",
+                    f"{auth_api.settings.AUTH_REFRESH_COOKIE_NAME}=refresh-token".encode(),
+                ),
+            ],
         }
         await auth_api.logout(
             Request(scope),
-            auth_api.RefreshRequest(refresh_token="refresh-token"),
+            Response(),
         )
         assert "access-token" in revoked
         assert "refresh-token" in revoked
+
+
+@pytest.mark.asyncio
+async def test_refresh_accepts_httponly_cookie_and_rotates_it(monkeypatch):
+    from app.api import auth as auth_api
+
+    seen = []
+
+    async def fake_refresh(token, *_args):
+        seen.append(token)
+        return SimpleNamespace(
+            refresh_token="rotated-refresh",
+            model_dump=lambda: {
+                "access_token": "new-access",
+                "refresh_token": "rotated-refresh",
+                "token_type": "bearer",
+                "expires_in": 3600,
+            },
+        )
+
+    monkeypatch.setattr(auth_api, "refresh_access_token", fake_refresh)
+    cookie_name = auth_api.settings.AUTH_REFRESH_COOKIE_NAME
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/auth/refresh",
+        "headers": [(b"cookie", f"{cookie_name}=cookie-refresh".encode())],
+    })
+    response = Response()
+
+    result = await auth_api.refresh(request, response)
+
+    assert seen == ["cookie-refresh"]
+    assert result["data"]["access_token"] == "new-access"
+    assert "refresh_token" not in result["data"]
+    set_cookie = response.headers["set-cookie"]
+    assert f"{cookie_name}=rotated-refresh" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=lax" in set_cookie
+    assert "Path=/api/auth" in set_cookie
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_cookie_token_and_clears_cookie(monkeypatch):
+    from app.api import auth as auth_api
+
+    revoked = []
+
+    async def fake_revoke(token, *_args):
+        revoked.append(token)
+        return True
+
+    monkeypatch.setattr(auth_api, "revoke_token", fake_revoke)
+    cookie_name = auth_api.settings.AUTH_REFRESH_COOKIE_NAME
+    request = Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": [(b"cookie", f"{cookie_name}=cookie-refresh".encode())],
+    })
+    response = Response()
+
+    await auth_api.logout(request, response)
+
+    assert revoked == ["cookie-refresh"]
+    assert f"{cookie_name}=" in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
 
 
 # ============================================================

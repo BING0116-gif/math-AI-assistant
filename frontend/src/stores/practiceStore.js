@@ -20,7 +20,9 @@ export const usePracticeStore = defineStore('practice', () => {
   // 每题提示使用痕迹：question_id -> true（提交时随 learning_signals 上报）
   const hintUsed = ref({})
   const showHint = ref({})
-  const draft = ref({ chapter_ids: [], knowledge_point_codes: [], difficulty_band: null, question_types: [], question_count: 5, review_schedule_id: null, review_kind: null, behavior: 'immediate', order_mode: 'random' })
+  const uncertain = ref({})
+  const diagnostics = ref({})
+  const draft = ref({ chapter_ids: [], knowledge_point_codes: [], difficulty_band: null, question_types: [], question_count: 5, review_schedule_id: null, review_kind: null, behavior: 'adaptive', order_mode: 'random' })
   const currentIndex = ref(0)
   const currentQuestion = computed(() => session.value?.questions?.[currentIndex.value] || null)
   const behavior = computed(() => session.value?.config?.behavior || 'immediate')
@@ -94,6 +96,7 @@ export const usePracticeStore = defineStore('practice', () => {
         answer: answers.value[question.question_id],
         idempotency_key: newKey(),
         hint_used: Boolean(hintUsed.value[question.question_id]),
+        uncertain: Boolean(uncertain.value[question.question_id]),
       }))
       feedback.value[question.question_id] = data
       const config = session.value?.config || {}
@@ -110,7 +113,21 @@ export const usePracticeStore = defineStore('practice', () => {
   }
   async function complete() { result.value = unwrapPractice(await practiceApi.complete(session.value.session_id)); return result.value }
   async function loadResult(id) { result.value = unwrapPractice(await practiceApi.result(id)); return result.value }
+  function markUncertain(questionId) { uncertain.value[questionId] = !uncertain.value[questionId] }
+  async function startDiagnostic(questionId) {
+    const data = unwrapPractice(await practiceApi.diagnosticStart(session.value.session_id, questionId, { idempotency_key: newKey() }))
+    const normalized = { ...data, prompt: data.prompt?.question || data.prompt, options: data.prompt?.options || [] }
+    diagnostics.value[questionId] = normalized
+    return normalized
+  }
+  async function answerDiagnostic(questionId, selectedAnswer) {
+    const active = diagnostics.value[questionId]
+    const data = unwrapPractice(await practiceApi.diagnosticAnswer(session.value.session_id, questionId, { event_id: active.event_id, selected_answer: selectedAnswer, idempotency_key: newKey() }))
+    const normalized = { ...data, follow_up: data.explanation }
+    diagnostics.value[questionId] = normalized
+    return normalized
+  }
   function revealHint(questionId) { hintUsed.value[questionId] = true; showHint.value[questionId] = true }
-  function reset() { session.value = null; result.value = null; answers.value = {}; feedback.value = {}; hintUsed.value = {}; showHint.value = {}; currentIndex.value = 0; error.value = '' }
-  return { options, session, result, loading, error, errorKind, answers, feedback, hintUsed, showHint, draft, currentIndex, currentQuestion, behavior, retryLimit, canRetry, beginRetry, createFromErrorBook, saveSnapshot, loadOptions, create, loadSession, start, submitCurrent, complete, loadResult, revealHint, reset }
+  function reset() { session.value = null; result.value = null; answers.value = {}; feedback.value = {}; hintUsed.value = {}; showHint.value = {}; uncertain.value = {}; diagnostics.value = {}; currentIndex.value = 0; error.value = '' }
+  return { options, session, result, loading, error, errorKind, answers, feedback, hintUsed, showHint, uncertain, diagnostics, draft, currentIndex, currentQuestion, behavior, retryLimit, canRetry, beginRetry, createFromErrorBook, saveSnapshot, loadOptions, create, loadSession, start, submitCurrent, complete, loadResult, revealHint, markUncertain, startDiagnostic, answerDiagnostic, reset }
 })

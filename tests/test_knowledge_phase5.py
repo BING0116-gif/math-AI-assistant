@@ -20,6 +20,7 @@ from app.services.calculus_phase5 import POINTS as PHASE5_POINTS
 from app.services.phase5_content import GOLDEN as PHASE5_GOLDEN
 from app.services.phase5_standard_content import DESCRIPTIONS as PHASE5_STANDARD_DESCRIPTIONS
 from app.services.phase5_standard_content import STANDARD as PHASE5_STANDARD
+from app.services.phase5_standard_practice import PRACTICE as PHASE5_STANDARD_PRACTICE
 
 
 @pytest_asyncio.fixture
@@ -138,8 +139,8 @@ async def test_phase5_golden_points_carry_full_resources_and_practice(session_fa
 
 
 @pytest.mark.asyncio
-async def test_phase5_standard_points_carry_authored_resources(session_factory):
-    """Every non-golden chapter 3-6 point must ship authored lesson resources."""
+async def test_phase5_standard_points_carry_authored_resources_and_practice(session_factory):
+    """Every non-golden chapter 3-6 point ships lessons and layered practice."""
     async with session_factory() as session:
         course = await seed_calculus_phase5(session)
         await session.commit()
@@ -149,6 +150,7 @@ async def test_phase5_standard_points_carry_authored_resources(session_factory):
         all_codes = {code for code, _, _, _, _, _ in PHASE5_POINTS}
         standard_codes = sorted(all_codes - set(PHASE5_GOLDEN))
         assert set(standard_codes) == set(PHASE5_STANDARD)
+        assert set(standard_codes) == set(PHASE5_STANDARD_PRACTICE)
         assert len(standard_codes) == 39
 
         core_types = {"intuition", "definition", "formula", "worked_example", "common_error"}
@@ -164,12 +166,29 @@ async def test_phase5_standard_points_carry_authored_resources(session_factory):
             ))).all())
             types = {resource.resource_type for resource in resources}
             assert core_types <= types, (code, core_types - types)
-            assert {"summary", "source_reference"} <= types, code
+            assert {"exercise_set", "summary", "source_reference"} <= types, code
             for resource in resources:
                 assert resource.body.strip()
                 validation = (resource.metadata_ or {}).get("math_validation") or {}
                 assert validation.get("content_hash") == resource.content_hash
                 assert validation.get("validator_id") != resource.reviewed_by
+
+            exercise = next(resource for resource in resources if resource.resource_type == "exercise_set")
+            question_ids = (exercise.metadata_ or {}).get("question_ids") or []
+            assert len(question_ids) == 5
+            questions = [await session.get(Question, question_id) for question_id in question_ids]
+            assert [question.content.split("】", 1)[0] + "】" for question in questions] == [
+                "【基础】", "【基础】", "【常规】", "【常规】", "【进阶】",
+            ]
+            assert [question.difficulty for question in questions] == [2, 2, 3, 3, 4]
+            for question in questions:
+                assert question.review_status == "published" and question.practice_eligible
+                assert question.answer_spec == {"version": 1, "kind": "choice", "correct": question.answer}
+                assert {option["id"] for option in question.options} == {"A", "B", "C", "D"}
+                link = await session.get(QuestionKnowledgePoint, {
+                    "question_id": question.id, "knowledge_point_id": point.id,
+                })
+                assert link is not None and link.is_primary
 
 
 @pytest.mark.asyncio
@@ -206,6 +225,32 @@ async def test_publish_calculus_phase5_releases_six_chapters_as_default(session_
         content = await get_published_learning_content(session, point.id)
         assert REQUIRED_GOLDEN_RESOURCE_TYPES <= {row["type"] for row in content["resources"]}
 
+        # The 3.0 default must carry formal practice for points cloned from the
+        # still-published 2.0 derivative course. Question and point links are
+        # version scoped; keeping only the old link breaks the student loop.
+        derivative_point = await session.scalar(select(KnowledgePoint).where(
+            KnowledgePoint.version_id == report["default_version_id"],
+            KnowledgePoint.code == "derivative-geometric-meaning",
+        ))
+        derivative_content = await get_published_learning_content(session, derivative_point.id)
+        visual = next(row for row in derivative_content["resources"] if row["type"] == "visual")
+        assert visual["metadata"]["visual_spec"]["type"] == "tangent_line"
+        assert visual["metadata"]["fallback"] == "text"
+        derivative_questions = list((await session.scalars(
+            select(Question)
+            .join(QuestionKnowledgePoint, QuestionKnowledgePoint.question_id == Question.id)
+            .where(
+                QuestionKnowledgePoint.knowledge_point_id == derivative_point.id,
+                Question.version_id == report["default_version_id"],
+                Question.review_status == "published",
+                Question.practice_eligible.is_(True),
+            )
+        )).all())
+        assert len(derivative_questions) == 5
+        assert {question.id for question in derivative_questions} == {
+            "V3-D3021", "V3-D3022", "V3-D3023", "V3-D3024", "V3-D3025",
+        }
+
 
 @pytest.mark.asyncio
 async def test_publish_phase5_is_idempotent_and_reseeding_keeps_release(session_factory):
@@ -219,7 +264,7 @@ async def test_publish_phase5_is_idempotent_and_reseeding_keeps_release(session_
         version = await session.get(KnowledgeGraphVersion, first["default_version_id"])
         assert version.status == "published"
         questions = await session.scalar(select(func.count()).select_from(Question).where(Question.id.like("P5%")))
-        assert questions == 65
+        assert questions == 260
 
         # Re-seeding after release refreshes content but must not demote 3.0.
         course = await seed_calculus_phase5(session)

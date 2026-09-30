@@ -1,9 +1,8 @@
 """Curated Phase 5 (version 3.0) standard lessons for non-golden chapters 3-6 points.
 
-Every non-golden knowledge point gets five authored resources (intuition,
-definition, formula, worked example, common error) plus the shared summary and
-source reference rows, so the student-facing learning page never falls back to
-a bare taxonomy description.
+Every non-golden knowledge point gets five authored lesson resources plus an
+exercise entry, summary, and source reference, so the student-facing learning
+page provides both instruction and a route into formal practice.
 
 The prose is project-authored original Chinese teaching content. OpenStax is
 recorded as a scope reference only, never copied; attribution stays in SQL via
@@ -374,7 +373,7 @@ STANDARD = {
 
 
 def phase5_standard_resources_for(code: str) -> list[tuple[str, str, str]]:
-    """Resource rows for a non-golden chapter 3-6 point (5 authored + 2 shared)."""
+    """Resource rows for a non-golden chapter 3-6 point."""
     item = STANDARD[code]
     ref = STANDARD_CHAPTER_REF[code]
     rows = [
@@ -383,6 +382,8 @@ def phase5_standard_resources_for(code: str) -> list[tuple[str, str, str]]:
         ("formula", "核心公式", item["formula"]),
         ("worked_example", "典型例题", item["example"]),
         ("common_error", "常见错误与提醒", item["error"]),
+        ("exercise_set", "分层练习",
+         "完成 2 道基础题、2 道常规题和 1 道进阶题。作答会进入正式学习记录，并用于更新掌握度。"),
         ("summary", "小结与下一步",
          "先核对条件与结构，再按规范步骤完成计算，并检查结果的符号、量纲与适用范围。学完本节内容后进入正式练习巩固；若卡在前置环节，返回图谱复习直接前置知识点。"),
         ("source_reference", "来源与署名",

@@ -58,7 +58,8 @@ export function buildGraphElements(points) {
     label: point.name,
     status: point.status,
     chapterName: point.chapterName,
-    external: Boolean(point.isExternalPrerequisite)
+    external: Boolean(point.isExternalPrerequisite),
+    degree: 0
   } }))
   const edges = []
   const seen = new Set()
@@ -82,6 +83,12 @@ export function buildGraphElements(points) {
       }
     }
   }
+  const degrees = new Map()
+  for (const edge of edges) {
+    degrees.set(edge.data.source, (degrees.get(edge.data.source) || 0) + 1)
+    degrees.set(edge.data.target, (degrees.get(edge.data.target) || 0) + 1)
+  }
+  for (const node of nodes) node.data.degree = degrees.get(node.data.id) || 0
   return { nodes, edges }
 }
 

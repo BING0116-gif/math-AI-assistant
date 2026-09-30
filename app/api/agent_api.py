@@ -116,7 +116,8 @@ async def detailed_health():
     from app.services.outbox import outbox_health
     checks["outbox"] = await outbox_health()
     if settings.RAG_ENABLED and settings.RAG_ENABLE_VECTOR_SEARCH:
-        checks.update(await _check_vector_health())
+        from app.services.dependency_health import vector_dependency_health
+        checks["vector_dependencies"] = await vector_dependency_health()
 
     overall = "healthy" if all(
         c.get("status") == "healthy" for c in checks.values()
@@ -148,7 +149,8 @@ async def readiness_check():
     from app.services.outbox import outbox_health
     checks["outbox"] = await outbox_health()
     if settings.RAG_ENABLED and settings.RAG_ENABLE_VECTOR_SEARCH:
-        checks.update(await _check_vector_health())
+        from app.services.dependency_health import vector_dependency_health
+        checks["vector_dependencies"] = await vector_dependency_health()
     ready = all(row.get("status") == "healthy" for row in checks.values())
     payload = {
         "status": "healthy" if ready else "degraded",

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知微 · Math AI Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="mock.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ======================= 侧边栏 ======================= -->
+  <aside class="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <span class="brand-mark">∑</span>
+        <span>知微<small>MATH&nbsp;AI&nbsp;ASSISTANT</small></span>
+      </div>
+      <button class="icon-btn" title="收起侧栏"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg></button>
+    </div>
+
+    <button class="btn btn-primary btn-block"><svg class="ic ic-15" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>新对话</button>
+    <div class="side-search"><svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/></svg>搜索对话<kbd>Ctrl K</kbd></div>
+
+    <div class="nav-label">学习空间</div>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>学习看板</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>记忆画像</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="M12 7.2 6.5 16.2"/><path d="m12 7.2 5.5 9"/><path d="M7.2 18h9.6"/></svg>知识星球</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>智能笔记</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg>学以致用</a>
+    <a class="nav-item" href="#"><svg class="ic" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="m10 9 4 4"/><path d="m14 9-4 4"/></svg>错题复盘<span class="count">9</span></a>
+
+    <div class="nav-label">最近对话</div>
+    <a class="recent-item" href="#"><div class="rt">Rolle 定理证明与变式</div><div class="rs">今天 14:32 · 14 条消息</div></a>
+    <a class="recent-item" href="#"><div class="rt">为什么洛必达法则会失效</div><div class="rs">昨天 · 9 条消息</div></a>
+    <a class="recent-item" href="#"><div class="rt">特征值与相似对角化</div><div class="rs">昨天 · 21 条消息</div></a>
+
+    <div class="side-foot">
+      <div class="theme-row">
+        <span class="caption">浅色模式</span>
+        <button class="icon-btn"><svg class="ic ic-15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg></button>
+      </div>
+      <div class="user-chip">
+        <span class="avatar">诗</span>
+        <div><div style="font-size:13px;font-weight:600;line-height:1.3">林诗涵</div><div style="font-size:11px;color:var(--ink-3)">Lv.6 · 微分行者</div></div>
+        <button class="icon-btn" style="margin-left:auto"><svg class="ic ic-15" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg></button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ======================= 主区 ======================= -->
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb">首页</div>
+      <div class="global-search"><svg class="ic ic-14" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20.5 20.5-4-4"/></svg>搜索知识点、错题、对话…<kbd>Ctrl K</kbd></div>
+      <div class="top-actions">
+        <button class="icon-btn bell"><svg class="ic" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+        <span class="divider-v"></span>
+        <span class="avatar" style="width:30px;height:30px;font-size:12px">诗</span>
+      </div>
+    </header>
+
+    <div class="content" style="position:relative">
+      <div class="hero-glow"></div>
+
+      <div class="home-wrap" style="position:relative">
+        <!-- Hero -->
+        <div class="home-hero">
+          <div class="eyebrow"><svg class="ic ic-14" style="color:var(--brand)" viewBox="0 0 24 24"><path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5l-1.8-5.5a2 2 0 0 0-1.2-1.2L3.5 12 9 10.2A2 2 0 0 0 10.2 9Z"/><path d="M19 3v3"/><path d="M17.5 4.5h3"/></svg>AI 驱动的高等数学学习空间</div>
+          <h1>下午好，诗涵。<br>今天想<span class="grad-text">弄懂</span>哪个知识点？</h1>
+          <div class="sub">9月29日 周二 · 已连续打卡 <b class="num" style="color:var(--ink-2)">12</b> 天 · 距期末考试 <b class="num" style="color:var(--ink-2)">42</b> 天</div>
+        </div>
+
+        <!-- 提问输入 -->
+        <div class="home-composer">
+          <textarea rows="3" placeholder="向知微提问，例如：为什么洛必达法则有时会失效？"></textarea>
+          <div style="display:flex;align-items:center;gap:4px;padding:2px 8px 6px 10px">
+            <button class="tool" style="height:32px"><span style="font-family:var(--font-disp);font-weight:600">∑</span>公式</button>
+            <button class="tool" style="height:32px"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/></svg>拍照解题</button>
+            <button class="tool" style="height:32px"><svg class="ic ic-14" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5a2 2 0 0 0-2.8 0L6 21"/></svg>图片</button>
+            <button class="tool on" style="height:32px"><svg class="ic ic-14" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>深度思考</button>
+            <button class="send-btn" style="margin-left:auto"><svg class="ic ic-15" viewBox="0 0 24 24" style="stroke-width:2"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
+          </div>
+        </div>
+
+        <!-- 快捷操作 -->
+        <div class="home-quick">
+          <button class="chip">出 5 道中值定理练习题</button>
+          <button class="chip">讲讲泰勒展开的直觉</button>
+          <button class="chip">复盘今日错题</button>
+          <button class="chip">帮我制定期末复习计划</button>
+        </div>
+
+        <!-- 最近对话 -->
+        <div class="home-section-label">
+          <span class="t-3" style="font-size:14px">最近对话</span>
+          <a class="more" href="#" style="font-size:12.5px;color:var(--ink-3);display:inline-flex;align-items:center;gap:3px">查看全部<svg class="ic ic-14" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></a>
+        </div>
+        <div class="home-cards">
+          <a class="card recent-card" href="#">
+            <div class="rt">Rolle 定理证明与变式</div>
+            <div class="rs">已讲完三种高频变式，还差「构造辅助函数」的配套练习…</div>
+            <div class="rf"><span class="tag tag-soft-accent">微积分</span><span class="caption">14:32</span></div>
+          </a>
+          <a class="card recent-card" href="#">
+            <div class="rt">为什么洛必达法则会失效</div>
+            <div class="rs">0/0 未定式之外的三类失效场景，以及泰勒展开的替代方案…</div>
+            <div class="rf"><span class="tag tag-soft-accent">微积分</span><span class="caption">昨天</span></div>
+          </a>
+          <a class="card recent-card" href="#">
+            <div class="rt">特征值与相似对角化</div>
+            <div class="rs">从几何直觉到考试大题：先求特征值再拼对角矩阵的完整流程…</div>
+            <div class="rf"><span class="tag tag-soft-sky">线性代数</span><span class="caption">昨天</span></div>
+          </a>
+        </div>
+
+        <!-- 继续学习 -->
+        <div class="home-section-label" style="margin-top:6px">
+          <span class="t-3" style="font-size:14px">继续学习</span>
+        </div>
+        <div class="cont-grid">
+          <a class="card cont-card" href="#">
+            <div style="display:flex;align-items:center;gap:8px"><span class="tag tag-soft-accent">知识点</span><span class="caption">上次学到 · 掌握度 62%</span></div>
+            <div class="tt">多元函数的极值与最值</div>
+            <div class="meta-row">
+              <span class="progress" style="flex:1"><i style="width:62%"></i></span>
+              <span class="num" style="font-size:12.5px;font-weight:600;color:var(--ink-2)">62%</span>
+              <span class="btn btn-primary btn-sm">继续学习</span>
+            </div>
+          </a>
+          <a class="card cont-card" href="#">
+            <div style="display:flex;align-items:center;gap:8px"><span class="tag tag-soft-rose">错题复盘</span><span class="caption">艾宾浩斯计划</span></div>
+            <div class="tt">9 道错题进入遗忘临界期</div>
+            <div class="meta-row">
+              <span class="caption" style="flex:1">预计 25 分钟 · 优先复盘「拐点判定」</span>
+              <span class="btn btn-ghost btn-sm">去复习</span>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="anim.js"></script>
+<script src="nav.js"></script>
+</body>
+</html>

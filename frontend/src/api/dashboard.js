@@ -1,15 +1,15 @@
 import api from './index'
 
-export function getLearningStats(userId) {
-  return api.get(`/profile/${userId}/report`)
+export function getLearningStats() {
+  return api.get('/profile/me/report')
 }
 
-export function getUserProfile(userId) {
-  return api.get(`/profile/${userId}`)
+export function getUserProfile() {
+  return api.get('/profile/me')
 }
 
-export function getSkillProfile(userId) {
-  return api.get(`/profile/${userId}/skills`)
+export function getSkillProfile() {
+  return api.get('/profile/me/skills')
 }
 
 export function getWeeklyStats(userId, days = 7) {
@@ -18,11 +18,11 @@ export function getWeeklyStats(userId, days = 7) {
   })
 }
 
-export async function fetchDashboardData(userId) {
+export async function fetchDashboardData() {
   try {
     const [profileRes, statsRes] = await Promise.allSettled([
-      getUserProfile(userId),
-      getLearningStats(userId),
+      getUserProfile(),
+      getLearningStats(),
     ])
 
     const profile = profileRes.status === 'fulfilled' ? profileRes.value.data : null

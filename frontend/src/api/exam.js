@@ -1,6 +1,7 @@
 import api from './index'
+import { unwrapStudentEnvelope } from './contracts'
 
-export const unwrapExam = (response) => response?.data?.data ?? response?.data
+export const unwrapExam = (response) => unwrapStudentEnvelope(response, '考试请求失败')
 export const examApi = {
   options: (courseId) => api.get('/exams/options', { params: courseId ? { course_id: courseId } : undefined }),
   create: (payload) => api.post('/exams/sessions', payload),

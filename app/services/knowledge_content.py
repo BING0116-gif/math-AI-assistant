@@ -12,7 +12,7 @@ from app.data.models import (
     Chapter, Course, KnowledgeGraphVersion, KnowledgePoint, KnowledgePointResource,
     OutboxEvent, Question, QuestionKnowledgePoint, SourceDocument,
 )
-from app.services.derivative_content import DERIVATIVE_POINTS, GOLDEN, resources_for
+from app.services.derivative_content import DERIVATIVE_POINTS, GOLDEN, TANGENT_VISUAL_SPEC, resources_for
 from app.services.calculus_phase5 import CHAPTERS as PHASE5_CHAPTERS, POINTS as PHASE5_POINTS
 from app.services.phase5_content import GOLDEN as PHASE5_GOLDEN, GOLDEN_IMPORTANCE, phase5_resources_for
 from app.services.phase5_standard_content import (
@@ -21,6 +21,7 @@ from app.services.phase5_standard_content import (
     phase5_standard_resources_for,
 )
 from app.services.phase5_practice import PRACTICE as PHASE5_PRACTICE
+from app.services.phase5_standard_practice import PRACTICE as PHASE5_STANDARD_PRACTICE
 from app.services.knowledge_seed import seed_phase_one_calculus
 from app.services.outbox import enqueue_outbox
 
@@ -48,6 +49,12 @@ def validate_math_body(body: str) -> list[str]:
         if body.count(left) != body.count(right):
             errors.append(f"UNBALANCED_{left}{right}")
     return errors
+
+
+def _resource_external_key(prefix: str, code: str, kind: str, title: str) -> str:
+    """Build a stable key that does not change when lesson order changes."""
+    identity = hashlib.sha256(f"{kind}\0{title}".encode("utf-8")).hexdigest()[:16]
+    return f"{prefix}:{code}:{kind}:{identity}"
 
 
 def validate_prerequisite_dag(points: list[KnowledgePoint]) -> None:
@@ -207,7 +214,94 @@ async def _clone_phase_one_taxonomy(session, course: Course, source_version, tar
     return point_map
 
 
-async def _clone_published_resources(session, source_version, points: dict[str, KnowledgePoint]) -> None:
+async def _clone_published_practice(
+    session,
+    course: Course,
+    source_version,
+    target_version,
+    points: dict[str, KnowledgePoint],
+) -> dict[str, str]:
+    """Clone version-scoped formal questions and their point links.
+
+    ``Question.version_id`` and ``QuestionKnowledgePoint.knowledge_point_id``
+    are both version scoped. Reusing the source row would either leave the new
+    default version without practice or silently move practice away from the
+    still-published source version, so every target version gets stable copies.
+    """
+    source_points = {row.id: row.code for row in (await session.scalars(
+        select(KnowledgePoint).where(KnowledgePoint.version_id == source_version.id)
+    )).all()}
+    links = list((await session.execute(
+        select(Question, QuestionKnowledgePoint)
+        .join(QuestionKnowledgePoint, QuestionKnowledgePoint.question_id == Question.id)
+        .where(
+            Question.version_id == source_version.id,
+            Question.review_status == "published",
+            Question.practice_eligible.is_(True),
+        )
+    )).all())
+    question_id_map: dict[str, str] = {}
+    for old, old_link in links:
+        code = source_points.get(old_link.knowledge_point_id)
+        if not code or code not in points:
+            continue
+        target_id = f"V3-{old.id}"
+        if len(target_id) > 20:
+            raise ResourcePublishingError(f"CLONED_QUESTION_ID_TOO_LONG:{old.id}")
+        question_id_map[old.id] = target_id
+        row = await session.get(Question, target_id)
+        if row is None:
+            row = Question(id=target_id, content=old.content, question_type=old.question_type, answer=old.answer, category=old.category)
+            session.add(row)
+        row.content = old.content
+        row.question_type = old.question_type
+        row.options = old.options
+        row.answer = old.answer
+        row.analysis = old.analysis
+        row.solution_steps = old.solution_steps
+        row.category = old.category
+        row.sub_categories = old.sub_categories
+        row.knowledge_points = old.knowledge_points
+        row.difficulty = old.difficulty
+        row.complexity_score = old.complexity_score
+        row.source = old.source
+        row.source_url = old.source_url
+        row.version = old.version
+        row.tags = old.tags
+        row.is_active = old.is_active
+        row.estimated_time = old.estimated_time
+        row.course_id = course.id
+        row.version_id = target_version.id
+        row.review_status = old.review_status
+        row.is_ai_generated = old.is_ai_generated
+        row.common_mistakes = old.common_mistakes
+        row.variant_blueprint = old.variant_blueprint
+        row.answer_spec = old.answer_spec
+        row.grading_mode = old.grading_mode
+        row.practice_eligible = old.practice_eligible
+        row.exam_eligible = old.exam_eligible
+        row.auto_grading_eligible = old.auto_grading_eligible
+        link = await session.get(QuestionKnowledgePoint, {
+            "question_id": target_id,
+            "knowledge_point_id": points[code].id,
+        })
+        if link is None:
+            session.add(QuestionKnowledgePoint(
+                question_id=target_id,
+                knowledge_point_id=points[code].id,
+                is_primary=old_link.is_primary,
+            ))
+        else:
+            link.is_primary = old_link.is_primary
+    return question_id_map
+
+
+async def _clone_published_resources(
+    session,
+    source_version,
+    points: dict[str, KnowledgePoint],
+    question_id_map: dict[str, str] | None = None,
+) -> None:
     """Copy visible lesson assets into a new version without reusing unique keys."""
     resources = list((await session.scalars(
         select(KnowledgePointResource)
@@ -221,10 +315,16 @@ async def _clone_published_resources(session, source_version, points: dict[str, 
         code = source_points.get(old.knowledge_point_id)
         if not code or code not in points:
             continue
-        external_key = f"phase5:{code}:{old.resource_type}:{old.sort_order}"
+        external_key = _resource_external_key("phase5", code, old.resource_type, old.title)
         row = await session.scalar(select(KnowledgePointResource).where(
-            KnowledgePointResource.external_key == external_key
+            KnowledgePointResource.knowledge_point_id == points[code].id,
+            KnowledgePointResource.resource_type == old.resource_type,
+            KnowledgePointResource.title == old.title,
         ))
+        if row is None:
+            row = await session.scalar(select(KnowledgePointResource).where(
+                KnowledgePointResource.external_key == external_key
+            ))
         if row is None:
             row = KnowledgePointResource(
                 knowledge_point_id=points[code].id,
@@ -233,8 +333,15 @@ async def _clone_published_resources(session, source_version, points: dict[str, 
                 title=old.title,
             )
             session.add(row)
+        row.external_key = external_key
         row.body = old.body
-        row.metadata_ = old.metadata_
+        metadata = dict(old.metadata_ or {})
+        if question_id_map and metadata.get("question_ids"):
+            metadata["question_ids"] = [
+                question_id_map.get(question_id, question_id)
+                for question_id in metadata["question_ids"]
+            ]
+        row.metadata_ = metadata
         row.sort_order = old.sort_order
         row.status = "published"
         row.math_validation_status = old.math_validation_status
@@ -339,7 +446,10 @@ async def seed_calculus_phase5(session, reviewer_id: str = "phase5-editor") -> C
         session.add(version)
         await session.flush()
     points = await _clone_phase_one_taxonomy(session, course, source_version, version)
-    await _clone_published_resources(session, source_version, points)
+    question_id_map = await _clone_published_practice(
+        session, course, source_version, version, points,
+    )
+    await _clone_published_resources(session, source_version, points, question_id_map)
 
     chapters: dict[str, Chapter] = {}
     for code, name, description, order in PHASE5_CHAPTERS:
@@ -481,6 +591,43 @@ async def seed_calculus_phase5(session, reviewer_id: str = "phase5-editor") -> C
                 validate_resource_math(resource, "phase5-math-verifier")
                 await review_and_publish_resource(session, resource, reviewer_id)
 
+        question_ids: list[str] = []
+        items = PHASE5_STANDARD_PRACTICE[code]
+        standard_index = list(PHASE5_STANDARD_PRACTICE).index(code) + 1
+        for sequence, (level, question_difficulty, prompt, options, answer, analysis) in enumerate(items, start=1):
+            qid = f"P5S{standard_index:02d}{sequence}"
+            question_ids.append(qid)
+            question = await session.get(Question, qid)
+            if question is None:
+                question = Question(
+                    id=qid, content=f"【{level}】{prompt}", question_type="choice",
+                    answer=answer, category=chapter_names[point_chapter[code]],
+                )
+                session.add(question)
+            question.options = [{"id": option_id, "text": text} for option_id, text in options]
+            question.answer = answer
+            question.answer_spec = {"version": 1, "kind": "choice", "correct": answer}
+            question.analysis = analysis
+            question.course_id = course.id; question.version_id = version.id
+            question.difficulty = question_difficulty; question.source = "phase5-original"
+            question.review_status = "published"; question.is_ai_generated = False
+            question.grading_mode = "deterministic"
+            question.practice_eligible = True; question.exam_eligible = False; question.auto_grading_eligible = True
+            link = await session.get(QuestionKnowledgePoint, {"question_id": qid, "knowledge_point_id": point.id})
+            if link is None:
+                session.add(QuestionKnowledgePoint(question_id=qid, knowledge_point_id=point.id, is_primary=True))
+        exercise = await session.scalar(select(KnowledgePointResource).where(
+            KnowledgePointResource.knowledge_point_id == point.id,
+            KnowledgePointResource.resource_type == "exercise_set",
+            KnowledgePointResource.status == "published",
+        ))
+        if exercise is not None:
+            exercise.metadata_ = {
+                **(exercise.metadata_ or {}),
+                "question_ids": question_ids,
+                "levels": ["基础", "常规", "进阶"],
+            }
+
     # Phase 5 stays an internal draft until every chapter passes the content
     # completeness gate via publish_calculus_phase5. Once released, re-seeding
     # refreshes content in place but must never demote the published version
@@ -575,11 +722,18 @@ async def seed_derivative_phase3(session, reviewer_id: str = "phase3-editor") ->
     for code in GOLDEN:
         point = points[code]
         for order, (kind, title, body) in enumerate(resources_for(code), start=1):
-            external_key = f"phase3:{code}:{kind}:{order}"
-            resource = await session.scalar(select(KnowledgePointResource).where(KnowledgePointResource.external_key == external_key))
+            external_key = _resource_external_key("phase3", code, kind, title)
+            resource = await session.scalar(select(KnowledgePointResource).where(
+                KnowledgePointResource.knowledge_point_id == point.id,
+                KnowledgePointResource.resource_type == kind,
+                KnowledgePointResource.title == title,
+            ))
+            if resource is None:
+                resource = await session.scalar(select(KnowledgePointResource).where(KnowledgePointResource.external_key == external_key))
             if resource is None:
                 resource = KnowledgePointResource(knowledge_point_id=point.id, external_key=external_key, resource_type=kind, title=title)
                 session.add(resource)
+            resource.external_key = external_key
             resource.body = body
             resource.sort_order = order
             resource.source_document_id = source.id
@@ -590,6 +744,7 @@ async def seed_derivative_phase3(session, reviewer_id: str = "phase3-editor") ->
                 "knowledge_point_code": code,
                 "fallback": "text",
                 "authoring": "human",
+                **({"visual_spec": TANGENT_VISUAL_SPEC} if kind == "visual" and code == "derivative-geometric-meaning" else {}),
             }
             new_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
             if resource.status != "published" or resource.content_hash != new_hash:

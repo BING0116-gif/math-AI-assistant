@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import pytest_asyncio
 import fitz  # PyMuPDF
 import uuid
 from sqlalchemy import event, select
@@ -35,13 +36,14 @@ from app.services.knowledge_seed import seed_phase_one_calculus
 
 
 # ── fixtures（复用 test_content_ingestion 的模式）──
-@pytest.fixture
-def engine():
+@pytest_asyncio.fixture
+async def engine():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     @event.listens_for(eng.sync_engine, "connect")
     def _fk(dbapi_connection, _):
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
-    return eng
+    yield eng
+    await eng.dispose()
 
 
 @pytest.fixture

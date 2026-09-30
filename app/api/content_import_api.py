@@ -99,6 +99,8 @@ def _serialize_batch(batch) -> Dict[str, Any]:
 
 
 def _serialize_candidate(cand) -> Dict[str, Any]:
+    runs = list(getattr(cand, "ai_analysis_runs", None) or [])
+    latest_run = max(runs, key=lambda run: run.attempt_no or 0, default=None)
     return {
         "id": cand.id,
         "import_batch_id": cand.import_batch_id,
@@ -117,6 +119,11 @@ def _serialize_candidate(cand) -> Dict[str, Any]:
         "status": cand.status,
         "created_at": cand.created_at.isoformat() if cand.created_at else None,
         "updated_at": cand.updated_at.isoformat() if cand.updated_at else None,
+        # Additive summary fields let the admin list filter every candidate without
+        # issuing one analysis request per row. Full history remains on its endpoint.
+        "latest_ai_gate": latest_run.gate if latest_run else None,
+        "latest_ai_status": latest_run.status if latest_run else None,
+        "latest_human_disposition": latest_run.human_disposition if latest_run else None,
     }
 
 

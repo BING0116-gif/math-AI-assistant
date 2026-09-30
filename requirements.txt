@@ -1,6 +1,7 @@
 # Web Framework
 fastapi>=0.104.0
 python-multipart>=0.0.9
+Jinja2>=3.1.4
 
 # AI & LLM
 langchain>=0.1.0
@@ -61,5 +62,6 @@ openpyxl>=3.1.0
 numpy>=1.24.0
 sentence-transformers>=2.2.0  # 用于生成 embedding
 
-# Content Ingestion (轻量 PDF 解析，MinerU 走独立 dedicated venv)
+# Content Ingestion（正式主环境同时提供快速解析与 MinerU 数学增强解析）
 PyMuPDF>=1.24
+mineru[all]==3.4.5

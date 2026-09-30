@@ -44,8 +44,9 @@ function onFallbackInput(event) {
 </script>
 <template>
   <div class="math-input">
-    <math-field
+    <component
       v-if="fieldReady"
+      :is="'math-field'"
       class="math-field"
       :value="initialLatex"
       virtual-keyboard-mode="manual"

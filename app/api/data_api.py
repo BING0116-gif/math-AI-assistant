@@ -15,6 +15,7 @@ from app.data.repositories import (
 )
 from app.services.cache import get_cache_manager
 from app.services.user_data_deletion import delete_user_data
+from app.services.note_cleanup import process_note_cleanup_tasks
 from app.services.memory_store import get_memory_store
 from app.security.audit import get_audit_logger
 
@@ -159,6 +160,10 @@ async def purge_user_data(
         async with get_db_session() as db:
             deleted = await delete_user_data(db, user_id)
 
+        # The manifest and SQL rows have committed. Only now may files be removed;
+        # failed objects remain pending and are retried by the scheduled worker.
+        note_cleanup = await process_note_cleanup_tasks()
+
         audit_logger = get_audit_logger()
         audit_logger.log_deletion(
             user_id=user_id,
@@ -183,6 +188,7 @@ async def purge_user_data(
             "deleted": deleted,
             "total_deleted": sum(deleted.values()),
             "vectors_deleted": vectors_deleted,
+            "note_cleanup": note_cleanup,
         }
 
     except Exception as e:

@@ -58,12 +58,12 @@ async def test_phase3_seed_is_idempotent_and_publishes_complete_derivative_sampl
             KnowledgePoint.version_id == version.id,
             KnowledgePoint.code.in_(list(GOLDEN)),
         ))).all())
-        assert len(resources) == 50
+        assert len(resources) == 51
         assert all(row.status == "published" for row in resources)
         assert all(row.math_validation_status == "passed" for row in resources)
         assert all(row.source_document_id and row.content_hash for row in resources)
         assert not any("将在这里" in row.body for row in resources)
-        assert len({row.external_key for row in resources}) == 50
+        assert len({row.external_key for row in resources}) == 51
 
         links = list((await session.scalars(select(QuestionKnowledgePoint).join(KnowledgePoint).where(
             KnowledgePoint.version_id == version.id,
@@ -87,10 +87,10 @@ async def test_phase3_seed_is_idempotent_and_publishes_complete_derivative_sampl
         event_count = await session.scalar(select(func.count()).select_from(OutboxEvent).where(
             OutboxEvent.aggregate_type == "knowledge_resource"
         ))
-        assert event_count == 50
+        assert event_count == 51
         report = await reconcile_published_resources(session, version.id)
-        assert report["published"] == 50
-        assert len(report["pending"]) == 50
+        assert report["published"] == 51
+        assert len(report["pending"]) == 51
         assert report["missing"] == []
         assert report["stale"] == []
         assert report["dead"] == []

@@ -8,11 +8,14 @@
 """
 
 import logging
+import math
 import time
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.services.memory_store import get_memory_store
 from app.services.profile_service import get_profile_service
@@ -22,6 +25,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/dashboard/memory", tags=["记忆系统-Dashboard"])
 
+_templates = Environment(
+    loader=FileSystemLoader(Path(__file__).resolve().parents[1] / "templates"),
+    autoescape=select_autoescape(("html", "xml")),
+)
+_MEMORY_TYPE_CLASSES = {
+    "error": "type-error",
+    "conversation": "type-conversation",
+    "milestone": "type-milestone",
+    "profile": "type-profile",
+}
+
+
+def _render_template(name: str, **context: Any) -> str:
+    return _templates.get_template(name).render(**context)
+
+
+def _percentage(value: Any) -> int:
+    """Return a bounded percentage safe for an inline width declaration."""
+    try:
+        return max(0, min(100, int(float(value or 0) * 100)))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
 
 @router.get("/stats", response_class=HTMLResponse)
 async def dashboard_stats(request: Request):
@@ -29,181 +55,27 @@ async def dashboard_stats(request: Request):
     require_admin_role(request)
     store = get_memory_store()
 
-    # 获取统计
     stats = await _get_system_stats(store)
-
-    html = f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>记忆系统 Dashboard</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f0f0f;
-            color: #e0e0e0;
-            padding: 20px;
-            min-height: 100vh;
-        }}
-        .container {{ max-width: 1200px; margin: 0 auto; }}
-        h1 {{
-            color: #00d4aa;
-            margin-bottom: 30px;
-            font-weight: 600;
-        }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        .stat-card {{
-            background: #1a1a1a;
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid #333;
-        }}
-        .stat-card h3 {{
-            color: #888;
-            font-size: 14px;
-            margin-bottom: 10px;
-        }}
-        .stat-card .value {{
-            font-size: 32px;
-            font-weight: 700;
-            color: #00d4aa;
-        }}
-        .stat-card.warning .value {{ color: #ff6b6b; }}
-        .stat-card.info .value {{ color: #4dabf7; }}
-        .section {{
-            background: #1a1a1a;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid #333;
-        }}
-        .section h2 {{
-            color: #fff;
-            font-size: 18px;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #333;
-        }}
-        .memory-item {{
-            background: #252525;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-        }}
-        .memory-item .type {{
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-        }}
-        .type-error {{ background: #ff6b6b; color: #fff; }}
-        .type-conversation {{ background: #4dabf7; color: #fff; }}
-        .type-milestone {{ background: #ffd43b; color: #000; }}
-        .type-profile {{ background: #69db7c; color: #000; }}
-        .memory-item .summary {{
-            margin-top: 8px;
-            color: #ccc;
-            font-size: 14px;
-        }}
-        .memory-item .meta {{
-            margin-top: 8px;
-            color: #666;
-            font-size: 12px;
-        }}
-        .progress-bar {{
-            background: #333;
-            border-radius: 4px;
-            height: 8px;
-            overflow: hidden;
-            margin-top: 5px;
-        }}
-        .progress-bar .fill {{
-            height: 100%;
-            background: linear-gradient(90deg, #00d4aa, #69db7c);
-            border-radius: 4px;
-        }}
-        .refresh-btn {{
-            background: #00d4aa;
-            color: #000;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            margin-bottom: 20px;
-        }}
-        .refresh-btn:hover {{ background: #00b894; }}
-        .empty {{ color: #666; text-align: center; padding: 20px; }}
-        .footer {{
-            text-align: center;
-            color: #555;
-            margin-top: 30px;
-            font-size: 12px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🧠 记忆系统 Dashboard</h1>
-
-        <button class="refresh-btn" onclick="location.reload()">🔄 刷新数据</button>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>总记忆数</h3>
-                <div class="value">{stats['total_memories']}</div>
-            </div>
-            <div class="stat-card">
-                <h3>活跃用户</h3>
-                <div class="value">{stats['active_users']}</div>
-            </div>
-            <div class="stat-card info">
-                <h3>错题记忆</h3>
-                <div class="value">{stats['error_count']}</div>
-            </div>
-            <div class="stat-card info">
-                <h3>对话记忆</h3>
-                <div class="value">{stats['conversation_count']}</div>
-            </div>
-            <div class="stat-card">
-                <h3>里程碑</h3>
-                <div class="value">{stats['milestone_count']}</div>
-            </div>
-            <div class="stat-card warning">
-                <h3>已归档</h3>
-                <div class="value">{stats['archived_count']}</div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>📋 最近记忆（最新 10 条）</h2>
-            {await _render_recent_memories(store)}
-        </div>
-
-        <div class="section">
-            <h2>👤 用户画像概览</h2>
-            {await _render_user_profiles()}
-        </div>
-
-        <div class="footer">
-            最后更新: {time.strftime('%Y-%m-%d %H:%M:%S')} |
-            <a href="/docs" style="color: #00d4aa;">API 文档</a>
-        </div>
-    </div>
-</body>
-</html>
-    """
-    return HTMLResponse(content=html)
-
+    recent_memories, recent_error = await _get_recent_memories()
+    profiles, profiles_error = await _get_user_profiles()
+    page = _render_template(
+        "memory_dashboard/stats.html",
+        stats=stats,
+        stat_cards=[
+            ("总记忆数", "total_memories", ""),
+            ("活跃用户", "active_users", ""),
+            ("错题记忆", "error_count", "info"),
+            ("对话记忆", "conversation_count", "info"),
+            ("里程碑", "milestone_count", ""),
+            ("已归档", "archived_count", "warning"),
+        ],
+        recent_memories=recent_memories,
+        recent_error=recent_error,
+        profiles=profiles,
+        profiles_error=profiles_error,
+        updated_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    return HTMLResponse(content=page)
 
 @router.get("/user/{user_id}", response_class=HTMLResponse)
 async def dashboard_user(request: Request, user_id: str):
@@ -221,99 +93,14 @@ async def dashboard_user(request: Request, user_id: str):
     # 获取用户画像
     profile = await profile_service.get_profile(user_id)
 
-    html = f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <title>用户记忆详情 - {user_id}</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f0f0f;
-            color: #e0e0e0;
-            padding: 20px;
-        }}
-        .container {{ max-width: 1000px; margin: 0 auto; }}
-        h1 {{ color: #00d4aa; margin-bottom: 20px; }}
-        .profile-box {{
-            background: #1a1a1a;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid #333;
-        }}
-        .profile-box h2 {{ color: #fff; margin-bottom: 15px; }}
-        .profile-box .summary {{
-            color: #00d4aa;
-            padding: 15px;
-            background: #252525;
-            border-radius: 8px;
-            line-height: 1.6;
-        }}
-        .memory-list {{ margin-top: 20px; }}
-        .memory-item {{
-            background: #1a1a1a;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            border: 1px solid #333;
-        }}
-        .type-badge {{
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-right: 10px;
-        }}
-        .type-error {{ background: #ff6b6b; }}
-        .type-conversation {{ background: #4dabf7; }}
-        .type-milestone {{ background: #ffd43b; color: #000; }}
-        .strength-bar {{
-            display: inline-block;
-            width: 100px;
-            height: 6px;
-            background: #333;
-            border-radius: 3px;
-            margin-left: 10px;
-        }}
-        .strength-fill {{
-            height: 100%;
-            background: #00d4aa;
-            border-radius: 3px;
-        }}
-        .back-link {{
-            color: #00d4aa;
-            text-decoration: none;
-            margin-bottom: 20px;
-            display: inline-block;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <a href="/api/dashboard/memory/stats" class="back-link">← 返回概览</a>
-        <h1>👤 用户: {user_id}</h1>
-
-        <div class="profile-box">
-            <h2>📊 用户画像</h2>
-            <div class="summary">{profile.get('summary_text', '暂无画像数据')}</div>
-        </div>
-
-        <div class="profile-box">
-            <h2>📝 记忆列表 ({total} 条)</h2>
-            <div class="memory-list">
-                {_render_user_memories(memories)}
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-    """
-    return HTMLResponse(content=html)
-
+    page = _render_template(
+        "memory_dashboard/user.html",
+        user_id=user_id,
+        summary=profile.get("summary_text", "暂无画像数据"),
+        total=total,
+        memories=[_memory_view(memory) for memory in memories],
+    )
+    return HTMLResponse(content=page)
 
 @router.get("/timeline")
 async def dashboard_timeline(
@@ -404,8 +191,30 @@ async def _get_system_stats(store) -> Dict[str, int]:
         }
 
 
-async def _render_recent_memories(store) -> str:
-    """渲染最近记忆列表。"""
+def _memory_view(memory: Any) -> Dict[str, Any]:
+    memory_type = str(memory.get("memory_type", "unknown") or "unknown")
+    try:
+        importance = float(memory.get("importance", 0) or 0)
+        if not math.isfinite(importance):
+            importance = 0.0
+    except (TypeError, ValueError, OverflowError):
+        importance = 0.0
+    return {
+        "id": memory.get("id", ""),
+        "user_id": memory.get("user_id", ""),
+        "memory_type": memory_type,
+        "type_class": _MEMORY_TYPE_CLASSES.get(memory_type, "type-unknown"),
+        "high_category": memory.get("high_category", ""),
+        "category": memory.get("category", ""),
+        "summary": str(memory.get("embedding_summary") or "")[:100],
+        "importance": importance,
+        "strength_pct": _percentage(memory.get("memory_strength", 0.5)),
+        "status": memory.get("status", ""),
+    }
+
+
+async def _get_recent_memories() -> tuple[List[Dict[str, Any]], bool]:
+    """Load recent memory view models; the boolean signals a read failure."""
     try:
         from app.data.database import get_db_session
         from sqlalchemy import text as sa_text
@@ -418,39 +227,14 @@ async def _render_recent_memories(store) -> str:
                 ORDER BY created_at DESC
                 LIMIT 10
             """))
-            rows = result.fetchall()
-
-        if not rows:
-            return '<div class="empty">暂无记忆数据</div>'
-
-        html_parts = []
-        for row in rows:
-            m = row._mapping
-            type_class = f"type-{m['memory_type']}"
-            strength_pct = int(float(m['memory_strength'] or 0) * 100)
-
-            html_parts.append(f"""
-            <div class="memory-item">
-                <span class="type {type_class}">{m['memory_type']}</span>
-                <strong>{m['high_category']} / {m['category']}</strong>
-                <div class="progress-bar" style="width: 60px; display: inline-block; margin-left: 10px;">
-                    <div class="fill" style="width: {strength_pct}%;"></div>
-                </div>
-                <span style="color: #888; font-size: 12px;">强度 {strength_pct}%</span>
-                <div class="summary">{m['embedding_summary'][:100]}...</div>
-                <div class="meta">
-                    用户: {m['user_id']} | ID: {m['id']} | 状态: {m['status']}
-                </div>
-            </div>
-            """)
-
-        return "".join(html_parts)
-    except Exception as e:
-        return f'<div class="empty">获取失败: {e}</div>'
+            return [_memory_view(row._mapping) for row in result.fetchall()], False
+    except Exception:
+        logger.exception("获取最近记忆失败")
+        return [], True
 
 
-async def _render_user_profiles() -> str:
-    """渲染用户画像概览。"""
+async def _get_user_profiles() -> tuple[List[Dict[str, Any]], bool]:
+    """Load profile overview view models; the boolean signals a read failure."""
     try:
         from app.data.database import get_db_session
         from sqlalchemy import text as sa_text
@@ -462,51 +246,20 @@ async def _render_user_profiles() -> str:
                 ORDER BY updated_at DESC
                 LIMIT 5
             """))
-            rows = result.fetchall()
-
-        if not rows:
-            return '<div class="empty">暂无画像数据。请使用 Mock 接口模拟用户行为后刷新。</div>'
-
-        html_parts = []
-        for row in rows:
-            p = row._mapping
-            html_parts.append(f"""
-            <div class="memory-item">
-                <strong style="color: #00d4aa;">👤 {p['user_id']}</strong>
-                <span style="color: #666; font-size: 12px;">版本 {p['version']}</span>
-                <div class="summary" style="margin-top: 10px; color: #ccc;">{p['summary_text'][:150] if p['summary_text'] else '暂无摘要'}...</div>
-            </div>
-            """)
-
-        return "".join(html_parts)
-    except Exception as e:
-        # 表不存在时返回提示
-        return f'<div class="empty">画像表尚未创建，请先执行 Alembic 迁移。<br><code>alembic -c app/data/alembic.ini upgrade head</code></div>'
+            profiles = [{
+                "user_id": row._mapping["user_id"],
+                "version": row._mapping["version"],
+                "summary": str(row._mapping["summary_text"] or "暂无摘要")[:150],
+            } for row in result.fetchall()]
+            return profiles, False
+    except Exception:
+        logger.exception("获取用户画像概览失败")
+        return [], True
 
 
 def _render_user_memories(memories: List[Dict]) -> str:
-    """渲染用户记忆列表。"""
-    if not memories:
-        return '<div class="empty">该用户暂无记忆数据</div>'
-
-    html_parts = []
-    for m in memories:
-        mem_type = m.get("memory_type", "unknown")
-        type_class = f"type-{mem_type}"
-        strength = float(m.get("memory_strength", 0.5))
-        strength_pct = int(strength * 100)
-
-        html_parts.append(f"""
-        <div class="memory-item">
-            <span class="type-badge {type_class}">{mem_type}</span>
-            <strong>{m.get('high_category', '')} / {m.get('category', '')}</strong>
-            <div class="strength-bar"><div class="strength-fill" style="width: {strength_pct}%;"></div></div>
-            <span style="color: #888; font-size: 12px;">{strength_pct}%</span>
-            <div style="color: #aaa; margin-top: 8px; font-size: 14px;">{m.get('embedding_summary', '')[:80]}...</div>
-            <div style="color: #555; font-size: 12px; margin-top: 5px;">
-                ID: {m.get('id')} | 重要度: {m.get('importance', 0):.1f} | 状态: {m.get('status')}
-            </div>
-        </div>
-        """)
-
-    return "".join(html_parts)
+    """Compatibility helper backed by the same autoescaped item template."""
+    return _render_template(
+        "memory_dashboard/memory_items.html",
+        memories=[_memory_view(memory) for memory in memories],
+    )

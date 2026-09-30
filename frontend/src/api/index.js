@@ -9,6 +9,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: '/api',
   timeout: 30000,
+  withCredentials: true,
   // 不设默认 Content-Type：让 axios 根据 data 类型自适应
   // （JSON 对象 → application/json；FormData → multipart/form-data; boundary=...）
   // 显式设成 application/json 会让 FormData 上传被发成 JSON，进而被 FastAPI 422 拒绝
@@ -16,6 +17,8 @@ const api = axios.create({
 
 // 从 authStore 获取 token 的 getter（由 main.js 在 Pinia 初始化后设置）
 let _authTokenGetter = null
+let _authRefreshHandler = null
+let _authClearHandler = null
 
 /**
  * 设置 auth store 的 token getter。
@@ -23,6 +26,16 @@ let _authTokenGetter = null
  */
 export function setAuthTokenGetter(getter) {
   _authTokenGetter = getter
+}
+
+/**
+ * Inject auth actions after Pinia is initialized. Keeping the API layer store-
+ * agnostic avoids a circular import and a dynamic import that cannot split.
+ */
+export function setAuthSessionHandlers({ getToken, refresh, clearSession } = {}) {
+  _authTokenGetter = typeof getToken === 'function' ? getToken : null
+  _authRefreshHandler = typeof refresh === 'function' ? refresh : null
+  _authClearHandler = typeof clearSession === 'function' ? clearSession : null
 }
 
 // 是否正在刷新 token 的标记
@@ -38,10 +51,6 @@ api.interceptors.request.use(
     let token = null
     if (_authTokenGetter) {
       token = _authTokenGetter()
-    }
-    if (!token) {
-      // fallback: 直接从 localStorage 读取
-      token = localStorage.getItem('auth_token')
     }
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -74,7 +83,7 @@ api.interceptors.response.use(
     // 已经是 refresh 请求本身失败 → 不再重试，清理 session
     const requestUrl = String(originalRequest.url || '')
     if (originalRequest._isRefreshRequest || /(^|\/)auth\/refresh(?:$|\?)/.test(requestUrl)) {
-      clearLocalSession()
+      clearAuthSession()
       return Promise.reject(error)
     }
 
@@ -102,13 +111,21 @@ api.interceptors.response.use(
     isRefreshing = true
 
     try {
-      const { useAuthStore } = await import('@/stores/authStore')
-      const store = useAuthStore()
-      const success = await store.refresh()
+      if (!_authRefreshHandler) {
+        clearAuthSession()
+        return Promise.reject(error)
+      }
+      const success = await _authRefreshHandler()
 
       if (success) {
         // 刷新成功，重放原始请求
-        const newToken = store.getAccessToken()
+        const newToken = _authTokenGetter?.()
+        if (!newToken) {
+          clearAuthSession()
+          refreshQueue.forEach((cb) => cb(null))
+          refreshQueue = []
+          return Promise.reject(error)
+        }
         originalRequest.headers.Authorization = `Bearer ${newToken}`
 
         // 处理队列中的请求
@@ -133,9 +150,18 @@ api.interceptors.response.use(
 )
 
 function clearLocalSession() {
+  // Token keys are removed for one-release compatibility with legacy sessions.
   localStorage.removeItem('auth_token')
   localStorage.removeItem('refresh_token')
   localStorage.removeItem('current_user')
+}
+
+function clearAuthSession() {
+  if (_authClearHandler) {
+    _authClearHandler()
+    return
+  }
+  clearLocalSession()
 }
 
 export default api

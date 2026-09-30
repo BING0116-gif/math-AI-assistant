@@ -77,14 +77,6 @@ docs/ui-demo.html
 math-ai-assistant.design/
 
 # Content Ingestion PoC / runtime data（Step 1.1-C）
-math_question_bank_pdf_demo/.venv/
-math_question_bank_pdf_demo/uploads/
-math_question_bank_pdf_demo/parsed/
-math_question_bank_pdf_demo/exports/
-math_question_bank_pdf_demo/data/*.db
-math_question_bank_pdf_demo/data/*.db-shm
-math_question_bank_pdf_demo/data/*.db-wal
-math_question_bank_pdf_demo/mineru_test/
 # MinerU 运行时临时目录（若未来落在仓库内）
 mineru-cache/
 .mineru_cache/
@@ -104,8 +96,6 @@ runtime/
 artifacts/
 
 # 题库切分 Demo：仅保留代码(.py/.json/.md)，所有 PDF 不入 Git
-math_question_bank_pdf_demo/**/*.pdf
-math_question_bank_pdf_demo/*.pdf
 
 # 项目文档：除顶层 README.md / AGENTS.md 外，docs/ 与 plans/ 全部不入 Git
 docs/

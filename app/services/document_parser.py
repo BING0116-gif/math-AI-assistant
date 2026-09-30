@@ -1,7 +1,7 @@
 """DocumentParser adapter — 正式 PDF 解析边界。
 
 生产业务只依赖 `DocumentParser.parse(file_path, mode) -> ParsedDocument`，
-不直接 import MinerU Python API。MinerU 通过 subprocess 调用独立 dedicated venv CLI。
+不直接 import MinerU Python API。MinerU 通过 subprocess 调用当前运行环境的 CLI。
 
 模式：
 - quick  : PyMuPDF 文本提取（电子 PDF / 调试），页码可靠。
@@ -21,6 +21,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -96,6 +97,7 @@ class DocumentParser:
     """解析 PDF -> ParsedDocument。"""
 
     def __init__(self, executable: Optional[str] = None):
+        self._auto_discover = executable is None
         self._executable = executable if executable is not None else settings.MINERU_EXECUTABLE
 
     # ── 对外统一入口 ──
@@ -251,11 +253,18 @@ class DocumentParser:
     # ── helpers ──
     def _mineru_executable(self) -> Optional[str]:
         exe = (self._executable or "").strip()
-        if not exe:
+        if exe:
+            return exe if os.path.exists(exe) else None
+        if not self._auto_discover:
             return None
-        if not os.path.exists(exe):
-            return None
-        return exe
+
+        # 默认优先使用当前 Python 虚拟环境中的 CLI，使正式主 venv 安装后
+        # 无需再通过 .env 写死机器相关绝对路径。
+        cli_name = "mineru.exe" if os.name == "nt" else "mineru"
+        same_env = Path(sys.executable).with_name(cli_name)
+        if same_env.exists():
+            return str(same_env)
+        return shutil.which("mineru")
 
     @staticmethod
     def _mineru_version(executable: str) -> str:

@@ -8,6 +8,7 @@
 """
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -26,15 +27,16 @@ from app.services.paper_generator import PaperGenerationError, PaperGenerator
 from app.services.question_importer import QuestionImporter
 
 
-@pytest.fixture
-def engine():
+@pytest_asyncio.fixture
+async def engine():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
 
     @event.listens_for(eng.sync_engine, "connect")
     def _fk(dbapi_connection, _):
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
-    return eng
+    yield eng
+    await eng.dispose()
 
 
 @pytest.fixture

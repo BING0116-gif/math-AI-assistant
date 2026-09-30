@@ -238,8 +238,11 @@ class MockContentAIProvider(ContentAIProvider):
 
         return ContentAIAnalysisResult(
             question_type=qtype,
+            exam_point="题目核心概念与解法识别",
             knowledge_point_codes=kp_codes,
+            knowledge_point_relations={"prerequisites": [], "related": [], "next": []},
             difficulty=difficulty,
+            difficulty_analysis="根据题目步骤数量与概念组合给出的模拟难度。",
             analysis=analysis_text,
             answer_spec=answer_spec,
             common_mistakes=[],
@@ -580,6 +583,7 @@ class DeepSeekContentAIProvider(ContentAIProvider):
         """单次调用 prompt：同时输出结构化分析与自我验证，减少一次网络往返。"""
         qtype = snapshot.get("detected_question_type") or "choice"
         known = context.get("known_knowledge_point_codes") or []
+        catalog = context.get("knowledge_point_catalog") or []
         suggested = snapshot.get("suggested_knowledge_point_codes") or []
         verification_part = (
             ',\n  "verification": {\n'
@@ -603,11 +607,15 @@ class DeepSeekContentAIProvider(ContentAIProvider):
             f"原解析（参考）：\n{snapshot.get('original_solution') or '（空）'}\n\n"
             f"建议知识点 code：{suggested}\n"
             f"已知知识点 code 列表（只能从中挑选，无合适则返回空数组）：{known}\n\n"
+            f"知识点图谱目录（关系字段只能引用其中的 code）：{json.dumps(catalog, ensure_ascii=False)}\n\n"
             "输出 JSON，字段严格如下：\n"
             "{\n"
             '  "question_type": "从 choice/judge/numeric_fill/expression_fill/calculation/proof/short_answer 中选其一",\n'
+            '  "exam_point": "一句话说明本题考查的能力或方法",\n'
             '  "knowledge_point_codes": ["从已知列表中挑选 1-3 个最相关 code；无合适则 []"],\n'
+            '  "knowledge_point_relations": {"prerequisites": ["前置知识点 code"], "related": ["关联知识点 code"], "next": ["后续知识点 code"]},\n'
             '  "difficulty": 1,\n'
+            '  "difficulty_analysis": "说明本题难点、关键步骤和易卡点",\n'
             '  "analysis": "详细中文解题过程，步骤清晰",\n'
             '  "common_mistakes": [{"type": "错误类型", "description": "学生常见错误描述"}],\n'
             '  "answer_check": {"official_answer": "你独立求解得到的答案", "consistent": true, "reason": "与原答案是否一致的简要理由"},\n'
@@ -637,6 +645,13 @@ class DeepSeekContentAIProvider(ContentAIProvider):
         kp = data.get("knowledge_point_codes") or []
         if not isinstance(kp, list):
             kp = []
+        relations_raw = data.get("knowledge_point_relations") or {}
+        if not isinstance(relations_raw, dict):
+            relations_raw = {}
+        relations = {}
+        for relation_name in ("prerequisites", "related", "next"):
+            values = relations_raw.get(relation_name) or []
+            relations[relation_name] = [str(v) for v in values] if isinstance(values, list) else []
         answer_check_raw = data.get("answer_check") or {}
         if not isinstance(answer_check_raw, dict):
             answer_check_raw = {}
@@ -658,8 +673,11 @@ class DeepSeekContentAIProvider(ContentAIProvider):
             common_mistakes = []
         return ContentAIAnalysisResult(
             question_type=qtype,
+            exam_point=str(data.get("exam_point") or ""),
             knowledge_point_codes=[str(c) for c in kp],
+            knowledge_point_relations=relations,
             difficulty=max(1, min(5, int(data.get("difficulty", 2) or 2))),
+            difficulty_analysis=str(data.get("difficulty_analysis") or ""),
             analysis=str(data.get("analysis") or ""),
             answer_spec=_build_answer_spec(qtype, original_answer, options),
             common_mistakes=common_mistakes,

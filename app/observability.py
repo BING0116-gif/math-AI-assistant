@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -25,6 +25,13 @@ AI_TOKENS = Counter("mathai_ai_tokens_total", "AI tokens", ["provider", "model",
 AI_COST = Counter("mathai_ai_estimated_cost_total", "Estimated AI cost", ["provider", "model", "currency"])
 CONTENT_EVENTS = Counter("mathai_content_events_total", "Content operations", ["operation", "status"])
 RECOVERY_RUNS = Counter("mathai_recovery_runs_total", "Recovery/repair runs", ["operation", "status"])
+OUTBOX_EVENTS = Gauge("mathai_outbox_events", "Current SQL outbox rows", ["status"])
+OUTBOX_OLDEST_PENDING = Gauge(
+    "mathai_outbox_oldest_pending_seconds", "Age of the oldest pending outbox event"
+)
+OUTBOX_FAILURES = Gauge(
+    "mathai_outbox_failed_events", "Outbox rows with a recorded failure", ["event_type"]
+)
 
 _SENSITIVE = re.compile(r"(authorization|password|secret|api[_-]?key|token|prompt|answer|content)", re.I)
 

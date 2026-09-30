@@ -7,6 +7,8 @@ agent_core 包 — Agent 核心层。
 from agent_core.agent import (
     MathAgent,
     create_math_agent,
+)
+from agent_core.config import (
     MathAgentConfig,
     LLMConfig,
     StrategyConfig,

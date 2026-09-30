@@ -219,9 +219,41 @@ class ContentAIAnalysisService:
             )
         ).scalar_one_or_none()
 
-    async def _known_kp_codes(self) -> set:
+    async def _known_kp_catalog(self) -> list[Dict[str, Any]]:
         async with get_db_session() as db:
-            return set((await db.execute(select(KnowledgePoint.code))).scalars().all())
+            points = (await db.execute(select(KnowledgePoint))).scalars().all()
+            return [
+                {
+                    "code": point.code,
+                    "name": point.name,
+                    "prerequisites": point.prerequisites or [],
+                    "related": point.related or [],
+                    "exam_focuses": point.exam_focuses or [],
+                }
+                for point in points
+            ]
+
+    @staticmethod
+    def _normalize_knowledge_graph_result(analysis, catalog: list[Dict[str, Any]]) -> None:
+        """只保留真实图谱 code，并以图谱事实重建上下游关系。"""
+        by_code = {str(item["code"]): item for item in catalog if item.get("code")}
+        selected = [str(code) for code in analysis.knowledge_point_codes if str(code) in by_code]
+        analysis.knowledge_point_codes = selected
+        prerequisites: list[str] = []
+        related: list[str] = []
+        for code in selected:
+            point = by_code[code]
+            prerequisites.extend(str(v) for v in point.get("prerequisites") or [] if str(v) in by_code)
+            related.extend(str(v) for v in point.get("related") or [] if str(v) in by_code)
+        next_codes = [
+            code for code, point in by_code.items()
+            if any(selected_code in (point.get("prerequisites") or []) for selected_code in selected)
+        ]
+        analysis.knowledge_point_relations = {
+            "prerequisites": list(dict.fromkeys(prerequisites)),
+            "related": list(dict.fromkeys(related)),
+            "next": list(dict.fromkeys(next_codes)),
+        }
 
     # ── 单次分析（状态机全链路）──
     async def analyze_candidate(
@@ -235,7 +267,8 @@ class ContentAIAnalysisService:
         forced_case 仅测试注入（pass/doubtful/fail）。
         """
         cand = await self._load_candidate(candidate_id)
-        known_codes = await self._known_kp_codes()
+        kp_catalog = await self._known_kp_catalog()
+        known_codes = {item["code"] for item in kp_catalog}
 
         async with get_db_session() as db:
             latest = await self._latest_run(db, candidate_id)
@@ -275,6 +308,7 @@ class ContentAIAnalysisService:
         snapshot = _build_snapshot(cand)
         context: Dict[str, Any] = {
             "known_knowledge_point_codes": sorted(known_codes),
+            "knowledge_point_catalog": kp_catalog,
             "attempt_no": attempt_no,
             "previous_result": latest.analysis_json if latest else None,
             "previous_gate": latest.gate if latest else None,
@@ -294,6 +328,7 @@ class ContentAIAnalysisService:
                 analysis = provider.analyze(snapshot, context)
                 await self._transition(run_id, "validating")
                 verifier = provider.verify(analysis, snapshot, context)
+            self._normalize_knowledge_graph_result(analysis, kp_catalog)
             await self._transition(run_id, "verifying")
 
             _mark_partial_result(analysis, verifier, provider)

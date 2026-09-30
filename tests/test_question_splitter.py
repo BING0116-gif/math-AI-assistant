@@ -107,6 +107,31 @@ class TestSectionDetection:
 # § splitting：数字不切题 / 子问题 / 8 题节 / 跨页 / 页眉页脚
 # ══════════════════════════════════════════════════════════════════
 class TestSplitting:
+    def test_numbered_questions_without_section_header_use_safe_fallback(self):
+        blocks = [
+            B("题库导入测试"),
+            B("1. 已知 f(x)=x+1，求 f(2)。"),
+            B("A. 1"), B("B. 2"), B("C. 3"), B("D. 4"),
+            B("2. 求方程 x^2-1=0 的根。", page=2),
+        ]
+        splits = split_document(doc_of(blocks))
+        assert len(splits) == 2
+        assert splits[0].question_number == "1"
+        assert splits[0].detected_question_type == "choice"
+        assert [option["id"] for option in splits[0].options] == ["A", "B", "C", "D"]
+        assert splits[1].question_number == "2"
+        assert splits[1].detected_question_type == "short_answer"
+        assert splits[1].page_start == 2
+
+    def test_single_number_without_section_does_not_trigger_fallback(self):
+        splits = split_document(doc_of([B("讲义"), B("1. 这是正文中的单个编号，不足以判断为题库。")]))
+        assert splits == []
+
+    def test_single_question_without_section_header_is_supported(self):
+        splits = split_document(doc_of([B("单题导入"), B("1. 求方程 x+1=0 的解。")]))
+        assert len(splits) == 1
+        assert splits[0].detected_question_type == "short_answer"
+
     def test_formula_numbers_do_not_split(self):
         """块内公式/正文里的 1. / 2. 不应产生新顶层题（只认块首行首题号）。"""
         blocks = [

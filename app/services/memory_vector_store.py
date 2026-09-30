@@ -28,7 +28,7 @@ class MemoryVectorStore:
                     vectors_config=VectorParams(size=settings.VECTOR_SIZE, distance=Distance.COSINE),
                 )
 
-    async def upsert(self, memory: Any) -> None:
+    async def upsert(self, memory: Any, *, tags: list[str] | None = None) -> None:
         from qdrant_client.models import PointStruct
         await self.initialize()
         vector = await self._embedding.encode_async(memory.embedding_summary)
@@ -44,6 +44,7 @@ class MemoryVectorStore:
             "expire_at": memory.expire_at,
             "memory_strength": memory.memory_strength,
             "source_id": memory.source_id or "",
+            "tags": list(tags or []),
         }
         await asyncio.to_thread(
             self._client.upsert,

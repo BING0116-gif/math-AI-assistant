@@ -5,6 +5,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.api.student_contracts import STUDENT_API_RESPONSES, StudentOperationEnvelope
 from app.services.exam_service import create_exam, exam_ai_summary, exam_options, exam_report, get_exam, save_exam_draft, save_exam_snapshot, start_exam, submit_exam
 from app.services.practice_service import PracticeError
 
@@ -66,55 +67,55 @@ def _raise(error: PracticeError):
     raise HTTPException(status_code=status, detail={"code": error.code, "message": error.message, **error.extra})
 
 
-@router.get("/options")
+@router.get("/options", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def options(course_id: str | None = Query(default=None, max_length=36)):
     try: return {"code": 0, "data": await exam_options(course_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions")
+@router.post("/sessions", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def create(request: Request, body: CreateExamRequest):
     try: return {"code": 0, "data": await create_exam(_user(request), body.model_dump(exclude_none=True))}
     except PracticeError as error: _raise(error)
 
 
-@router.get("/sessions/{session_id}")
+@router.get("/sessions/{session_id}", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get(request: Request, session_id: str):
     try: return {"code": 0, "data": await get_exam(_user(request), session_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions/{session_id}/start")
+@router.post("/sessions/{session_id}/start", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def start(request: Request, session_id: str):
     try: return {"code": 0, "data": await start_exam(_user(request), session_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.put("/sessions/{session_id}/draft-answers/{question_id}")
+@router.put("/sessions/{session_id}/draft-answers/{question_id}", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def draft(request: Request, session_id: str, question_id: str, body: DraftRequest):
     try: return {"code": 0, "data": await save_exam_draft(_user(request), session_id, question_id, body.answer, body.expected_version)}
     except PracticeError as error: _raise(error)
 
 
-@router.put("/sessions/{session_id}/recovery-snapshot")
+@router.put("/sessions/{session_id}/recovery-snapshot", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def recovery_snapshot(request: Request, session_id: str, body: RecoverySnapshotRequest):
     try: return {"code": 0, "data": await save_exam_snapshot(_user(request), session_id, body.current_question_id), "message": "ok"}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions/{session_id}/submit")
+@router.post("/sessions/{session_id}/submit", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def submit(request: Request, session_id: str, body: SubmitRequest):
     try: return {"code": 0, "data": await submit_exam(_user(request), session_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.get("/sessions/{session_id}/report")
+@router.get("/sessions/{session_id}/report", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def report(request: Request, session_id: str):
     try: return {"code": 0, "data": await exam_report(_user(request), session_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions/{session_id}/report/ai-summary")
+@router.post("/sessions/{session_id}/report/ai-summary", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def ai_summary(request: Request, session_id: str):
     try: return {"code": 0, "data": await exam_ai_summary(_user(request), session_id)}
     except PracticeError as error: _raise(error)

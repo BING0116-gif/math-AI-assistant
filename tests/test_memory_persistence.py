@@ -4,6 +4,7 @@ A03 记忆持久化专项测试
 """
 
 import asyncio
+import os
 import time
 import pytest
 from app.data.database import init_db, close_db
@@ -16,11 +17,29 @@ from agent_core.memory_persistence import MemoryPersistenceFacade, UserProfile
 
 # 模块级初始化数据库
 @pytest.fixture(scope="module", autouse=True)
-def _setup_database():
-    """初始化数据库。"""
+def _setup_database(tmp_path_factory):
+    """使用隔离的临时 SQLite 数据库，避免依赖本地 PostgreSQL。"""
+    import app.data.database as db_mod
+
+    db_file = tmp_path_factory.mktemp("memory_persistence") / "memory.db"
+    saved_env = {
+        key: os.environ.get(key)
+        for key in ("DATABASE_URL", "ASYNC_DATABASE_URL")
+    }
+    os.environ["ASYNC_DATABASE_URL"] = (
+        f"sqlite+aiosqlite:///{db_file.as_posix()}"
+    )
+    os.environ.pop("DATABASE_URL", None)
+
     asyncio.run(init_db())
     yield
     asyncio.run(close_db())
+    db_mod.async_session_factory = None
+    for key, value in saved_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 class TestEventBuffer:

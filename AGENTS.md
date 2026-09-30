@@ -43,3 +43,13 @@
 - UI 设计决策使用 `$ui-ux-pro-max`；需求澄清、PRD 和计划使用已有 `grill-master`、`prd-writer`、`spec-writer`、`spec-to-plan` 与 `slice-the-spec`。
 
 不要修改 `docs/archive/` 中的历史资料、`qdrant_storage/`、`data/math_ai.db`、`.env` 或用户未提交的文件，除非任务明确要求且范围已核实。
+
+<!-- smartclaw:team-begin -->
+## Configured Team Agents
+
+These agent ids are configured in OpenClaw and spawnable by the main agent.
+Use `agents_list` to verify the live allowlist, then delegate with
+`sessions_spawn(agentId="<id>", task="<full sub-task>", label="<short-label>")`.
+
+- `agent` — **代码审核助手**
+<!-- smartclaw:team-end -->

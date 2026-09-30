@@ -10,6 +10,14 @@ import re as _re
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.student_contracts import (
+    ErrorBookCreateResponse,
+    ErrorBookItem,
+    ErrorReviewResponse,
+    STUDENT_API_RESPONSES,
+    StudentOperationEnvelope,
+    SuccessResponse,
+)
 from app.config.settings import settings
 from app.middleware.security import (
     validate_input,
@@ -79,7 +87,7 @@ def _get_user_id(request: Request) -> str:
     return str(user_id)
 
 
-@router.get("/api/error-book")
+@router.get("/api/error-book", response_model=list[ErrorBookItem], responses=STUDENT_API_RESPONSES)
 async def get_error_book(request: Request):
     try:
         user_id = _get_user_id(request)
@@ -91,7 +99,7 @@ async def get_error_book(request: Request):
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 
-@router.post("/api/error-book")
+@router.post("/api/error-book", response_model=ErrorBookCreateResponse, responses=STUDENT_API_RESPONSES)
 async def add_error(request: Request, body: ErrorItemRequest):
     from error_book import ErrorItem
 
@@ -178,7 +186,7 @@ async def add_error(request: Request, body: ErrorItemRequest):
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 
-@router.put("/api/error-book/{error_id}")
+@router.put("/api/error-book/{error_id}", response_model=SuccessResponse, responses=STUDENT_API_RESPONSES)
 async def update_error(error_id: str, request: Request, body: ErrorUpdateRequest):
     try:
         user_id = _get_user_id(request)
@@ -223,7 +231,7 @@ async def update_error(error_id: str, request: Request, body: ErrorUpdateRequest
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 
-@router.delete("/api/error-book/{error_id}")
+@router.delete("/api/error-book/{error_id}", response_model=SuccessResponse, responses=STUDENT_API_RESPONSES)
 async def delete_error(error_id: str, request: Request):
     try:
         validated_id = validate_input(error_id, "error_id", max_length=64)
@@ -240,7 +248,7 @@ async def delete_error(error_id: str, request: Request):
         raise HTTPException(status_code=500, detail="服务器内部错误")
 
 
-@router.post("/api/error-book/{error_id}/variant-sessions")
+@router.post("/api/error-book/{error_id}/variant-sessions", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def create_error_variant_session(
     error_id: str, request: Request, body: CreateVariantSessionRequest,
 ):
@@ -263,7 +271,7 @@ async def create_error_variant_session(
         raise HTTPException(status_code=400, detail={"code": "VALIDATION_FAILED", "message": str(exc)})
 
 
-@router.post("/api/error-book/{error_id}/review")
+@router.post("/api/error-book/{error_id}/review", response_model=ErrorReviewResponse, responses=STUDENT_API_RESPONSES)
 async def record_error_review(error_id: str, request: Request, body: ErrorReviewRequest):
     """Record immutable review evidence and apply the guarded state transition."""
     from app.data.database import get_db_session

@@ -1,11 +1,12 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Request, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.data.database import get_db_session
 from app.data.repositories import UserRepository
-from app.services.profile_application import ProfileSnapshot
+from app.api.student_contracts import STUDENT_API_RESPONSES
+from app.services.profile_read_models import profile_response, report_response
 from app.security.audit import get_audit_logger
 from app.security.access_control import verify_resource_ownership
 
@@ -45,6 +46,90 @@ class ProfileWhyEnvelope(BaseModel):
     message: str = "ok"
 
 
+class ProfileSummaryResponse(BaseModel):
+    total_questions: int
+    correct_rate: float
+    avg_time_per_question: float
+    learning_level: str
+
+
+class ProfileCapabilityResponse(BaseModel):
+    knowledge_mastery: dict[str, float]
+    recommended_difficulty: str | int | float
+
+
+class ProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    user_id: str
+    generated_at: datetime
+    summary: ProfileSummaryResponse
+    capability: ProfileCapabilityResponse
+    behavior: dict[str, Any]
+    error_patterns: Any
+    progress_trends: Any
+    preferences: dict[str, Any]
+    recommendations: list[Any] | None = None
+
+
+class ProfileReportOverview(BaseModel):
+    total_questions: int
+    correct_rate: float
+    avg_time_per_question: float
+    recommended_difficulty: str | int | float
+
+
+class ProfileReportResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    user_id: str
+    generated_at: datetime
+    overview: ProfileReportOverview
+    weak_points: list[Any]
+    strong_points: list[Any]
+    error_patterns: Any
+    progress_trends: Any
+    recommendations: list[Any]
+
+
+class ProfileRecommendationsResponse(BaseModel):
+    user_id: str
+    recommendations: list[Any]
+
+
+class PreferencesUpdateResponse(BaseModel):
+    success: bool
+    message: str
+    preferences: dict[str, Any]
+
+
+class SkillProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    user_id: str
+    generated_at: datetime
+    skill_summary: dict[str, int]
+    skills: list[dict[str, Any]]
+    error_patterns: Any
+    cognitive_style: Any
+    next_recommended_skills: list[dict[str, Any]]
+    difficulty_estimate_by_category: dict[str, Any]
+    compact_profile: str
+
+
+class TrackLearningRequest(BaseModel):
+    content: str = ""
+    question_content: str = ""
+    source: str = Field(default="api", max_length=40)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrackLearningResponse(BaseModel):
+    success: bool
+    tracked_event: dict[str, Any]
+    persisted: bool
+
+
 def _current_user(request: Request) -> str:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
@@ -57,69 +142,12 @@ async def _get_facade():
     return MemoryPersistenceFacade()
 
 
-def _snapshot_to_profile_response(
-    snapshot: ProfileSnapshot,
-    include_recommendations: bool = False,
-) -> dict:
-    """将统一快照转换为旧版 /profile/{user_id} 响应结构（契约不变）。"""
-    summary = {
-        "total_questions": snapshot.total_questions,
-        "correct_rate": snapshot.correct_rate,
-        "avg_time_per_question": snapshot.avg_time_per_question,
-        "learning_level": snapshot.get_learning_level(),
-    }
-
-    capabilities = {
-        wp["category"]: wp["mastery"] for wp in snapshot.weak_points
-    }
-    for sp in snapshot.strong_points:
-        capabilities[sp] = 0.9
-
-    response = {
-        "user_id": snapshot.user_id,
-        "generated_at": snapshot.generated_at,
-        "summary": summary,
-        "capability": {
-            "knowledge_mastery": capabilities,
-            "recommended_difficulty": snapshot.recommended_difficulty,
-        },
-        "behavior": snapshot.behavior,
-        "error_patterns": snapshot.error_patterns,
-        "progress_trends": snapshot.progress_trends,
-        "preferences": snapshot.preferences,
-    }
-
-    if include_recommendations:
-        response["recommendations"] = snapshot.recommendations
-
-    return response
-
-
-def _snapshot_to_report(snapshot: ProfileSnapshot) -> dict:
-    """将统一快照转换为旧版 /report 响应结构（契约不变）。"""
-    return {
-        "user_id": snapshot.user_id,
-        "generated_at": snapshot.generated_at,
-        "overview": {
-            "total_questions": snapshot.total_questions,
-            "correct_rate": snapshot.correct_rate,
-            "avg_time_per_question": snapshot.avg_time_per_question,
-            "recommended_difficulty": snapshot.recommended_difficulty,
-        },
-        "weak_points": snapshot.weak_points,
-        "strong_points": snapshot.strong_points,
-        "error_patterns": snapshot.error_patterns,
-        "progress_trends": snapshot.progress_trends,
-        "recommendations": snapshot.recommendations,
-    }
-
-
 # ========================================================================
 # /me 系列：一律从认证上下文取 user_id，不接受 path user_id
 # ========================================================================
 
 
-@router.get("/me")
+@router.get("/me", response_model=ProfileResponse, responses=STUDENT_API_RESPONSES)
 async def get_my_profile(
     http_request: Request,
     include_recommendations: bool = Query(False),
@@ -129,7 +157,7 @@ async def get_my_profile(
     facade = await _get_facade()
     snapshot = await facade.get_profile_snapshot(user_id)
 
-    response = _snapshot_to_profile_response(
+    response = profile_response(
         snapshot, include_recommendations=include_recommendations
     )
 
@@ -144,13 +172,13 @@ async def get_my_profile(
     return response
 
 
-@router.get("/me/report")
+@router.get("/me/report", response_model=ProfileReportResponse, responses=STUDENT_API_RESPONSES)
 async def get_my_report(http_request: Request):
     user_id = _current_user(http_request)
     facade = await _get_facade()
     snapshot = await facade.get_profile_snapshot(user_id)
 
-    report = _snapshot_to_report(snapshot)
+    report = report_response(snapshot)
 
     audit_logger = get_audit_logger()
     audit_logger.log_access(
@@ -163,7 +191,7 @@ async def get_my_report(http_request: Request):
     return report
 
 
-@router.get("/me/recommendations")
+@router.get("/me/recommendations", response_model=ProfileRecommendationsResponse, responses=STUDENT_API_RESPONSES)
 async def get_my_recommendations(http_request: Request):
     user_id = _current_user(http_request)
     facade = await _get_facade()
@@ -174,13 +202,13 @@ async def get_my_recommendations(http_request: Request):
     }
 
 
-@router.get("/me/skills")
+@router.get("/me/skills", response_model=SkillProfileResponse, responses=STUDENT_API_RESPONSES)
 async def get_my_skill_profile(http_request: Request):
     user_id = _current_user(http_request)
     return await _build_skill_profile_response(user_id)
 
 
-@router.get("/why", response_model=ProfileWhyEnvelope)
+@router.get("/why", response_model=ProfileWhyEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_profile_reason(
     http_request: Request,
     dimension: str = Query(..., min_length=1, max_length=100),
@@ -209,7 +237,7 @@ async def get_profile_reason(
     return {"code": 0, "data": evidence, "message": "ok"}
 
 
-@router.put("/me/preferences")
+@router.put("/me/preferences", response_model=PreferencesUpdateResponse, responses=STUDENT_API_RESPONSES)
 async def update_my_preferences(
     preferences: PreferencesUpdateRequest,
     http_request: Request,
@@ -223,7 +251,7 @@ async def update_my_preferences(
 # ========================================================================
 
 
-@router.get("/{user_id}")
+@router.get("/{user_id}", response_model=ProfileResponse, responses=STUDENT_API_RESPONSES, deprecated=True)
 async def get_user_profile(
     user_id: str,
     http_request: Request,
@@ -235,7 +263,7 @@ async def get_user_profile(
     facade = await _get_facade()
     snapshot = await facade.get_profile_snapshot(user_id)
 
-    response = _snapshot_to_profile_response(
+    response = profile_response(
         snapshot, include_recommendations=include_recommendations
     )
 
@@ -250,14 +278,14 @@ async def get_user_profile(
     return response
 
 
-@router.get("/{user_id}/report")
+@router.get("/{user_id}/report", response_model=ProfileReportResponse, responses=STUDENT_API_RESPONSES, deprecated=True)
 async def get_user_report(user_id: str, http_request: Request):
     verify_resource_ownership(http_request, user_id)
 
     facade = await _get_facade()
     snapshot = await facade.get_profile_snapshot(user_id)
 
-    report = _snapshot_to_report(snapshot)
+    report = report_response(snapshot)
 
     audit_logger = get_audit_logger()
     audit_logger.log_access(
@@ -270,7 +298,7 @@ async def get_user_report(user_id: str, http_request: Request):
     return report
 
 
-@router.get("/{user_id}/recommendations")
+@router.get("/{user_id}/recommendations", response_model=ProfileRecommendationsResponse, responses=STUDENT_API_RESPONSES, deprecated=True)
 async def get_recommendations(user_id: str, http_request: Request):
     verify_resource_ownership(http_request, user_id)
 
@@ -283,7 +311,7 @@ async def get_recommendations(user_id: str, http_request: Request):
     }
 
 
-@router.put("/{user_id}/preferences")
+@router.put("/{user_id}/preferences", response_model=PreferencesUpdateResponse, responses=STUDENT_API_RESPONSES, deprecated=True)
 async def update_preferences(
     user_id: str,
     preferences: PreferencesUpdateRequest,
@@ -293,7 +321,7 @@ async def update_preferences(
     return await _apply_preferences(user_id, preferences, http_request)
 
 
-@router.get("/{user_id}/skills")
+@router.get("/{user_id}/skills", response_model=SkillProfileResponse, responses=STUDENT_API_RESPONSES, deprecated=True)
 async def get_user_skill_profile(user_id: str, http_request: Request):
     verify_resource_ownership(http_request, user_id)
     return await _build_skill_profile_response(user_id)
@@ -422,10 +450,10 @@ async def _build_skill_profile_response(user_id: str) -> dict:
         )
 
 
-@router.post("/track")
+@router.post("/track", response_model=TrackLearningResponse, responses=STUDENT_API_RESPONSES)
 async def track_learning_behavior(
     request: Request,
-    body: dict,
+    body: TrackLearningRequest,
 ):
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
@@ -438,9 +466,9 @@ async def track_learning_behavior(
         tracker = LearningBehaviorTracker()
         tracked = tracker.track(
             user_id=user_id,
-            raw_input=body.get("content", "") or body.get("question_content", ""),
-            source=body.get("source", "api"),
-            metadata=body.get("metadata", {}),
+            raw_input=body.content or body.question_content,
+            source=body.source,
+            metadata=body.metadata,
         )
 
         facade = MemoryPersistenceFacade()

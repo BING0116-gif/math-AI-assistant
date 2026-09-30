@@ -384,14 +384,22 @@ class QdrantVectorStoreManager:
 
     async def hybrid_search(
         self,
-        query_vector: List[float],
-        query_text: str,
+        query: Optional[str] = None,
+        *,
+        query_vector: Optional[List[float]] = None,
+        query_text: Optional[str] = None,
         category_filter: Optional[str] = None,
         difficulty_range: Optional[Tuple[int, int]] = None,
         n_results: int = 10,
         vector_weight: float = 0.7,
     ) -> List[VectorSearchResult]:
         await self.initialize()
+
+        effective_query_text = str(query_text if query_text is not None else (query or "")).strip()
+        if query_vector is None:
+            if not effective_query_text:
+                return []
+            query_vector = await self._embedding.encode_async(effective_query_text)
 
         where_filter = {}
         if category_filter:
@@ -411,7 +419,7 @@ class QdrantVectorStoreManager:
         if not vector_results:
             return []
 
-        keyword_scores = self._calculate_keyword_scores(query_text, vector_results)
+        keyword_scores = self._calculate_keyword_scores(effective_query_text, vector_results)
 
         for vr in vector_results:
             kw_score = keyword_scores.get(vr.id, 0.0)

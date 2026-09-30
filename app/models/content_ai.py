@@ -67,8 +67,11 @@ class ContentAIAnalysisResult(BaseModel):
     """单次 AI 分析的结构化结果（§26）。"""
 
     question_type: str = "choice"
+    exam_point: str = ""
     knowledge_point_codes: List[str] = Field(default_factory=list)
+    knowledge_point_relations: Dict[str, List[str]] = Field(default_factory=dict)
     difficulty: int = 2
+    difficulty_analysis: str = ""
     analysis: str = ""
     answer_spec: Optional[Dict[str, Any]] = None
     common_mistakes: List[Dict[str, Any]] = Field(default_factory=list)

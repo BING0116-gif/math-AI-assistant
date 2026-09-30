@@ -53,6 +53,15 @@ class RecommendationResult:
     processing_time_ms: float = 0.0
 
 
+@dataclass
+class VectorRetrievalOutcome:
+    """Vector retrieval evidence used to report an honest degradation state."""
+
+    results: List[Dict[str, Any]] = field(default_factory=list)
+    available: bool = False
+    degradation_reason: str = ""
+
+
 class RAGRecommender:
     def __init__(
         self,
@@ -124,14 +133,32 @@ class RAGRecommender:
 
             # ── 第3步：三路并行检索（SQL + 向量 + 知识图谱）──
             sql_task = self._sql_retrieval(target_category, recommended_difficulty, all_exclude, request.count)
-            vector_task = self._vector_retrieval(target_category, recommended_difficulty, request.count * 2) if (self.enable_rag and self.enable_vector_search and self._vector_store) else asyncio.sleep(0)
+            if self.enable_rag and self.enable_vector_search and self._vector_store:
+                vector_task = self._vector_retrieval_outcome(
+                    target_category, recommended_difficulty, request.count * 2
+                )
+            else:
+                reason = ""
+                if self.enable_rag and self.enable_vector_search and not self._vector_store:
+                    reason = "vector_store_unavailable"
+                vector_task = asyncio.sleep(
+                    0,
+                    result=VectorRetrievalOutcome(
+                        available=False,
+                        degradation_reason=reason,
+                    ),
+                )
             kg_task = self._kg_analysis(target_category, user_skills)
 
-            sql_results, vector_results, kg_suggestions = await asyncio.gather(
+            sql_results, vector_outcome, kg_suggestions = await asyncio.gather(
                 sql_task, vector_task, kg_task,
             )
-            if not isinstance(vector_results, list):
-                vector_results = []
+            if not isinstance(vector_outcome, VectorRetrievalOutcome):
+                vector_outcome = VectorRetrievalOutcome(
+                    available=False,
+                    degradation_reason="invalid_vector_response",
+                )
+            vector_results = vector_outcome.results
             if not isinstance(kg_suggestions, list):
                 kg_suggestions = []
 
@@ -142,7 +169,7 @@ class RAGRecommender:
             final_questions = await self._fuse_and_rank(
                 sql_results=sql_results, vector_results=vector_results,
                 kg_suggestions=kg_suggestions, target_count=request.count,
-                difficulty=recommended_difficulty,
+                difficulty=recommended_difficulty, category=target_category,
             )
             logger.info(f"  [第4步-融合排序] 融合后取前{len(final_questions)}题")
             print(f"[RAG] [第4步-融合排序] 融合后取前{len(final_questions)}题", flush=True)
@@ -175,7 +202,9 @@ class RAGRecommender:
                     "recommended_difficulty": recommended_difficulty,
                     "weak_points": weak_points,
                     "context": request.context,
-                    "retrieval_method": "hybrid" if self.enable_rag else "sql_only",
+                    "retrieval_method": "hybrid" if vector_outcome.available else "sql_only",
+                    "recommendation_degraded": bool(vector_outcome.degradation_reason),
+                    "degradation_reason": vector_outcome.degradation_reason or None,
                     "sql_result_count": len(sql_results),
                     "vector_result_count": len(vector_results),
                     "final_count": len(final_questions),
@@ -245,7 +274,13 @@ class RAGRecommender:
         print(f"[RAG_DIAG] SQL检索参数 | category={repr(category)} | difficulty={difficulty} | exclude_count={len(exclude_ids)} | count={count}", flush=True)
         async with self._session_factory() as db:
             query = select(Question).where(
-                and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True, Question.review_status == "published")
+                and_(
+                    Question.category == category,
+                    Question.difficulty == difficulty,
+                    Question.is_active.is_(True),
+                    Question.review_status == "published",
+                    Question.practice_eligible.is_(True),
+                )
             )
             if exclude_ids:
                 query = query.where(Question.id.notin_(exclude_ids))
@@ -258,8 +293,9 @@ class RAGRecommender:
                 relaxed = select(Question).where(
                     and_(Question.category == category,
                          Question.difficulty.between(max(1, difficulty - 1), min(5, difficulty + 1)),
-                         Question.is_active == True,
-                         Question.review_status == "published")
+                         Question.is_active.is_(True),
+                         Question.review_status == "published",
+                         Question.practice_eligible.is_(True))
                 )
                 if exclude_ids:
                     relaxed = relaxed.where(Question.id.notin_(exclude_ids))
@@ -268,7 +304,15 @@ class RAGRecommender:
                 questions = list(result.scalars().all())
             return questions
 
-    async def _vector_retrieval(self, category: str, difficulty: int, count: int) -> List[Dict]:
+    async def _vector_retrieval(
+        self, category: str, difficulty: int, count: int
+    ) -> List[Dict]:
+        """Compatibility boundary returning only vector hits."""
+        return (await self._vector_retrieval_outcome(category, difficulty, count)).results
+
+    async def _vector_retrieval_outcome(
+        self, category: str, difficulty: int, count: int
+    ) -> VectorRetrievalOutcome:
         try:
             query_text = f"{category} 数学题目 难度{difficulty}"
             results = await self._vector_store.hybrid_search(
@@ -276,15 +320,18 @@ class RAGRecommender:
                 difficulty_range=(max(1, difficulty - 1), min(5, difficulty + 1)),
                 n_results=count,
             )
-            return [{
+            return VectorRetrievalOutcome(results=[{
                 "id": r.id, "content": r.content,
                 "category": r.metadata.get("category", category),
                 "difficulty": r.metadata.get("difficulty", difficulty),
                 "score": r.score, "source": "vector",
-            } for r in results]
+            } for r in results], available=True)
         except Exception as e:
             logger.warning(f"向量检索失败: {e}")
-            return []
+            return VectorRetrievalOutcome(
+                available=False,
+                degradation_reason=f"vector_search_failed:{type(e).__name__}",
+            )
 
     async def _kg_analysis(self, category: str, user_skills: Dict[str, Any]) -> List[Dict]:
         try:
@@ -308,6 +355,7 @@ class RAGRecommender:
     async def _fuse_and_rank(
         self, sql_results: List[Question], vector_results: List[Dict],
         kg_suggestions: List[Dict], target_count: int, difficulty: int,
+        category: str = "",
     ) -> List[Question]:
         seen_ids = set()
         final = []
@@ -318,13 +366,36 @@ class RAGRecommender:
         if len(final) < target_count and vector_results:
             vector_ids = [v["id"] for v in vector_results if v["id"] not in seen_ids]
             if vector_ids:
-                await self._fetch_vector_questions(vector_ids, final, seen_ids)
+                await self._fetch_vector_questions(
+                    vector_ids, final, seen_ids, category=category, difficulty=difficulty
+                )
         final.sort(key=lambda q: q.usage_count if q.usage_count else 0)
         return final[:target_count]
 
-    async def _fetch_vector_questions(self, vector_ids: List[str], final: List[Question], seen_ids: set):
+    async def _fetch_vector_questions(
+        self,
+        vector_ids: List[str],
+        final: List[Question],
+        seen_ids: set,
+        *,
+        difficulty: int,
+        category: str = "",
+    ):
         async with self._session_factory() as db:
-            result = await db.execute(select(Question).where(Question.id.in_(vector_ids), Question.review_status == "published"))
+            filters = [
+                Question.id.in_(vector_ids),
+                Question.difficulty.between(
+                    max(1, difficulty - 1), min(5, difficulty + 1)
+                ),
+                Question.is_active.is_(True),
+                Question.review_status == "published",
+                Question.practice_eligible.is_(True),
+            ]
+            if category:
+                filters.append(Question.category == category)
+            result = await db.execute(
+                select(Question).where(*filters)
+            )
             for q in result.scalars().all():
                 if q.id not in seen_ids:
                     final.append(q)

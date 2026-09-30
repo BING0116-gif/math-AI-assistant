@@ -1,53 +1,16 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed,onMounted,ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppShell from '@/components/shell/AppShell.vue'
-import { practiceApi, unwrapPractice } from '@/api/practice'
+import { practiceApi,unwrapPractice } from '@/api/practice'
 import { getErrorBook } from '@/api/errorBook'
+import { getTodayTasks } from '@/api/learning'
 import { usePracticeStore } from '@/stores/practiceStore'
-const router = useRouter()
-const practiceStore = usePracticeStore()
-const recent = ref({ unfinished: [], completed: [] })
-const loading = ref(true)
-const loadError = ref('')
-const pendingErrorCount = ref(null)
-const errorPracticeBusy = ref(false)
-const errorPracticeMessage = ref('')
-onMounted(async () => {
-  try { recent.value = unwrapPractice(await practiceApi.recent()) }
-  catch { loadError.value = '最近记录暂时无法加载，可直接开始新的练习。' }
-  finally { loading.value = false }
-  // 错题重练角标：尽力加载未掌握且关联题库题目的错题数，失败静默（不显示角标）
-  try {
-    const response = await getErrorBook()
-    const items = Array.isArray(response?.data) ? response.data : (response?.data?.data || [])
-    pendingErrorCount.value = items.filter((item) => item && item.is_mastered === false && item.question_id).length
-  } catch { pendingErrorCount.value = null }
-})
-const modeName = (mode) => mode === 'assessment' ? '智能组卷' : mode === 'exam' ? '自主考试' : '专项练习'
-const openRow = (row) => router.push(row.resume_path || row.result_path)
-async function startErrorPractice() {
-  if (errorPracticeBusy.value) return
-  errorPracticeBusy.value = true; errorPracticeMessage.value = ''
-  try {
-    await practiceStore.createFromErrorBook({ order_mode: 'sequential' })
-    router.push(`/apply/practice/sessions/${practiceStore.session.session_id}`)
-  } catch {
-    errorPracticeMessage.value = practiceStore.error || '错题重练创建失败，请稍后重试'
-  } finally { errorPracticeBusy.value = false }
-}
+const router=useRouter(),practice=usePracticeStore(),recent=ref({unfinished:[],completed:[]}),loading=ref(true),errorCount=ref(0),today=ref(null),busy=ref(false)
+onMounted(async()=>{try{const [sessions,tasks]=await Promise.allSettled([practiceApi.recent(),getTodayTasks(3)]);if(sessions.status==='fulfilled')recent.value=unwrapPractice(sessions.value);if(tasks.status==='fulfilled')today.value=tasks.value?.data?.primary||null}finally{loading.value=false}try{const response=await getErrorBook(),items=Array.isArray(response?.data)?response.data:(response?.data?.data||[]);errorCount.value=items.filter(x=>x&&!x.is_mastered&&x.question_id).length}catch{}})
+const recommendation=computed(()=>{const active=recent.value.unfinished?.[0];if(active)return{tag:'继续学习',title:'接着完成上次任务',reason:`已经完成 ${active.answered}/${active.total}，无需重新开始。`,action:'继续',path:active.resume_path};const task=today.value;if(task)return{tag:task.type==='due_review'?'到期复习':'今日建议',title:task.title,reason:task.reason,action:'开始',path:task.start?.path||`/apply/practice?knowledge_points=${task.target_knowledge_point?.code||''}`};if(errorCount.value)return{tag:'巩固优先',title:`重练 ${errorCount.value} 道未掌握错题`,reason:'趁记忆还清晰，先修复真实错误。',action:'开始错题重练',kind:'errors'};return{tag:'今日建议',title:'用 5 道题做一次章节巩固',reason:'短练习更容易开始，也能立即得到分层反馈。',action:'设置练习',path:'/apply/practice'}})
+const modeName=m=>m==='assessment'?'历史智能检测':m==='exam'?'测试':'练习'
+async function act(){if(recommendation.value.kind!=='errors')return router.push(recommendation.value.path);busy.value=true;try{await practice.createFromErrorBook({order_mode:'sequential'});router.push(`/apply/practice/sessions/${practice.session.session_id}`)}finally{busy.value=false}}
 </script>
-<template>
-  <AppShell><template #topbar-title>学以致用</template>
-    <main class="apply-hub"><p class="eyebrow">学以致用</p><h1>把理解变成掌握</h1><p>专项巩固、手动组卷考试，或让系统依据真实学习记录生成个性化试卷。</p>
-      <section class="mode-grid"><article><h2>专项练习</h2><p>自己选范围 · 即时反馈 · 不使用 AI</p><button @click="router.push('/apply/practice')">开始专项练习</button></article><article><h2>自主考试</h2><p>手动设置范围与题型 · 严格计时 · 统一判卷</p><button @click="router.push('/apply/exam')">开始自主考试</button></article><article><h2>智能组卷</h2><p>学习画像规划蓝图 · 正式题库选题 · AI 失败可降级</p><button @click="router.push('/apply/assessment')">生成智能试卷</button></article><article class="error-card"><h2>错题重练<span v-if="pendingErrorCount" class="badge" aria-label="待重练错题数">{{pendingErrorCount}}</span></h2><p>未掌握错题自动成卷 · 优先巩固最近错误</p><button class="danger" :disabled="errorPracticeBusy" @click="startErrorPractice">{{errorPracticeBusy?'正在生成…':pendingErrorCount===0?'暂无可重练错题':'开始错题重练'}}</button><p v-if="errorPracticeMessage" class="error-message" role="alert">{{errorPracticeMessage}}</p></article></section>
-      <p v-if="loading" class="status" aria-live="polite">正在加载最近记录…</p>
-      <p v-else-if="loadError" class="status">{{ loadError }}</p>
-      <section v-else class="recent" aria-label="最近学习记录">
-        <div><h2>最近未完成</h2><p v-if="!recent.unfinished.length" class="empty">没有未完成会话</p><button v-for="row in recent.unfinished" :key="row.session_id" class="session-row" @click="openRow(row)"><span><strong>{{ modeName(row.mode) }}</strong><small>{{ row.answered }} / {{ row.total }} 已作答</small></span><span>继续</span></button></div>
-        <div><h2>最近结果</h2><p v-if="!recent.completed.length" class="empty">完成练习后，结果会显示在这里</p><button v-for="row in recent.completed" :key="row.session_id" class="session-row" @click="openRow(row)"><span><strong>{{ modeName(row.mode) }}</strong><small>{{ row.correct }} / {{ row.total }} 正确</small></span><span>查看</span></button></div>
-      </section>
-    </main>
-  </AppShell>
-</template>
-<style scoped>.apply-hub{max-width:1040px;margin:0 auto;padding:48px 24px 80px;overflow:auto}.eyebrow{color:var(--accent);font-weight:600}.apply-hub h1{font-size:32px;margin:8px 0}.apply-hub>p{color:var(--text-secondary)}.mode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:32px}.recent{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:32px}.mode-grid article,.recent>div{padding:28px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:var(--surface)}.mode-grid h2,.recent h2{margin-top:0}.mode-grid p,.empty,.status{color:var(--text-secondary)}.error-card{border-top:3px solid var(--danger)}.error-card h2{display:flex;align-items:center;gap:10px}.badge{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 8px;border-radius:999px;background:var(--danger);color:#fff;font-size:13px;font-variant-numeric:tabular-nums}button{min-height:44px;border:0;border-radius:var(--radius-sm);background:var(--accent);color:#fff;padding:0 18px;font:inherit;cursor:pointer}button.danger{background:var(--danger)}button:disabled{opacity:.6;cursor:not-allowed}.error-message{color:var(--danger);font-size:13px;margin-bottom:0}.session-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:8px;background:var(--surface-muted);color:var(--text-primary);text-align:left;transition:background .2s ease}.session-row:hover,.session-row:focus-visible{background:var(--accent-soft);outline:2px solid var(--accent);outline-offset:2px}.session-row span:first-child{display:grid;gap:2px}.session-row small{color:var(--text-secondary)}@media(max-width:800px){.mode-grid{grid-template-columns:1fr}}@media(max-width:600px){.recent{grid-template-columns:1fr}.apply-hub{padding:28px 16px 64px}.mode-grid article,.recent>div{padding:20px}}</style>
+<template><AppShell><template #topbar-title>学以致用</template><main class="hub"><header><p class="eyebrow">学习应用中心</p><h1>下一步，做一点真正有效的练习</h1><p>练习用来学习，组卷用来准备，测试用来检验。</p></header><section class="recommend"><div><span>{{recommendation.tag}}</span><h2>{{recommendation.title}}</h2><p>{{recommendation.reason}}</p></div><button :disabled="busy" @click="act">{{busy?'正在生成…':recommendation.action}}</button></section><section class="modes"><article><div class="icon">练</div><h2>练习</h2><p>即时或自适应反馈；错题、复习与薄弱点都从这里进入。</p><button @click="router.push('/apply/practice')">开始练习</button></article><article><div class="icon">卷</div><h2>组卷</h2><p>生成、预览、替换并保存自己的试卷，之后可反复使用。</p><button @click="router.push('/apply/papers')">管理试卷</button></article><article><div class="icon">测</div><h2>测试</h2><p>严格计时，过程不显示提示和正误，交卷后统一诊断。</p><button @click="router.push('/apply/exam')">快速测试</button></article></section><section class="recent"><div><h2>最近任务</h2><p v-if="loading">正在加载…</p><p v-else-if="!recent.unfinished.length" class="empty">没有未完成任务</p><button v-for="row in recent.unfinished" :key="row.session_id" class="row" @click="router.push(row.resume_path)"><span><strong>{{modeName(row.mode)}}</strong><small>{{row.answered}}/{{row.total}} 已答 · 最近更新</small></span><b>继续</b></button></div><div><h2>最近结果</h2><p v-if="!recent.completed.length" class="empty">完成后会在这里看到结果</p><button v-for="row in recent.completed" :key="row.session_id" class="row" @click="router.push(row.result_path)"><span><strong>{{modeName(row.mode)}}</strong><small>正确 {{row.correct}}/{{row.total}}</small></span><b>查看与巩固</b></button></div></section></main></AppShell></template>
+<style scoped>.hub{max-width:1080px;margin:auto;padding:44px 24px 80px}.eyebrow,.recommend span{color:var(--accent);font-weight:700;font-size:13px}.hub h1{font-size:clamp(28px,4vw,42px);max-width:720px;margin:10px 0}.hub header>p:last-child,.recommend p,.modes p,.empty{color:var(--text-secondary)}.recommend{display:flex;justify-content:space-between;align-items:center;gap:28px;margin:30px 0;padding:26px 30px;border-radius:var(--radius-lg);background:linear-gradient(125deg,var(--accent-soft),var(--surface));border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border-subtle))}.recommend h2{margin:7px 0}.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.modes article,.recent>div{padding:24px;border:1px solid var(--border-subtle);border-radius:var(--radius-lg);background:var(--surface)}.icon{display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:var(--accent-soft);color:var(--accent);font-weight:800}.modes h2{margin:16px 0 7px}.modes p{min-height:52px}.recent{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:28px}.row{display:flex!important;justify-content:space-between;align-items:center;width:100%;margin-top:8px;text-align:left;background:var(--surface-muted)!important;color:var(--text-primary)!important}.row span{display:grid;gap:3px}.row small{color:var(--text-tertiary)}button{min-height:44px;padding:0 17px;border:0;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font:inherit;cursor:pointer}@media(max-width:760px){.modes,.recent{grid-template-columns:1fr}.recommend{align-items:flex-start;flex-direction:column}.hub{padding:28px 16px 64px}.modes p{min-height:0}}</style>

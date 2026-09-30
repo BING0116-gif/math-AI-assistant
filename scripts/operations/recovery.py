@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.config.settings import settings
 from app.data.database import close_db, get_db_session, init_db
-from app.data.models import OutboxEvent, Question
+from app.data.models import Question
 
 
 def report(operation: str, apply: bool, details: dict) -> None:
@@ -47,24 +47,17 @@ async def qdrant_sync(apply: bool, question_id: str | None) -> None:
 
 
 async def replay(apply: bool, event_id: str | None) -> None:
-    async with get_db_session() as db:
-        query = select(OutboxEvent).where(OutboxEvent.status == "dead")
-        if event_id:
-            query = query.where(OutboxEvent.id == event_id)
-        rows = list((await db.execute(query)).scalars())
-        ids = [row.id for row in rows]
-        if apply:
-            for row in rows:
-                row.status = "pending"
-                row.attempts = 0
-                row.available_at = datetime.now(timezone.utc)
-                row.locked_at = None
-                row.last_error = None
-    results = {event_id: "pending" for event_id in ids} if apply else {}
-    if apply:
-        from app.services.outbox import process_outbox_batch
-        results["batch"] = await process_outbox_batch()
-    report("replay_outbox", apply, {"event_ids": ids, "results": results})
+    from app.services.outbox import recover_dead_events
+
+    execution_id = str(uuid.uuid4())
+    details = await recover_dead_events(event_id=event_id, apply=apply, execution_id=execution_id)
+    print(json.dumps({
+        "execution_id": execution_id,
+        "operation": "replay_outbox",
+        "mode": "apply" if apply else "dry-run",
+        "at": datetime.now(timezone.utc).isoformat(),
+        "details": details,
+    }, ensure_ascii=False, indent=2, default=str))
 
 
 async def redis_recover(apply: bool, user_id: str | None) -> None:

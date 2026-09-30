@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
         default=30, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS"
     )
+    AUTH_REFRESH_COOKIE_NAME: str = Field(
+        default="math_ai_refresh", alias="AUTH_REFRESH_COOKIE_NAME"
+    )
+    AUTH_COOKIE_SECURE: bool = Field(default=False, alias="AUTH_COOKIE_SECURE")
 
     # ── AI 能力开关 ──
     AI_ENABLED: bool = Field(default=True, alias="AI_ENABLED")
@@ -216,6 +220,12 @@ class Settings(BaseSettings):
     MINERU_MODEL_SOURCE: str = Field(default="modelscope", alias="MINERU_MODEL_SOURCE")
     # 正式存储根目录（仅 metadata 的相对 storage_key 落 PostgreSQL，不存绝对路径）
     CONTENT_STORAGE_ROOT: str = Field(default="./runtime/content", alias="CONTENT_STORAGE_ROOT")
+    # T02 handwritten note revisions. SQL records only validated relative keys.
+    NOTE_STORAGE_ROOT: str = Field(default="./runtime/notes", alias="NOTE_STORAGE_ROOT")
+    NOTE_MAX_REVISION_BYTES: int = Field(default=5 * 1024 * 1024, alias="NOTE_MAX_REVISION_BYTES")
+    NOTE_MAX_ASSET_BYTES: int = Field(default=20 * 1024 * 1024, alias="NOTE_MAX_ASSET_BYTES")
+    NOTE_ASSET_CLEANUP_DELAY_HOURS: int = Field(default=24, alias="NOTE_ASSET_CLEANUP_DELAY_HOURS")
+    NOTE_RETENTION_HOURS: int = Field(default=24 * 30, alias="NOTE_RETENTION_HOURS")
     # 上传/解析安全上限（由配置而非散落的硬编码）
     CONTENT_MAX_UPLOAD_BYTES: int = Field(default=50 * 1024 * 1024, alias="CONTENT_MAX_UPLOAD_BYTES")
     CONTENT_MAX_PAGES: int = Field(default=500, alias="CONTENT_MAX_PAGES")

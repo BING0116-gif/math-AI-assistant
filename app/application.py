@@ -33,8 +33,10 @@ from app.api.memory_internal_api import router as memory_internal_router
 from app.api.profile_api import router as profile_router
 from app.api.recommendation_api import router as recommendation_router
 from app.api.learning_hub_api import router as learning_hub_router
+from app.api.student_paper_api import router as student_paper_router
 from app.api.legacy_import_api import router as legacy_import_router
 from app.api.readiness_api import router as readiness_router
+from app.api.notes_api import router as notes_router
 from app.config.settings import settings
 from app.lifespan import lifespan
 from app.middleware.security import SecurityValidationError
@@ -86,8 +88,10 @@ def _register_routers(target_app: FastAPI) -> None:
         assessment_router,
         exam_router,
         learning_hub_router,
+        student_paper_router,
         legacy_import_router,
         readiness_router,
+        notes_router,
     )
     for router in routers:
         target_app.include_router(router)

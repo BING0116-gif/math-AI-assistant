@@ -9,63 +9,19 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminReviewApi, unwrap } from '@/api/adminReview'
 import ContentAIPartialBadge from '@/components/admin/ContentAIPartialBadge.vue'
-import katex from 'katex'
-import { renderMarkdown } from '@/utils/markdown'
-
-// 渲染题干/选项/答案/解析：
-// 1) 若文本已含 $...$ 或 $$...$$ 标记，走 markdown + KaTeX 插件（精确）
-// 2) 否则（PDF 解析器输出的纯 unicode 数学文本），整段走 KaTeX displayMode：
-//    KaTeX 会自动识别 sin/cos/arcsin/lg/ln/lim 等 math operator 和 x² 上标；
-//    失败片段降级为可读文本（无 katex-error 红字），中文等非数学字符自然以文本显示
-function renderMath(text) {
-  if (!text) return ''
-  const s = String(text)
-  try {
-    if (/\$/.test(s)) {
-      // 已带 $ 标记：走 markdown-it 路径（自动包裹 LaTeX 命令后再渲染）
-      return renderMarkdown(s)
-    }
-    // unicode 数学文本：整段 KaTeX displayMode
-    // errorColor: '' 让 KaTeX 失败时降级为正常文本（不显示红字错误）
-    let html = katex.renderToString(s, {
-      displayMode: true,
-      throwOnError: false,
-      strict: 'ignore',
-      output: 'html',
-      errorColor: '',
-      minRuleThickness: 0.04,
-    })
-    // 把 .katex-error 元素（KaTeX 解析失败时返回的 span）替换为可读文本，
-    // 避免大段红字。KaTeX 实际渲染成功的部分保留（.katex-html 仍可读）。
-    const openTag = '<span class="katex-error"'
-    let result = ''
-    let cursor = 0
-    while (cursor < html.length) {
-      const idx = html.indexOf(openTag, cursor)
-      if (idx < 0) {
-        result += html.slice(cursor)
-        break
-      }
-      result += html.slice(cursor, idx)
-      // 找到对应的 </span>（KaTeX error span 内部不嵌套）
-      const endIdx = html.indexOf('</span>', idx)
-      if (endIdx < 0) {
-        result += html.slice(idx)
-        break
-      }
-      // 提取 span 内部纯文本，去掉 title 属性
-      const innerHTML = html.slice(idx, endIdx + 7)
-      const innerText = innerHTML
-        .replace(/<[^>]+title="[^"]*"[^>]*>/g, '') // 去掉 title 属性 span
-        .replace(/<[^>]+>/g, '') // 去掉所有标签
-      result += innerText
-      cursor = endIdx + 7
-    }
-    return result
-  } catch (e) {
-    return s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]))
-  }
-}
+import {
+  candidateDisposition,
+  candidateGate,
+  dispositionLabel,
+  dispositionType,
+  filterCandidates,
+  gateLabel,
+  gateType,
+  renderMath,
+  statusLabel,
+  statusType,
+  typeLabel,
+} from '@/utils/adminReviewPresentation'
 
 const router = useRouter()
 const activeTab = ref('candidates')
@@ -198,27 +154,16 @@ async function cancelImportTask() {
 }
 
 const visibleCandidates = computed(() => {
-  return candidates.value.filter((c) => {
-    const g = latestGate(c.id)
-    if (gateFilter.value !== 'all' && (g || 'none') !== gateFilter.value) return false
-    const d = latestDisposition(c.id)
-    if (dispositionFilter.value !== 'all' && (d || 'none') !== dispositionFilter.value) return false
-    return true
-  })
+  return filterCandidates(candidates.value, analysis.value, gateFilter.value, dispositionFilter.value)
 })
 
 const selectedCand = computed(() => candidates.value.find((c) => c.id === selectedId.value) || null)
 
-function latestRun(cid) {
-  return analysis.value?.candidate_id === cid ? analysis.value.latest : null
-}
 function latestGate(cid) {
-  const run = latestRun(cid)
-  if (!run) return null
-  return (run.gate || run.status || '').toUpperCase()
+  return candidateGate(candidates.value, analysis.value, cid)
 }
 function latestDisposition(cid) {
-  return latestRun(cid)?.human_disposition || null
+  return candidateDisposition(candidates.value, analysis.value, cid)
 }
 
 // ── 加载 ──
@@ -556,38 +501,10 @@ async function decideDuplicate(item, isDuplicate) {
   } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '保存失败') }
 }
 
-// ── 展示辅助 ──
-function gateType(gate) {
-  return gate === 'PASS' ? 'success' : gate === 'DOUBTFUL' ? 'warning' : gate === 'FAILED' ? 'danger' : 'info'
-}
-function gateLabel(gate) {
-  return gate || '未分析'
-}
-function dispositionLabel(d) {
-  return { approved: '批准', doubtful: '存疑', reject: '拒绝' }[d] || '未处置'
-}
-function dispositionType(d) {
-  return d === 'approved' ? 'success' : d === 'doubtful' ? 'warning' : d === 'reject' ? 'danger' : 'info'
-}
-function typeLabel(t) {
-  return {
-    choice: '选择', judge: '判断', numeric_fill: '数值填空', expression_fill: '表达式填空',
-    calculation: '计算', proof: '证明', short_answer: '简答',
-    fill: '填空（待细分）', fill_candidate: '填空（待细分）', text: '文本',
-  }[t] || t || '未知'
-}
-
 function dismissHelp() {
   showHelp.value = false
   try { localStorage.setItem('adminReview_help_dismissed', '1') } catch {}
 }
-function statusLabel(s) {
-  return { draft: '草稿', reviewed: '已审核', published: '已发布', retired: '已退役' }[s] || s
-}
-function statusType(s) {
-  return s === 'published' ? 'success' : s === 'reviewed' ? 'warning' : 'info'
-}
-
 // ── 快捷键：← / → 切换候选 ──
 function onKey(e) {
   if (activeTab.value !== 'candidates') return
@@ -794,11 +711,33 @@ onBeforeUnmount(() => {
                   <div v-if="analysis.latest.error_message" class="wb-warn">✗ {{ analysis.latest.error_message }}</div>
                   <div v-if="analysis.latest.analysis_json" class="wb-json">
                     <div class="wb-row"><span class="wb-k">题型</span><span class="wb-v">{{ typeLabel(analysis.latest.analysis_json.question_type) }}</span></div>
-                    <div class="wb-row"><span class="wb-k">难度</span><span class="wb-v">{{ analysis.latest.analysis_json.difficulty ?? '-' }}</span></div>
+                    <div class="wb-row"><span class="wb-k">考点</span><span class="wb-v">{{ analysis.latest.analysis_json.exam_point || '—' }}</span></div>
+                    <div class="wb-row"><span class="wb-k">难度</span><span class="wb-v">{{ analysis.latest.analysis_json.difficulty ?? '-' }} / 5</span></div>
+                    <div v-if="analysis.latest.analysis_json.difficulty_analysis" class="wb-row">
+                      <span class="wb-k">难点</span><span class="wb-v" v-html="renderMath(analysis.latest.analysis_json.difficulty_analysis)" />
+                    </div>
                     <div class="wb-row"><span class="wb-k">置信度</span><span class="wb-v">{{ analysis.latest.analysis_json.confidence ?? '-' }}</span></div>
                     <div class="wb-row">
                       <span class="wb-k">知识点</span>
                       <span class="wb-v">{{ (analysis.latest.analysis_json.knowledge_point_codes || []).join(', ') || '—' }}</span>
+                    </div>
+                    <div class="wb-row">
+                      <span class="wb-k">前置知识点</span>
+                      <span class="wb-v">{{ (analysis.latest.analysis_json.knowledge_point_relations?.prerequisites || []).join(', ') || '—' }}</span>
+                    </div>
+                    <div class="wb-row">
+                      <span class="wb-k">关联知识点</span>
+                      <span class="wb-v">{{ (analysis.latest.analysis_json.knowledge_point_relations?.related || []).join(', ') || '—' }}</span>
+                    </div>
+                    <div class="wb-row">
+                      <span class="wb-k">后续知识点</span>
+                      <span class="wb-v">{{ (analysis.latest.analysis_json.knowledge_point_relations?.next || []).join(', ') || '—' }}</span>
+                    </div>
+                    <div v-if="analysis.latest.analysis_json.analysis" class="wb-row">
+                      <span class="wb-k">解析</span><span class="wb-v wb-solution" v-html="renderMath(analysis.latest.analysis_json.analysis)" />
+                    </div>
+                    <div class="wb-row">
+                      <span class="wb-k">答案</span><span class="wb-v" v-html="renderMath(analysis.latest.analysis_json.answer_check?.official_answer || selectedCand?.original_answer || '—')" />
                     </div>
                     <div class="wb-row">
                       <span class="wb-k">Flags</span>

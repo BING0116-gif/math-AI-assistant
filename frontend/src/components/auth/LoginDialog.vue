@@ -6,7 +6,6 @@
  */
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
@@ -55,6 +54,7 @@ async function redirectAfterAuth() {
   const redirect = route.query.redirect
   if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
     if (redirect.startsWith('/admin') && authStore.role !== 'admin') {
+      const { ElMessage } = await import('element-plus')
       ElMessage.warning('当前账号不是管理员，无法进入该页面，请使用管理员账号登录')
       router.replace({ path: '/', query: {} })
       return
@@ -83,6 +83,7 @@ async function submit() {
     }
     internalVisible.value = false
     emit('close')
+    const { ElMessage } = await import('element-plus')
     ElMessage.success(isLogin.value ? '登录成功' : '注册并登录成功')
     await redirectAfterAuth()
   } catch (err) {

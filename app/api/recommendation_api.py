@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
+from app.api.student_contracts import RecommendationResponse, STUDENT_API_RESPONSES
 from app.services.rag_recommender import (
     RecommendationRequest, get_rag_recommender,
 )
@@ -73,7 +74,7 @@ class VectorSearchRequest(BaseModel):
     n_results: int = Field(default=10, ge=1, le=50)
 
 
-@router.post("/questions")
+@router.post("/questions", response_model=RecommendationResponse, responses=STUDENT_API_RESPONSES)
 async def recommend_questions(request: RecommendQuestionsRequest, http_request: Request, background_tasks: BackgroundTasks):
     try:
         user_id = _get_user_id(http_request)
@@ -134,7 +135,7 @@ async def _infer_category(question_content: Optional[str]) -> str:
         return ""
 
 
-@router.post("/session")
+@router.post("/session", response_model=RecommendationResponse, responses=STUDENT_API_RESPONSES)
 async def recommend_and_create_session(request: RecommendSessionRequest, http_request: Request):
     """RAG 自适应选材 → 过滤可判分题型 → 直接创建练习会话（学以致用）。
 
@@ -194,7 +195,7 @@ async def recommend_and_create_session(request: RecommendSessionRequest, http_re
         raise HTTPException(status_code=500, detail=f"创建推荐练习失败: {str(e)}")
 
 
-@router.post("/explain")
+@router.post("/explain", response_model=RecommendationResponse, responses=STUDENT_API_RESPONSES)
 async def explain_recommendation(request: RecommendQuestionsRequest, http_request: Request):
     try:
         user_id = _get_user_id(http_request)
@@ -213,7 +214,7 @@ async def explain_recommendation(request: RecommendQuestionsRequest, http_reques
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/skill-profile")
+@router.get("/skill-profile", response_model=RecommendationResponse, responses=STUDENT_API_RESPONSES)
 async def get_skill_profile(http_request: Request):
     try:
         user_id = _get_user_id(http_request)
@@ -254,7 +255,7 @@ async def import_questions(request: ImportQuestionsRequest, http_request: Reques
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/vector-search")
+@router.post("/vector-search", response_model=RecommendationResponse, responses=STUDENT_API_RESPONSES)
 async def vector_search(request: VectorSearchRequest, http_request: Request):
     try:
         user_id = _get_user_id(http_request)

@@ -1,6 +1,7 @@
 """P0-1/2 持久化任务系统测试（content_tasks + worker）。"""
 
 import pytest
+import pytest_asyncio
 import fitz
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import event, select, update
@@ -25,15 +26,16 @@ from app.services.content_task import (
 from app.workers.content_worker import process_task
 
 
-@pytest.fixture
-def engine():
+@pytest_asyncio.fixture
+async def engine():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
 
     @event.listens_for(eng.sync_engine, "connect")
     def _fk(dbapi_connection, _):
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
 
-    return eng
+    yield eng
+    await eng.dispose()
 
 
 @pytest.fixture

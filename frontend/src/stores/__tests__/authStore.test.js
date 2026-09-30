@@ -29,19 +29,19 @@ import api from '@/api'
 
 describe('authStore', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     setActivePinia(createPinia())
     localStorage.clear()
   })
 
   describe('login', () => {
-    it('should store tokens and user info on success', async () => {
+    it('should keep the access token in memory and user info in storage', async () => {
       const store = useAuthStore()
       const mockResponse = {
         data: {
           status: 'success',
           data: {
             access_token: 'test-at',
-            refresh_token: 'test-rt',
             user_id: 'user-123',
             username: 'testuser',
             token_type: 'bearer',
@@ -55,11 +55,10 @@ describe('authStore', () => {
 
       expect(store.isAuthenticated).toBe(true)
       expect(store.getAccessToken()).toBe('test-at')
-      expect(store.refreshToken).toBe('test-rt')
       expect(store.userId).toBe('user-123')
       expect(store.username).toBe('testuser')
-      expect(localStorage.getItem('auth_token')).toBe('test-at')
-      expect(localStorage.getItem('refresh_token')).toBe('test-rt')
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
       expect(localStorage.getItem('current_user')).toBe(
         JSON.stringify({ user_id: 'user-123', username: 'testuser', role: 'student' })
       )
@@ -89,7 +88,6 @@ describe('authStore', () => {
           status: 'success',
           data: {
             access_token: 'reg-at',
-            refresh_token: 'reg-rt',
             user_id: 'user-456',
             username: 'newuser',
             token_type: 'bearer',
@@ -123,9 +121,10 @@ describe('authStore', () => {
       localStorage.setItem('auth_token', 'test-at')
       localStorage.setItem('refresh_token', 'test-rt')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      store.restoreSession()
+      api.post.mockResolvedValueOnce({ data: { data: { access_token: 'cookie-at' } } })
+      await store.restoreSession()
 
-      api.post.mockResolvedValue({ data: { status: 'success', message: '已退出登录' } })
+      api.post.mockResolvedValueOnce({ data: { status: 'success', message: '已退出登录' } })
 
       await store.logout()
 
@@ -142,9 +141,10 @@ describe('authStore', () => {
       localStorage.setItem('auth_token', 'test-at')
       localStorage.setItem('refresh_token', 'test-rt')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      store.restoreSession()
+      api.post.mockResolvedValueOnce({ data: { data: { access_token: 'cookie-at' } } })
+      await store.restoreSession()
 
-      api.post.mockRejectedValue(new Error('Network error'))
+      api.post.mockRejectedValueOnce(new Error('Network error'))
 
       await store.logout()
 
@@ -157,17 +157,12 @@ describe('authStore', () => {
   describe('refresh', () => {
     it('should refresh access token successfully', async () => {
       const store = useAuthStore()
-      localStorage.setItem('auth_token', 'old-at')
-      localStorage.setItem('refresh_token', 'valid-rt')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      store.restoreSession()
-
       api.post.mockResolvedValue({
         data: {
           status: 'success',
           data: {
             access_token: 'new-at',
-            refresh_token: 'new-rt',
             token_type: 'bearer',
             expires_in: 86400,
           },
@@ -179,20 +174,16 @@ describe('authStore', () => {
       expect(result).toBe(true)
       expect(api.post).toHaveBeenCalledWith(
         '/auth/refresh',
-        { refresh_token: 'valid-rt' },
+        undefined,
         { _isRefreshRequest: true }
       )
       expect(store.getAccessToken()).toBe('new-at')
-      expect(store.refreshToken).toBe('new-rt')
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
     })
 
     it('should return false when refresh fails', async () => {
       const store = useAuthStore()
-      localStorage.setItem('auth_token', 'old-at')
-      localStorage.setItem('refresh_token', 'expired-rt')
-      localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      store.restoreSession()
-
       api.post.mockRejectedValue(new Error('Invalid refresh token'))
 
       const result = await store.refresh()
@@ -201,10 +192,16 @@ describe('authStore', () => {
       expect(store.isAuthenticated).toBe(false)
     })
 
-    it('should return false when no refresh token exists', async () => {
+    it('should try the HttpOnly cookie when no legacy refresh token exists', async () => {
       const store = useAuthStore()
+      api.post.mockRejectedValue(new Error('No cookie'))
       const result = await store.refresh()
       expect(result).toBe(false)
+      expect(api.post).toHaveBeenCalledWith(
+        '/auth/refresh',
+        undefined,
+        { _isRefreshRequest: true }
+      )
     })
   })
 
@@ -214,37 +211,49 @@ describe('authStore', () => {
       expect(store.isAuthenticated).toBe(false)
     })
 
-    it('should be true when token exists', () => {
+    it('should discard a legacy token and rely on the HttpOnly cookie', async () => {
       const store = useAuthStore()
       localStorage.setItem('auth_token', 'some-token')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      store.restoreSession()
-      expect(store.isAuthenticated).toBe(true)
+      api.post.mockRejectedValue(new Error('No cookie'))
+      await store.restoreSession()
+      expect(store.isAuthenticated).toBe(false)
+      expect(localStorage.getItem('auth_token')).toBeNull()
     })
   })
 
   describe('restoreSession', () => {
-    it('should restore session from localStorage', () => {
+    it('should discard legacy tokens and restore through the HttpOnly cookie', async () => {
       const store = useAuthStore()
       localStorage.setItem('auth_token', 'stored-at')
       localStorage.setItem('refresh_token', 'stored-rt')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
 
-      const result = store.restoreSession()
+      api.post.mockResolvedValue({
+        data: { data: { access_token: 'cookie-at' } },
+      })
+
+      const result = await store.restoreSession()
 
       expect(result).toBe(true)
-      expect(store.getAccessToken()).toBe('stored-at')
-      expect(store.refreshToken).toBe('stored-rt')
+      expect(store.getAccessToken()).toBe('cookie-at')
       expect(store.userId).toBe('u1')
       expect(store.username).toBe('u1')
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(api.post).toHaveBeenCalledWith(
+        '/auth/refresh',
+        undefined,
+        { _isRefreshRequest: true }
+      )
     })
 
-    it('should clean up orphaned token', () => {
+    it('should clean up orphaned token', async () => {
       const store = useAuthStore()
       localStorage.setItem('auth_token', 'orphan-token')
       // No current_user
 
-      const result = store.restoreSession()
+      const result = await store.restoreSession()
 
       expect(result).toBe(false)
       expect(localStorage.getItem('auth_token')).toBeNull()
@@ -252,12 +261,13 @@ describe('authStore', () => {
   })
 
   describe('clearSession', () => {
-    it('should clear all auth state', () => {
+    it('should clear all auth state', async () => {
       const store = useAuthStore()
       localStorage.setItem('auth_token', 'at')
       localStorage.setItem('refresh_token', 'rt')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      store.restoreSession()
+      api.post.mockResolvedValueOnce({ data: { data: { access_token: 'cookie-at' } } })
+      await store.restoreSession()
 
       store.clearSession()
 

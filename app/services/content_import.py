@@ -225,6 +225,11 @@ class ContentImportService:
             validate_pdf_page_count(storage_path)
             parsed = self._parser.parse(storage_path, parser_name_snapshot)
             splits = split_document(parsed)
+            if not splits:
+                raise ContentParseError(
+                    "NO_QUESTIONS_DETECTED",
+                    "PDF 解析成功，但没有识别到可切分的题目；请检查题号格式或改用 MinerU 模式。",
+                )
             # C3：确定性答案匹配（答案区 → candidate.original_answer/original_solution）
             matches = ContentAnswerMatcher().match(parsed.blocks, splits)
             candidates = [
@@ -345,6 +350,7 @@ class ContentImportService:
             rows = (
                 await db.execute(
                     select(ContentImportCandidate)
+                    .options(selectinload(ContentImportCandidate.ai_analysis_runs))
                     .where(ContentImportCandidate.import_batch_id == batch_id)
                     .order_by(ContentImportCandidate.candidate_index)
                 )

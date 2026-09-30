@@ -1,5 +1,6 @@
 import { useAuthStore } from '@/stores/authStore'
 import api from './index'
+import { unwrapStudentEnvelope } from './contracts'
 import { DEFAULT_TUTOR_MODE, normalizeTutorMode } from '@/utils/tutorModes'
 
 function getAuthHeaders() {
@@ -81,7 +82,7 @@ export function answerClarification({ sessionId, clarificationId, pendingTurnId,
   })
 }
 
-export const unwrapChat = (response) => response?.data?.data ?? response?.data
+export const unwrapChat = (response) => unwrapStudentEnvelope(response, '对话记录请求失败')
 export const listChatSessions = () => api.get('/chat/sessions')
 export const getChatSession = (id) => api.get(`/chat/sessions/${id}`)
 export const updateChatSession = (id, payload) => api.patch(`/chat/sessions/${id}`, payload)

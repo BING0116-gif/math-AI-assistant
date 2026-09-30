@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
+import { loadAdminView } from '@/plugins/elementPlus'
 
 const routes = [
   {
@@ -9,6 +10,14 @@ const routes = [
     component: () => import('@/views/HomeView.vue'),
     meta: { title: '数学AI助手', transition: 'slide-fade' },
   },
+  {
+    path: '/handwriting-prototype',
+    name: 'HandwritingPrototype',
+    component: () => import('@/views/HandwritingPrototypeView.vue'),
+    meta: { title: '平板手写实验台 - 数学AI助手', transition: 'slide-fade' },
+  },
+  { path: '/notes', name: 'NotesLibrary', component: () => import('@/views/NotesLibraryView.vue'), meta: { title: '我的笔记 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/notes/:noteId', name: 'NoteWorkspace', component: () => import('@/views/NoteWorkspaceView.vue'), meta: { title: '手写笔记 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   {
     path: '/chat',
     name: 'Chat',
@@ -65,28 +74,32 @@ const routes = [
   { path: '/apply/practice', name: 'PracticeSetup', component: () => import('@/views/PracticeSetupView.vue'), meta: { title: '专项练习 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/practice/sessions/:sessionId', name: 'PracticeSession', component: () => import('@/views/PracticeSessionView.vue'), meta: { title: '专项练习 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/practice/sessions/:sessionId/result', name: 'PracticeResult', component: () => import('@/views/PracticeResultView.vue'), meta: { title: '专项练习结果 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
-  { path: '/apply/assessment', name: 'AssessmentSetup', component: () => import('@/views/AssessmentSetupView.vue'), meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/apply/assessment', name: 'AssessmentSetup', redirect: '/apply/papers/new?source=ai', meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/assessment/sessions/:sessionId', name: 'AssessmentSession', component: () => import('@/views/AssessmentSessionView.vue'), meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/assessment/sessions/:sessionId/result', name: 'AssessmentResult', component: () => import('@/views/AssessmentResultView.vue'), meta: { title: '智能组卷报告 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/exam', name: 'ExamSetup', component: () => import('@/views/ExamSetupView.vue'), meta: { title: '自主考试 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/exam/sessions/:sessionId', name: 'ExamSession', component: () => import('@/views/ExamSessionView.vue'), meta: { title: '自主考试 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/exam/sessions/:sessionId/report', name: 'ExamReport', component: () => import('@/views/ExamReportView.vue'), meta: { title: '考试报告 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/apply/papers', name: 'StudentPapers', component: () => import('@/views/StudentPapersView.vue'), meta: { title: '我的试卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/apply/papers/new', name: 'StudentPaperCreate', component: () => import('@/views/StudentPaperCreateView.vue'), meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/apply/papers/:paperId/edit', name: 'StudentPaperEditor', component: () => import('@/views/StudentPaperEditorView.vue'), meta: { title: '编辑试卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/apply/papers/:paperId', name: 'StudentPaperDetail', component: () => import('@/views/StudentPaperDetailView.vue'), meta: { title: '试卷详情 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   {
     path: '/admin/review',
     name: 'AdminReview',
-    component: () => import('@/views/AdminReviewView.vue'),
+    component: () => loadAdminView(() => import('@/views/AdminReviewView.vue')),
     meta: { title: '题库审核工作台 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/papers',
     name: 'AdminPapers',
-    component: () => import('@/views/AdminPapersView.vue'),
+    component: () => loadAdminView(() => import('@/views/AdminPapersView.vue')),
     meta: { title: '组卷工作台 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/readiness',
     name: 'AdminReadiness',
-    component: () => import('@/views/AdminReadinessView.vue'),
+    component: () => loadAdminView(() => import('@/views/AdminReadinessView.vue')),
     meta: { title: '能力就绪度 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
   },
 ]

@@ -1,0 +1,1 @@
+[{"id":"normal","payload":{"strokes":[]},"expected":{"title":"极限","latex_blocks":["x^2"]}},{"id":"malformed","payload":{"strokes":[]},"expect_validation_error":true},{"id":"ambiguous","payload":{"strokes":[]},"expected":{"tags":[]}}]

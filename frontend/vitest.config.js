@@ -8,6 +8,13 @@ const currentDir = fileURLToPath(new URL('.', import.meta.url))
 export default defineConfig({
   plugins: [vue()],
   resolve: { alias: { '@': resolve(currentDir, 'src') } },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler'
+      }
+    }
+  },
   test: {
     environment: 'jsdom',
     globals: true,

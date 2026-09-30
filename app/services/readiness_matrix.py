@@ -322,11 +322,9 @@ async def _qdrant_state() -> dict[str, Any]:
 
     from app.data.database import get_db_session
     from app.data.models import Question
-    from app.services.vector_store import get_vector_store
+    from app.services.dependency_health import vector_dependency_health
 
-    store = await get_vector_store()
-    available = await store.check_availability()
-    stats = await store.get_collection_stats()
+    dependency = await vector_dependency_health()
     async with get_db_session() as db:
         expected = int(
             await db.scalar(
@@ -334,10 +332,15 @@ async def _qdrant_state() -> dict[str, Any]:
             )
             or 0
         )
-    indexed = int(stats.get("total_documents", -1)) if stats.get("mode") == "qdrant" else -1
+    indexed = int(dependency.get("qdrant", {}).get("points_count", -1))
     return {
-        "available": bool(available),
-        "mode": stats.get("mode"),
+        "available": dependency.get("code") == "ready",
+        "dependency_code": dependency.get("code"),
+        "dependency_status": dependency.get("status"),
+        "embedding": dependency.get("embedding"),
+        "qdrant": dependency.get("qdrant"),
+        "error": dependency.get("error"),
+        "mode": "qdrant" if dependency.get("code") == "ready" else "unavailable",
         "indexed": indexed,
         "sql_published": expected,
     }
@@ -374,12 +377,19 @@ async def check_rag_recommend() -> CapabilityResult:
         )
 
     if not state.get("available"):
+        code = state.get("dependency_code")
+        reasons = {
+            "network_unreachable": "Qdrant 网络不可达",
+            "collection_missing": "Qdrant 集合不存在",
+            "vector_dimension_mismatch": "Qdrant 集合向量维度与配置不匹配",
+            "embedding_unavailable": "Embedding 模型不可用",
+        }
         return CapabilityResult(
             id="rag_recommend",
             name="RAG 推荐",
             status="blocker",
-            reason="Qdrant 不可用",
-            remediation="启动 qdrant 容器并检查 QDRANT_PORT 配置",
+            reason=reasons.get(code, "Qdrant 不可用"),
+            remediation="检查 dependency_code 后恢复对应依赖，再重放可恢复的 outbox 事件",
             details=details,
         )
 
@@ -423,12 +433,19 @@ async def check_vector_search() -> CapabilityResult:
     expected = state.get("sql_published", 0)
 
     if not state.get("available") or indexed < 0:
+        code = state.get("dependency_code")
+        reasons = {
+            "network_unreachable": "Qdrant 网络不可达",
+            "collection_missing": "Qdrant 集合不存在",
+            "vector_dimension_mismatch": "Qdrant 集合向量维度不匹配",
+            "embedding_unavailable": "Embedding 模型不可用",
+        }
         return CapabilityResult(
             id="vector_search",
             name="向量检索",
             status="blocker",
-            reason="Qdrant 不可用或未处于 qdrant 模式",
-            remediation="检查 qdrant 容器与 collection 配置",
+            reason=reasons.get(code, "Qdrant 不可用或未处于 qdrant 模式"),
+            remediation="按 dependency_code 修复网络、集合、维度或 Embedding 配置",
             details=details,
         )
 

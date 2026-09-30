@@ -23,8 +23,12 @@ export function debounce(fn, delay = 300) {
 
 export function getRelativeTime(dateStr) {
   if (!dateStr) return ''
-  const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return dateStr
+  const normalized = String(dateStr)
+    .replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, '$1/$2/$3')
+    .replace(/上午\s*/, 'AM ')
+    .replace(/下午\s*/, 'PM ')
+  const date = new Date(normalized)
+  if (isNaN(date.getTime())) return '时间未知'
   const now = new Date()
   const diff = now - date
   if (diff < 0) return date.toLocaleString()

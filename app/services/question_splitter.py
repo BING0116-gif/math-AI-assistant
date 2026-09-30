@@ -63,8 +63,8 @@ _TOP_NUM_RE = re.compile(r"^\s*(\d+)\s*[\.．、)]\s*")
 # set 识别：函数与极限自测题A / ...B / ...C
 _SET_RE = re.compile(r"函数与极限自测题\s*([A-Ca-c])")
 _ANSWER_MARK_RE = re.compile(r"解答与提示|解答|答\s*案")
-# 子问题 (1) (2)
-_SUBQ_RE = re.compile(r"[（(]\s*\d+\s*[）)]")
+# 子问题 (1) (2)：认行首或冒号/分号后的枚举，避免把 f(2) 等函数表达式误报为小题。
+_SUBQ_RE = re.compile(r"(?m)(?:^\s*|[：；;。]\s*)[（(]\s*\d+\s*[）)]")
 # 页脚页码：第 X 页
 _PAGE_NUM_RE = re.compile(r"^\s*第\s*\d+\s*页\s*$")
 # 已知页眉
@@ -113,6 +113,8 @@ def _detect_section_type(section_key: Optional[str]) -> Optional[str]:
         return "proof"
     if section_key == SECTION_FILL:
         return "fill_candidate"
+    if section_key == "short_answer":
+        return "short_answer"
     return None
 
 
@@ -272,6 +274,23 @@ def _split_blocks(blocks: List[PageBlock]) -> List[SplitQuestion]:
     cur: Optional[SplitQuestion] = None  # 正在收集的顶层题
     seen_identity: set = set()
 
+    # 讲义或逐题导出的 PDF 可能只有 1./2./3.，没有“一、选择题”等大题标题。
+    # 至少出现两个顶层题号才启用回退，以降低正文孤立编号造成的误切风险。
+    cleaned_texts = [_clean_block_text(b.text) for b in blocks if b.kind != BLOCK_KIND_EQUATION]
+    has_section_header = any(
+        (match := _SECTION_HEADER_RE.match(text)) and normalize_section(match.group(2))
+        for text in cleaned_texts if text
+    )
+    numbered_blocks = [text for text in cleaned_texts if text and _TOP_NUM_RE.match(text)]
+    single_looks_like_question = bool(
+        len(numbered_blocks) == 1
+        and re.search(r"求|证明|计算|填空|解方程|[？?]", numbered_blocks[0])
+    )
+    implicit_numbered_section = (
+        not has_section_header
+        and (len(numbered_blocks) >= 2 or single_looks_like_question)
+    )
+
     for block in blocks:
         if block.kind == BLOCK_KIND_EQUATION and region != "answer":
             # 题目区独立公式块：并入当前顶层题（跨行/跨页公式不新起题）
@@ -322,10 +341,11 @@ def _split_blocks(blocks: List[PageBlock]) -> List[SplitQuestion]:
 
         # 4) 顶层题号边界（仅限已知 section 内、行首数字）
         tn = _TOP_NUM_RE.match(text)
-        if tn and section:
+        if tn and (section or implicit_numbered_section):
             num = tn.group(1)
+            effective_section = section or "short_answer"
             # 同 identity 去重：同一 set+section+question -> 合并到当前题（防换行拆题）
-            identity = f"{set_id}-{section}-{num}"
+            identity = f"{set_id}-{effective_section}-{num}"
             if cur is not None and cur.identity == identity:
                 _append_to_current(cur, block)
                 continue
@@ -336,9 +356,9 @@ def _split_blocks(blocks: List[PageBlock]) -> List[SplitQuestion]:
                 question_number=num,
                 page_start=block.page,
                 page_end=block.page,
-                section=section,
+                section=effective_section,
                 set=set_id,
-                detected_question_type=_detect_section_type(section),
+                detected_question_type=_detect_section_type(effective_section),
             )
             seen_identity.add(identity)
             continue
@@ -383,15 +403,20 @@ def _postprocess(splits: List[SplitQuestion]) -> None:
         if _SUBQ_RE.search(sq.raw_text):
             if "contains_subquestions" not in sq.warnings:
                 sq.warnings.append("contains_subquestions")
-        if sq.section == SECTION_CHOICE:
+        if sq.section == SECTION_CHOICE or sq.section == "short_answer":
             opts, warnings, leak = _parse_inline_options(sq.raw_text)
-            sq.options = opts
-            for w in warnings:
-                if w not in sq.warnings:
-                    sq.warnings.append(w)
-            if leak:
-                if "possible_answer_leak" not in sq.warnings:
+            if opts is not None:
+                sq.options = opts
+                sq.detected_question_type = "choice"
+                for w in warnings:
+                    if w not in sq.warnings:
+                        sq.warnings.append(w)
+                if leak and "possible_answer_leak" not in sq.warnings:
                     sq.warnings.append("possible_answer_leak")
+            elif sq.section == SECTION_CHOICE:
+                for w in warnings:
+                    if w not in sq.warnings:
+                        sq.warnings.append(w)
 
 
 # 兼容旧调用：content_import 曾用 guess_option_letters 预填 options。

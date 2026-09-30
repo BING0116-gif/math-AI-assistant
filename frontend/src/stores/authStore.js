@@ -4,11 +4,9 @@
  * 这是前端唯一的认证状态入口。
  * 所有页面/组件必须通过此 store 读取 token、用户信息和认证状态。
  *
- * Token Key 策略：
- * - 正式 access token key: `auth_token`
- * - 正式 refresh token key: `refresh_token`
- * - 用户信息 key: `current_user`
- * - 无旧 key 需要兼容迁移
+ * Token 策略：access token 仅保存在内存，refresh token 由后端写入
+ * HttpOnly cookie。旧 token 键只会被清理，不再读取或发送。
+ * 非敏感用户信息继续存放在 `current_user`。
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
@@ -18,8 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   // ============================================================
   // State
   // ============================================================
-  const accessToken = ref(localStorage.getItem('auth_token') || '')
-  const refreshToken = ref(localStorage.getItem('refresh_token') || '')
+  const accessToken = ref('')
   const currentUser = ref(loadUser())
   const restoring = ref(true) // 启动时恢复会话期间为 true
 
@@ -40,11 +37,10 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function login(credentials) {
     const { data } = await api.post('/auth/login', credentials)
-    const { access_token, refresh_token, user_id, username: uname, role: userRole } = data.data
-    saveTokens(access_token, refresh_token)
+    const { access_token, user_id, username: uname, role: userRole } = data.data
+    removeLegacyTokens()
     saveUser({ user_id, username: uname, role: userRole || 'student' })
     accessToken.value = access_token
-    refreshToken.value = refresh_token
     currentUser.value = { user_id, username: uname, role: userRole || 'student' }
     import('@/api/migrations').then(({ migrateLegacyClientState }) => migrateLegacyClientState()).catch(() => {})
     return data
@@ -64,9 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function logout() {
     try {
-      await api.post('/auth/logout', {
-        refresh_token: refreshToken.value,
-      })
+      await api.post('/auth/logout')
     } catch {
       // 后端 logout 失败时，本地 session 仍要清理
     }
@@ -78,18 +72,14 @@ export const useAuthStore = defineStore('auth', () => {
    * 返回 true 表示成功，false 表示失败。
    */
   async function refresh() {
-    if (!refreshToken.value) return false
     try {
-      const { data } = await api.post('/auth/refresh', {
-        refresh_token: refreshToken.value,
-      }, {
+      const { data } = await api.post('/auth/refresh', undefined, {
         // The response interceptor must never recursively refresh this call.
         _isRefreshRequest: true,
       })
-      const { access_token, refresh_token: newRefresh } = data.data
-      saveTokens(access_token, newRefresh)
+      const { access_token } = data.data
+      removeLegacyTokens()
       accessToken.value = access_token
-      refreshToken.value = newRefresh
       return true
     } catch {
       clearSession()
@@ -98,24 +88,20 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 启动时恢复会话：从 localStorage 读取已有 tokens。
-   * 返回 true 表示已有有效会话。
+   * 启动时恢复会话。旧版 localStorage token 会被读入内存后立即删除；
+   * 新版会话通过 HttpOnly refresh cookie 换取新的 access token。
    */
-  function restoreSession() {
-    const at = localStorage.getItem('auth_token')
-    const rt = localStorage.getItem('refresh_token')
+  async function restoreSession() {
     const user = loadUser()
-    if (at && user) {
-      accessToken.value = at
-      refreshToken.value = rt || ''
+    removeLegacyTokens()
+    if (user) {
       currentUser.value = user
+      const restored = await refresh()
       restoring.value = false
-      return true
+      return restored
     }
-    // 只有 token 没有用户信息 → 清理
-    if (at && !user) {
-      clearSession()
-    }
+    accessToken.value = ''
+    currentUser.value = null
     restoring.value = false
     return false
   }
@@ -128,7 +114,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('current_user')
     accessToken.value = ''
-    refreshToken.value = ''
     currentUser.value = null
   }
 
@@ -143,13 +128,9 @@ export const useAuthStore = defineStore('auth', () => {
   // 内部辅助
   // ============================================================
 
-  function saveTokens(at, rt) {
-    try {
-      localStorage.setItem('auth_token', at)
-      localStorage.setItem('refresh_token', rt)
-    } catch {
-      // localStorage 不可用时静默失败
-    }
+  function removeLegacyTokens() {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('refresh_token')
   }
 
   function saveUser(user) {
@@ -172,7 +153,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     // state
     accessToken,
-    refreshToken,
     currentUser,
     restoring,
     // getters

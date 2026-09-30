@@ -12,6 +12,12 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
 
+vi.mock('@/api', () => ({
+  default: { post: vi.fn() },
+}))
+
+import api from '@/api'
+
 // 使用同步组件避免懒加载引入的异步问题
 const HomeView = { template: '<div>Home</div>' }
 const ChatView = { template: '<div>Chat</div>' }
@@ -22,6 +28,7 @@ describe('Protected Route Guard', () => {
   let router
 
   beforeEach(() => {
+    vi.clearAllMocks()
     // 每个测试独立 Pinia 实例
     setActivePinia(createPinia())
     localStorage.clear()
@@ -91,9 +98,9 @@ describe('Protected Route Guard', () => {
   describe('authenticated', () => {
     it('should allow navigation to a protected route', async () => {
       const authStore = useAuthStore()
-      localStorage.setItem('auth_token', 'test-token')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      authStore.restoreSession()
+      api.post.mockResolvedValue({ data: { data: { access_token: 'test-token' } } })
+      await authStore.restoreSession()
 
       await router.push('/dashboard')
 
@@ -102,9 +109,9 @@ describe('Protected Route Guard', () => {
 
     it('should allow navigation to a protected route with error-book', async () => {
       const authStore = useAuthStore()
-      localStorage.setItem('auth_token', 'test-token')
       localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
-      authStore.restoreSession()
+      api.post.mockResolvedValue({ data: { data: { access_token: 'test-token' } } })
+      await authStore.restoreSession()
 
       await router.push('/error-book')
 

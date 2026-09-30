@@ -49,7 +49,7 @@ vi.mock('@/stores/authStore', () => ({
 // ============================================================
 // 导入目标模块（mock 生效后）
 // ============================================================
-import { setAuthTokenGetter } from '@/api'
+import { setAuthSessionHandlers, setAuthTokenGetter } from '@/api'
 
 // ============================================================
 // Tests
@@ -73,6 +73,15 @@ describe('API Interceptor', () => {
     vi.clearAllMocks()
     // 重置 auth token getter（设为 null 触发 localStorage fallback）
     setAuthTokenGetter(null)
+    setAuthSessionHandlers({
+      getToken: () => mockStore.getAccessToken(),
+      refresh: () => mockStore.refresh(),
+      clearSession: () => {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('current_user')
+      },
+    })
     localStorage.clear()
     // 重置 mock store
     mockStore.getAccessToken.mockReturnValue('')
@@ -94,11 +103,12 @@ describe('API Interceptor', () => {
       expect(result.headers.Authorization).toBe('Bearer test-access-token')
     })
 
-    it('should fallback to localStorage when getter is not set', () => {
+    it('should not read legacy access tokens directly from localStorage', () => {
+      setAuthTokenGetter(null)
       localStorage.setItem('auth_token', 'local-fallback-token')
       const config = { headers: {} }
       const result = requestHandler(config)
-      expect(result.headers.Authorization).toBe('Bearer local-fallback-token')
+      expect(result.headers.Authorization).toBeUndefined()
     })
 
     it('should not add Authorization header when no token is available', () => {
@@ -107,7 +117,7 @@ describe('API Interceptor', () => {
       expect(result.headers.Authorization).toBeUndefined()
     })
 
-    it('should prefer authStore getter over localStorage', () => {
+    it('should use the in-memory authStore token', () => {
       localStorage.setItem('auth_token', 'local-token')
       setAuthTokenGetter(() => 'store-token')
       const config = { headers: {} }

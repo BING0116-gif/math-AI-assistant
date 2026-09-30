@@ -132,14 +132,21 @@ async def _handle_memory_upsert(event: OutboxEvent) -> None:
         memory = await db.get(Memory, int(event.aggregate_id))
         if memory is None or memory.status != "active" or memory.deleted_at is not None:
             active_memory = None
+            tags = []
         else:
+            from sqlalchemy import select
+            from app.data.models import MemoryTag
+
+            tags = list((await db.execute(
+                select(MemoryTag.tag_name).where(MemoryTag.memory_id == memory.id)
+            )).scalars())
             db.expunge(memory)
             active_memory = memory
     if active_memory is None:
         await _handle_memory_delete(event)
         return
     from app.services.memory_vector_store import get_memory_vector_store
-    await get_memory_vector_store().upsert(active_memory)
+    await get_memory_vector_store().upsert(active_memory, tags=tags)
 
 
 async def _handle_memory_delete(event: OutboxEvent) -> None:
@@ -256,17 +263,84 @@ async def outbox_health() -> dict[str, Any]:
                 select(OutboxEvent.status, func.count(OutboxEvent.id)).group_by(OutboxEvent.status)
             )).all())
             oldest = await db.scalar(select(func.min(OutboxEvent.created_at)).where(OutboxEvent.status == "pending"))
+            failures = dict((await db.execute(
+                select(OutboxEvent.event_type, func.count(OutboxEvent.id))
+                .where(OutboxEvent.last_error.is_not(None))
+                .group_by(OutboxEvent.event_type)
+            )).all())
+        if oldest and oldest.tzinfo is None:
+            # SQLite drops timezone metadata; PostgreSQL keeps it. Treat stored
+            # outbox timestamps as UTC in both backends.
+            oldest = oldest.replace(tzinfo=timezone.utc)
         age = max(0, int((now - oldest).total_seconds())) if oldest else 0
         healthy = int(counts.get("dead", 0)) == 0 and age <= 60
+        normalized_counts = {
+            status: int(counts.get(status, 0))
+            for status in ("pending", "processing", "completed", "dead")
+        }
+        from app.observability import OUTBOX_EVENTS, OUTBOX_FAILURES, OUTBOX_OLDEST_PENDING
+
+        for status, count in normalized_counts.items():
+            OUTBOX_EVENTS.labels(status).set(count)
+        OUTBOX_OLDEST_PENDING.set(age)
+        known_types = set(_HANDLERS)
+        for event_type in known_types | {"other"}:
+            count = sum(value for key, value in failures.items() if key not in known_types) if event_type == "other" else failures.get(event_type, 0)
+            OUTBOX_FAILURES.labels(event_type).set(int(count))
         return {
             "status": "healthy" if healthy else "degraded",
-            "pending": int(counts.get("pending", 0)),
-            "processing": int(counts.get("processing", 0)),
-            "dead": int(counts.get("dead", 0)),
+            **normalized_counts,
             "oldest_pending_seconds": age,
+            "failures_by_event_type": {str(key): int(value) for key, value in failures.items()},
         }
     except Exception as exc:
         return {"status": "degraded", "error": str(exc)}
+
+
+async def recover_dead_events(
+    *, event_id: str | None = None, apply: bool = False, execution_id: str
+) -> dict[str, Any]:
+    """Audit or requeue supported dead events while preserving failure evidence."""
+    now = datetime.now(timezone.utc)
+    async with get_db_session() as db:
+        query = select(OutboxEvent).where(OutboxEvent.status == "dead")
+        if event_id:
+            query = query.where(OutboxEvent.id == event_id)
+        rows = list((await db.execute(query.order_by(OutboxEvent.created_at))).scalars())
+        recoverable = [row for row in rows if row.event_type in _HANDLERS]
+        skipped = [
+            {"id": row.id, "event_type": row.event_type, "reason": "unsupported_event_type"}
+            for row in rows if row.event_type not in _HANDLERS
+        ]
+        snapshots = [
+            {
+                "id": row.id,
+                "event_type": row.event_type,
+                "attempts": int(row.attempts or 0),
+                "last_error": row.last_error,
+            }
+            for row in recoverable
+        ]
+        if apply:
+            for row in recoverable:
+                payload = dict(row.payload or {})
+                audit = list(payload.get("_recovery_audit") or [])
+                audit.append({
+                    "execution_id": execution_id,
+                    "requeued_at": now.isoformat(),
+                    "attempts": int(row.attempts or 0),
+                    "last_error": row.last_error,
+                })
+                payload["_recovery_audit"] = audit[-20:]
+                row.payload = payload
+                row.status = "pending"
+                row.available_at = now
+                row.locked_at = None
+    return {
+        "recoverable": snapshots,
+        "skipped": skipped,
+        "requeued": len(recoverable) if apply else 0,
+    }
 
 
 def dispatch_outbox_best_effort(event_id: str) -> None:

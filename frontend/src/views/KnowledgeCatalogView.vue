@@ -39,7 +39,7 @@
             </button>
           </nav>
           <div class="graph-area">
-            <KnowledgeGraph2D v-if="viewMode === '2d'" :tree="tree" :mastery="masteryMap" :active-chapter-id="activeChapterId" :selected-point-id="selectedPoint?.id || ''" @chapter-change="selectChapter" @select-point="selectPoint" />
+            <KnowledgeGraph2D v-if="viewMode === '2d'" :tree="tree" :mastery="masteryMap" :active-chapter-id="activeChapterId" :selected-point-id="selectedPoint?.id || ''" :view-state="graphViewState" @chapter-change="selectChapter" @select-point="selectPoint" @view-state-change="saveGraphViewState" />
             <KnowledgeGalaxy v-else :tree="tree" @select-point="selectPoint" @select-branch="selectBranch" />
           </div>
           <aside class="detail-panel" :class="{ 'detail-panel--empty': !hasSelection }">
@@ -118,6 +118,16 @@
                 </div>
               </div>
 
+              <div class="detail-section" aria-live="polite">
+                <div class="section-label">相关笔记 <span v-if="notesLoaded">({{ relatedNotes.total }})</span></div>
+                <p v-if="notesLoading" class="notes-state">正在加载笔记…</p>
+                <p v-else-if="notesError" class="notes-state">{{ notesError }} <button type="button" @click="loadRelatedNotes">重试</button></p>
+                <p v-else-if="!relatedNotes.items.length" class="notes-state">还没有关联笔记，创建一篇记录你的推导。</p>
+                <div v-else class="related-notes">
+                  <button v-for="note in relatedNotes.items" :key="note.note_id" type="button" class="related-note-item" @click="openExistingNote(note)">{{ note.title || '未命名笔记' }}</button>
+                </div>
+              </div>
+
               <!-- 关键概念 -->
               <div v-if="selectedPoint.key_concepts?.length" class="detail-section">
                 <div class="section-label">关键概念</div>
@@ -153,6 +163,8 @@
               <!-- 操作按钮 -->
               <div class="detail-actions">
                 <button class="action-btn primary" @click="openLearning(selectedPoint)">进入学习空间</button>
+                <button class="action-btn" :disabled="noteCreating" @click="createLinkedNote">{{ noteCreating ? '正在新建笔记…' : '新建笔记' }}</button>
+                <button v-if="relatedNotes.total" class="action-btn" @click="openNotesLibrary">查看全部关联笔记</button>
                 <button class="action-btn" @click="goToPractice(selectedPoint)">推荐练习</button>
                 <button class="action-btn" @click="askAi(selectedPoint)">让 AI 讲解</button>
                 <button class="action-btn" @click="goToRelatedErrors(selectedPoint)">查看全部关联错题</button>
@@ -192,6 +204,9 @@ import { getCourseLearningMap, getCourseTree, getKnowledgePoint, getKnowledgePoi
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
+import { notesApi, unwrapNote } from '@/api/notes'
+
+const catalogSessionState = new Map()
 
 const router = useRouter()
 const route = useRoute()
@@ -215,6 +230,12 @@ const masteryMap = ref({}) // { code: { mastery, attempts, correct, status } }
 const learningMap = ref(null)
 const selectedResources = ref([])
 const activeChapterId = ref('')
+const graphViewState = ref(null)
+const relatedNotes = ref({ items: [], total: 0 })
+const notesLoading = ref(false)
+const notesLoaded = ref(false)
+const notesError = ref('')
+const noteCreating = ref(false)
 
 // 资源类型展示名
 const RESOURCE_TYPE_LABELS = { lesson: '讲解', formula: '公式', example: '例题', exercise: '练习' }
@@ -315,8 +336,10 @@ async function loadCatalog() {
     if (!data.courses?.length) throw new Error('暂时没有可学习的已发布课程。')
     const courseId = data.courses[0].id
     tree.value = (await getCourseTree(courseId)).data
-    const requestedPoint = allPoints.value.find(point => point.id === route.query.point)
-    activeChapterId.value = requestedPoint?.chapterId || (chapterList.value.some(chapter => chapter.id === route.query.chapter) ? route.query.chapter : chapterList.value[0]?.id || '')
+    const snapshot = catalogSessionState.get(courseId)
+    const requestedPoint = allPoints.value.find(point => point.id === route.query.point || point.id === snapshot?.selectedPointId)
+    activeChapterId.value = requestedPoint?.chapterId || (chapterList.value.some(chapter => chapter.id === route.query.chapter) ? route.query.chapter : snapshot?.chapterId || chapterList.value[0]?.id || '')
+    graphViewState.value = snapshot?.viewState || null
     await loadLearningMap(courseId)
     const recommended = allPoints.value.find(point => point.id === learningMap.value?.primary_recommendation?.knowledge_point_id)
     if (!requestedPoint && recommended?.chapterId) activeChapterId.value = recommended.chapterId
@@ -354,6 +377,8 @@ function selectChapter(chapterId, { updateRoute = true } = {}) {
   selectedPoint.value = null
   selectedBranch.value = null
   selectedResources.value = []
+  relatedNotes.value = { items: [], total: 0 }
+  notesLoaded.value = false
   if (updateRoute) router.push({ query: { ...route.query, chapter: chapterId, point: undefined } })
 }
 
@@ -371,6 +396,8 @@ async function selectPoint(id, { updateRoute = true } = {}) {
     ])
     selectedPoint.value = pointResp.data
     selectedResources.value = learningResp.data?.resources || []
+    await loadRelatedNotes()
+    saveCatalogState()
     if (updateRoute && route.query.point !== id) router.push({ query: { ...route.query, chapter: summary?.chapterId || activeChapterId.value, point: id } })
   } catch {
     ElMessage.error('知识点详情加载失败，请重试。')
@@ -391,8 +418,38 @@ watch(() => [route.query.chapter, route.query.point], async ([chapterId, pointId
 })
 
 function openLearning(point) {
+  saveCatalogState()
   router.push(`/knowledge/points/${point.id}/learn`)
 }
+
+async function loadRelatedNotes() {
+  if (!selectedPoint.value) return
+  notesLoading.value = true; notesError.value = ''
+  try {
+    const data = await unwrapNote(await notesApi.list({ knowledge_point_id: selectedPoint.value.id, limit: 3 }))
+    relatedNotes.value = { items: data.items || [], total: data.total || 0 }
+  } catch (error) {
+    notesError.value = error?.message || '关联笔记加载失败。'
+  } finally { notesLoading.value = false; notesLoaded.value = true }
+}
+
+function saveGraphViewState(state) { graphViewState.value = state; saveCatalogState() }
+function saveCatalogState() {
+  const courseId = tree.value?.course?.id
+  if (courseId) catalogSessionState.set(courseId, { chapterId: activeChapterId.value, selectedPointId: selectedPoint.value?.id || '', viewState: graphViewState.value })
+}
+async function createLinkedNote() {
+  if (!selectedPoint.value || noteCreating.value) return
+  noteCreating.value = true
+  try {
+    const note = await unwrapNote(await notesApi.create({ title: `${selectedPoint.value.name}笔记`, course_id: tree.value.course.id, knowledge_point_id: selectedPoint.value.id }))
+    saveCatalogState()
+    router.push({ path: `/notes/${note.note_id}`, query: { from: 'knowledge', point: selectedPoint.value.id } })
+  } catch (error) { ElMessage.error(error?.message || '创建笔记失败，请重试。') }
+  finally { noteCreating.value = false }
+}
+function openExistingNote(note) { saveCatalogState(); router.push({ path: `/notes/${note.note_id}`, query: { from: 'knowledge', point: selectedPoint.value?.id || '' } }) }
+function openNotesLibrary() { saveCatalogState(); router.push({ path: '/notes', query: { knowledge_point_id: selectedPoint.value?.id || '' } }) }
 
 function goToRelatedErrors(point) {
   router.push({ path: '/error-book', query: { search: point.name } })

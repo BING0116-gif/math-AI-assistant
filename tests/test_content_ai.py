@@ -19,6 +19,7 @@ import uuid
 from typing import Optional
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -51,13 +52,14 @@ from app.services.knowledge_seed import seed_phase_one_calculus
 
 
 # ── fixtures ──
-@pytest.fixture
-def engine():
+@pytest_asyncio.fixture
+async def engine():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     @event.listens_for(eng.sync_engine, "connect")
     def _fk(dbapi_connection, _):
         dbapi_connection.execute("PRAGMA foreign_keys=ON")
-    return eng
+    yield eng
+    await eng.dispose()
 
 
 @pytest.fixture
@@ -111,6 +113,29 @@ def _snapshot(candidate_id: str, qtype: str = "choice", answer: str = "A") -> di
         "original_solution": "sol",
         "stem": "f'(1)=?",
         "suggested_knowledge_point_codes": [],
+    }
+
+
+def test_knowledge_graph_relations_are_derived_from_catalog():
+    from app.models.content_ai import ContentAIAnalysisResult
+
+    analysis = ContentAIAnalysisResult(
+        question_type="short_answer",
+        knowledge_point_codes=["kp-current", "hallucinated"],
+        knowledge_point_relations={"prerequisites": ["hallucinated"]},
+    )
+    catalog = [
+        {"code": "kp-pre", "prerequisites": [], "related": []},
+        {"code": "kp-current", "prerequisites": ["kp-pre"], "related": ["kp-related"]},
+        {"code": "kp-related", "prerequisites": [], "related": []},
+        {"code": "kp-next", "prerequisites": ["kp-current"], "related": []},
+    ]
+    ContentAIAnalysisService._normalize_knowledge_graph_result(analysis, catalog)
+    assert analysis.knowledge_point_codes == ["kp-current"]
+    assert analysis.knowledge_point_relations == {
+        "prerequisites": ["kp-pre"],
+        "related": ["kp-related"],
+        "next": ["kp-next"],
     }
 
 
@@ -382,7 +407,7 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "f8a9b0c1d2e3"  # add question_templates（§5.3 参数化变式题模板）
+        assert script.get_current_head() == "f9a0b1c2d3e4"  # student papers + deterministic diagnostics
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3

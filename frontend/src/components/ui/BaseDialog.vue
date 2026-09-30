@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, onMounted, onUnmounted, ref } from 'vue'
+import { watch, onMounted, onUnmounted, nextTick, ref } from 'vue'
 
 const props = withDefaults(defineProps<{
   open: boolean
@@ -15,11 +15,29 @@ const emit = defineEmits<{
 
 const dialogRef = ref<HTMLElement | null>(null)
 const previousFocus = ref<HTMLElement | null>(null)
+const focusableSelector = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function focusableElements() {
+  return Array.from(
+    dialogRef.value?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+  ).filter((element) => !element.hidden)
+}
 
 watch(() => props.open, (val) => {
   if (val) {
     previousFocus.value = document.activeElement as HTMLElement
     document.body.style.overflow = 'hidden'
+    nextTick(() => {
+      const [first] = focusableElements()
+      ;(first ?? dialogRef.value)?.focus()
+    })
   } else {
     document.body.style.overflow = ''
     previousFocus.value?.focus()
@@ -33,6 +51,24 @@ function onBackdropClick() {
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape' && props.open) {
     emit('close')
+    return
+  }
+  if (e.key !== 'Tab' || !props.open) return
+
+  const elements = focusableElements()
+  if (!elements.length) {
+    e.preventDefault()
+    dialogRef.value?.focus()
+    return
+  }
+  const first = elements[0]
+  const last = elements[elements.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
   }
 }
 
@@ -56,7 +92,7 @@ onUnmounted(() => {
       :aria-modal="true"
       :aria-label="title"
     >
-      <div ref="dialogRef" class="dialog-panel" :style="{ maxWidth: width }">
+      <div ref="dialogRef" class="dialog-panel" :style="{ maxWidth: width }" tabindex="-1">
         <div v-if="title" class="dialog-header">
           <h3 class="dialog-title">{{ title }}</h3>
           <button class="dialog-close" aria-label="关闭" @click="emit('close')">

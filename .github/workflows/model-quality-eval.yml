@@ -42,14 +42,17 @@ jobs:
           --health-retries 20
     env:
       AI_ENABLED: "true"
-      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_API_BASE: ${{ vars.LLM_API_BASE || 'https://api.deepseek.com/v1' }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'deepseek-chat' }}
       EVAL_DATABASE_URL: postgresql://mathai_eval:evaluation-only-password@localhost:5432/math_ai_eval
       DATABASE_URL: postgresql://unused:unused@localhost:5432/math_ai_runtime
       RAG_ENABLED: "false"
       LABEL: ${{ inputs.label || 'scheduled-drift' }}
       EVAL_INPUT_COST_PER_MILLION: ${{ vars.EVAL_INPUT_COST_PER_MILLION }}
       EVAL_OUTPUT_COST_PER_MILLION: ${{ vars.EVAL_OUTPUT_COST_PER_MILLION }}
-      EVAL_MODEL_PROVIDER: dashscope
+      EVAL_MAX_COST_USD: "2.00"
+      EVAL_MODEL_PROVIDER: deepseek
       EVAL_ENVIRONMENT_ID: github-${{ github.run_id }}
       APPROVED_BASELINE: ${{ inputs.baseline || vars.MODEL_QUALITY_BASELINE }}
 

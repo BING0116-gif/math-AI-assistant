@@ -101,7 +101,7 @@ async def _run_alembic_migration(db_url: str) -> None:
 
 
 async def init_db() -> None:
-    global engine, async_session_factory
+    global engine, async_session_factory, DB_AVAILABLE
 
     if engine is not None:
         await close_db()
@@ -115,6 +115,7 @@ async def init_db() -> None:
     if is_sqlite:
         connect_args = {"check_same_thread": False}
 
+    DB_AVAILABLE = False
     engine = create_async_engine(
         db_url,
         echo=False,
@@ -146,26 +147,36 @@ async def init_db() -> None:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception as probe_err:  # 连接被拒 / 超时 / 凭证错误等
-        global DB_AVAILABLE
-        DB_AVAILABLE = False
         logger.warning(
             "数据库不可达，应用进入降级模式（SQL 功能暂不可用，其余服务正常）: %s",
             probe_err,
         )
+        await engine.dispose()
+        engine = None
+        async_session_factory = None
         return
 
     # 使用 Alembic 替代 Base.metadata.create_all + 原始 SQL 迁移脚本
-    await _run_alembic_migration(db_url)
+    try:
+        await _run_alembic_migration(db_url)
+    except Exception:
+        await engine.dispose()
+        engine = None
+        async_session_factory = None
+        raise
 
+    DB_AVAILABLE = True
     logger.info(f"数据库初始化完成: {db_url.split('@')[-1] if '@' in db_url else db_url}")
 
 
 async def close_db() -> None:
-    global engine
+    global engine, async_session_factory, DB_AVAILABLE
     if engine:
         await engine.dispose()
-        engine = None
         logger.info("数据库连接已关闭")
+    engine = None
+    async_session_factory = None
+    DB_AVAILABLE = False
 
 
 @asynccontextmanager
@@ -185,13 +196,13 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def check_database_health() -> dict:
-    if engine is None:
-        return {"status": "unhealthy", "error": "数据库未初始化"}
     if not DB_AVAILABLE:
         return {
             "status": "degraded",
             "error": "数据库不可达，应用以降级模式运行",
         }
+    if engine is None:
+        return {"status": "unhealthy", "error": "数据库未初始化"}
 
     try:
         async with engine.connect() as conn:

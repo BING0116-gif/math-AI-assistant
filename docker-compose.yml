@@ -24,6 +24,7 @@ services:
       # compose environment 是严格白名单，.env 的值不会自动进容器；
       # 不显式透传 → 容器内为空 → 回退默认 "mock"，UI 顶部会显示「AI：mock」。
       - CONTENT_AI_PROVIDER=${CONTENT_AI_PROVIDER:-mock}
+      - NOTE_STORAGE_ROOT=${NOTE_STORAGE_ROOT:-/app/runtime/notes}
       - DEBUG=${DEBUG:-false}
       - APP_ENV=${APP_ENV:-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -77,6 +78,7 @@ services:
       - ./data:/app/data
       - embedding_cache:/app/runtime/model-cache
       - ./runtime/animations:/app/runtime/animations
+      - ./runtime/notes:/app/runtime/notes
     restart: unless-stopped
     deploy:
       resources:
