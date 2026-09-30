@@ -34,8 +34,8 @@ const project = computed(() => createProjector(props.spec.viewport)).value
 .geometry-series { color: var(--accent); }
 .geometry-series polyline, .geometry-series polygon { fill: var(--accent-soft); stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
 .geometry-series polyline { fill: none; }
-.geometry-series text, .annotations text { fill: var(--text-primary); font: 13px var(--font-sans); paint-order: stroke; stroke: var(--surface); stroke-width: 4; }
-.series-1 { color: var(--warning); } .series-2 { color: var(--knowledge); } .series-3 { color: var(--weak); }
-.annotations circle { fill: var(--surface); stroke: var(--danger); stroke-width: 2.5; }
-.annotations line { stroke: var(--danger); stroke-width: 2; stroke-dasharray: 5 4; }
+.geometry-series text, .annotations text { fill: var(--ink-1); font: 13px var(--font-ui); paint-order: stroke; stroke: var(--surface); stroke-width: 4; }
+.series-1 { color: var(--amber); } .series-2 { color: var(--brand); } .series-3 { color: var(--rose); }
+.annotations circle { fill: var(--surface); stroke: var(--rose); stroke-width: 2.5; }
+.annotations line { stroke: var(--rose); stroke-width: 2; stroke-dasharray: 5 4; }
 </style>

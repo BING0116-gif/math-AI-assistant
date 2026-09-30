@@ -129,7 +129,7 @@ onMounted(load)
   max-width: 960px;
   margin: 0 auto;
   padding: 24px 20px 48px;
-  color: var(--text-primary);
+  color: var(--ink-1);
 }
 
 .rd-head {
@@ -149,23 +149,23 @@ onMounted(load)
 .rd-sub {
   margin: 6px 0 0;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
   line-height: 1.6;
 }
 
 .rd-btn {
   padding: 8px 16px;
-  border-radius: var(--radius-md);
+  border-radius: var(--r-m);
   border: 1px solid var(--border-strong);
   background: var(--surface);
-  color: var(--text-primary);
+  color: var(--ink-1);
   font-size: 13px;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 
 .rd-btn:hover:not(:disabled) {
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
 
 .rd-btn:disabled {
@@ -186,10 +186,10 @@ onMounted(load)
   flex-wrap: wrap;
   margin-top: 20px;
   padding: 12px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--danger);
-  background: var(--surface-muted);
-  color: var(--text-primary);
+  border-radius: var(--r-m);
+  border: 1px solid var(--rose);
+  background: var(--surface-2);
+  color: var(--ink-1);
   font-size: 13px;
 }
 
@@ -202,15 +202,15 @@ onMounted(load)
 
 .rd-stat {
   padding: 12px 16px;
-  border-radius: var(--radius-md);
-  background: var(--surface-muted);
-  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-m);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
 }
 
 .rd-stat-label {
   display: block;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .rd-stat-value {
@@ -221,17 +221,17 @@ onMounted(load)
 }
 
 .rd-stat.is-blocker .rd-stat-value {
-  color: var(--danger);
+  color: var(--rose);
 }
 
 .rd-stat.is-warning .rd-stat-value {
-  color: var(--warning);
+  color: var(--amber);
 }
 
 .rd-meta {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
 }
 
 .rd-loading,
@@ -240,9 +240,9 @@ onMounted(load)
   padding: 32px;
   text-align: center;
   font-size: 13px;
-  color: var(--text-secondary);
-  background: var(--surface-muted);
-  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border-radius: var(--r-m);
 }
 
 .rd-list {
@@ -256,43 +256,43 @@ onMounted(load)
   display: flex;
   gap: 12px;
   padding: 14px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-m);
+  border: 1px solid var(--border);
   background: var(--surface);
 }
 
 .rd-item--blocker {
-  border-color: var(--danger);
+  border-color: var(--rose);
 }
 
 .rd-item--warning {
-  border-color: var(--warning);
+  border-color: var(--amber);
 }
 
 .rd-badge {
   flex-shrink: 0;
   align-self: flex-start;
   padding: 2px 10px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--r-pill);
   font-size: 12px;
   line-height: 1.6;
-  background: var(--surface-muted);
-  color: var(--text-secondary);
+  background: var(--surface-2);
+  color: var(--ink-2);
 }
 
 /* 状态以文字传达，颜色仅作辅助，不单独承载语义。 */
 .rd-badge--ok {
-  background: var(--success);
+  background: var(--green);
   color: #fff;
 }
 
 .rd-badge--warning {
-  background: var(--warning);
+  background: var(--amber);
   color: #1a1200;
 }
 
 .rd-badge--blocker {
-  background: var(--danger);
+  background: var(--rose);
   color: #fff;
 }
 
@@ -309,21 +309,21 @@ onMounted(load)
 .rd-item-reason {
   margin: 4px 0 0;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
   line-height: 1.6;
 }
 
 .rd-item-fix {
   margin: 6px 0 0;
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   line-height: 1.6;
 }
 
 .rd-details {
   margin-top: 8px;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .rd-details summary {
@@ -333,8 +333,8 @@ onMounted(load)
 .rd-pre {
   margin: 8px 0 0;
   padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  border-radius: var(--r-m);
+  background: var(--surface-2);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.6;
@@ -344,9 +344,9 @@ onMounted(load)
 .rd-foot {
   margin-top: 28px;
   padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   line-height: 1.6;
 }
 

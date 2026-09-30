@@ -359,11 +359,11 @@ onUnmounted(() => {
   color: #fff;
   cursor: pointer;
   border: none;
-  transition: background var(--transition-fast);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 
 .agent-composer__preview-remove:hover {
-  background: var(--danger);
+  background: var(--rose);
 }
 
 /* 输入区 */
@@ -452,7 +452,7 @@ onUnmounted(() => {
 
 .agent-composer__tool-btn--icon:hover {
   border-color: var(--brand);
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
 
 .agent-composer__tool-btn--text {
@@ -531,7 +531,7 @@ onUnmounted(() => {
   }
 
   .agent-composer__tool-btn--text {
-    font-size: var(--font-size-xs);
+    font-size: var(--type-xs);
     padding: 6px 8px;
   }
 

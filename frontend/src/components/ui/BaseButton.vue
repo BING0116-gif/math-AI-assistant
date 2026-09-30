@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'soft' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   disabled?: boolean
   loading?: boolean
@@ -52,12 +52,14 @@ function handleClick(e: MouseEvent) {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-family: var(--font-sans);
-  font-weight: 500;
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border-radius: 10px;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
   cursor: pointer;
-  border: 1.5px solid transparent;
+  border: 1px solid transparent;
   white-space: nowrap;
   user-select: none;
 }
@@ -66,53 +68,66 @@ function handleClick(e: MouseEvent) {
   cursor: not-allowed;
 }
 .base-btn:focus-visible {
-  outline: 2.5px solid var(--accent);
+  outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
-/* Sizes */
-.base-btn--sm { padding: 6px 12px; font-size: var(--font-size-sm); }
-.base-btn--md { padding: 8px 16px; font-size: var(--font-size-sm); }
-.base-btn--lg { padding: 10px 20px; font-size: var(--font-size-base); }
+/* Sizes(§6.3:sm 30 / md 36 / lg 42) */
+.base-btn--sm { min-height: 30px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; }
+.base-btn--md { min-height: 36px; padding: 0 14px; }
+.base-btn--lg { min-height: 42px; padding: 0 18px; }
 .base-btn--icon { padding: 8px; min-width: 36px; min-height: 36px; }
 
-/* Variants */
+/* Variants(§6.3:primary 橙底白字 / secondary 白底描边 / ghost 无底 / soft 品牌软底) */
 .base-btn--primary {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  box-shadow: var(--glow);
 }
 .base-btn--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .base-btn--secondary {
   background: var(--surface);
-  color: var(--text-primary);
+  color: var(--ink-1);
   border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
 }
 .base-btn--secondary:hover:not(:disabled) {
-  background: var(--surface-hover);
+  border-color: var(--ink-4);
+  color: var(--ink-1);
 }
 
 .base-btn--ghost {
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--ink-2);
   border-color: transparent;
 }
 .base-btn--ghost:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+  background: var(--surface-2);
+  color: var(--ink-1);
+}
+
+.base-btn--soft {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  border-color: transparent;
+}
+.base-btn--soft:hover:not(:disabled) {
+  background: var(--brand-soft-2);
 }
 
 .base-btn--danger {
-  background: var(--danger);
+  background: var(--rose);
   color: #fff;
-  border-color: var(--danger);
+  border-color: var(--rose);
 }
 .base-btn--danger:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--rose);
+  filter: brightness(1.08);
 }
 
 /* Loading */

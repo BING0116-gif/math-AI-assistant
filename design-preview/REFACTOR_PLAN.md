@@ -2,7 +2,7 @@
 
 > **版本**：v1.0 · 2026-09-29
 > **视觉基准**：`design-preview/` 下 `home.html / dashboard.html / chat.html / error-book.html / profile.html`（含 `screenshots/` 定稿截图）+ `mock.css`（令牌源）+ `anim.js`（动效源）+ `nav.js`（交互源）
-> **状态**：已定稿，待执行。配色经五轮评审定案：翡翠青品牌色 + 活力橙行动色（白字，用户拍板）。
+> **状态**：P0–P6 已完成（2026-09-30）。配色经五轮评审定案：翡翠青品牌色 + 活力橙行动色（白字，用户拍板）。
 > **执行方式**：后续任一会话输入「按 `design-preview/REFACTOR_PLAN.md` 执行 P0」（P1…P6 同理），按本文档逐阶段实施。
 
 ---
@@ -203,18 +203,18 @@ src/components/ui/*      增强（§6.3）
 
 > 每阶段 = 1 个独立 PR（分支 `feat/design-v4` 自 `wip-2026-09-07` 拉出），独立可合可回滚。完成定义统一见 §12.4。估时为单人净工时。
 
-### P0 设计令牌与基础设施（约 1 天）
+### P0 设计令牌与基础设施（约 1 天，已完成）
 **做**：重写 `src/styles/tokens.css` 为 V4（§3.1/3.3/3.4 全量变量 + §4.2 兼容别名 + EP 映射暂留原位）；新增 `styles/element-plus.scss`、`styles/math.scss`、`styles/motion.css`；新增三个 composables；`utils/charts.ts` 注册双主题；接入 @fontsource 三包（`package.json` + `main.js`）；`global.scss` 瘦身。
 **不做**：不动任何视图模板。
 **验收**：`npm run test` 42/42 绿；`npm run build && npm run budget` 通过；亮暗两态下**全站无视觉回归**（兼容层生效——所有页面应与改造前一致或仅色彩微调）；DevTools 中 `--brand/--accent` 在 `:root` 可见且暗色切换生效。
 **回滚**：PR revert 即可（无模板变更）。
 
-### P1 AppShell 重写（约 1–1.5 天）
+### P1 AppShell 重写（约 1–1.5 天，已完成）
 **做**：按 `dashboard.html` 原型重写 `AppShell.vue`（结构对照 §6.1）；顶部具名插槽 `topbar-title/topbar-actions/page-header/inspector` **全部保持不变**；导航 `navItems` 数据结构不变（6 项）；图标换 lucide；新对话/搜索/历史/收起/主题按钮对齐原型；l1 断点(≤1279px) rail、l2 断点(≤768px) 抽屉行为保留；skip-link 保留。
 **验收**：23 个使用方视图零模板改动即可正常渲染；`routerGuard` 等测试不涉及 shell 仍绿；手工走查 1440/1280/768/375 四宽度 + 亮暗。
 **回滚**：仅 revert AppShell.vue。
 
-### P2 核心六视图（约 3–4 天，顺序固定）
+### P2 核心六视图（约 3–4 天，顺序固定，已完成）
 1. `HomeView.vue`（对照 `home.html`：hero-glow、渐变字、居中 Composer（**复用 AgentComposer**，重皮不重写逻辑）、最近对话 3 卡、继续学习 2 卡；删除旧 home/ 孤儿引用如存在）
 2. `ChatView.vue` + `conversation/AgentComposer.vue` + `chat/MessageItem.vue` + `FollowUpRecommendation.vue` + `chat/AskStudentCard.vue`（对照 `chat.html`：气泡/定理卡/.formula/引用 chip/消息底栏/Composer 工具行；暗色为默认展示态之一，两种主题都要走查）
 3. `DashboardView.vue`（对照 `dashboard.html`：4 KPI 卡+计数动画+迷你 sparkline、趋势卡、章节掌握度、今日任务、AI 洞察卡、打卡热力；图表接入 §7 主题）
@@ -224,22 +224,22 @@ src/components/ui/*      增强（§6.3）
 **验收**：每页与 `screenshots/` 对应定稿图并排比对（布局/间距/色彩/字号）；`useDashboardMetrics/useErrorBookMetrics/useProfileMetrics` 测试不破；数学渲染（KaTeX/mathlive）回归通过；移动端 375px 无横向滚动。
 **回滚**：按单视图 revert。
 
-### P3 图表与知识图谱（约 1.5 天）
+### P3 图表与知识图谱（约 1.5 天，已完成）
 **做**：§7 全部内容（ECharts 双主题 + 主题切换重绘 + 图表入场动画；KnowledgeGraph2D/KnowledgeGalaxy 令牌化 + 主题跟随）。
 **验收**：亮暗切换后 1s 内图表/图谱完成重绘且配色正确；无任何 hex 残留（grep 校验见 §12.3）。
 **回滚**：revert P3 涉及文件。
 
-### P4 练习考试 / 笔记 / 登录（约 1–1.5 天）
+### P4 练习考试 / 笔记 / 登录（约 1–1.5 天，已完成）
 **做**：`ApplyHubView`（学以致用入口卡）、`ExerciseShell/QuestionAnswer/QuestionNavigator/SubmitOverview`（三套 Session 共用件，一处改三处生效）、`ExamReportView`（119 行，含报告图表走 §7）、`StudentPaper*` 四壳、`NotesLibraryView/NoteWorkspaceView`（Konva 手写层不动，只动周边 UI）、`LoginDialog.vue`（BaseDialog 重皮）。
 **验收**：练习→作答→交卷→结果全流程 + 考试 + 组卷手工回归；`errorBookVariant/practiceVariant/assessment` 等 store/api 测试全绿。
 **回滚**：按组件 revert。
 
-### P5 Admin 视图 + 大清理（约 1 天）
+### P5 Admin 视图 + 大清理（约 1 天，已完成）
 **做**：`AdminReviewView/AdminPapersView/AdminReadinessView` 重皮（可保守：仅换令牌引用与基础件，保持布局）；删除 §4.4 孤儿组件与 `themes.scss/variables.scss`、删除兼容别名层、移除 `marked/reka-ui/vue-echarts`、tokens.css 删除注释掉的死变量。
 **验收**：`grep -rn "themes.scss\|variables.scss\|marked\|reka-ui\|vue-echarts" frontend/src` 零命中；全量测试绿；budget 通过（体积应下降）。
 **回滚**：清理 PR 独立，revert 恢复。
 
-### P6 全量 QA 与收尾（约 1 天）
+### P6 全量 QA 与收尾（约 1 天，已完成）
 **做**：§12 全量验证矩阵跑一遍；`math-ai-frontend-qa` 流程执行并留档；更新 `frontend/README`（若有）与根 `README.md` 前端截图/说明；本文档标记各阶段完成。
 **验收**：§12.4 DoD 全勾。
 

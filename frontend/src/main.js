@@ -18,8 +18,7 @@ import '@fontsource/space-grotesk/700.css'
 import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 
-// V4 设计系统:legacy 主题在前、V4 令牌(+兼容别名层)在后覆盖
-import './styles/themes.scss'
+// V4 设计系统令牌
 import './styles/tokens.css'
 import './styles/motion.css'
 import './styles/global.scss'

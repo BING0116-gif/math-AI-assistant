@@ -67,8 +67,8 @@ function onFallbackInput(event) {
 </template>
 <style scoped>
 .math-input{width:100%}
-.math-field{box-sizing:border-box;width:100%;min-height:48px;margin-top:18px;padding:8px 12px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-primary);font-size:18px}
+.math-field{box-sizing:border-box;width:100%;min-height:48px;margin-top:18px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-m);background:var(--surface);color:var(--ink-1);font-size:18px}
 .math-field:focus-within,.math-field:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.fallback-input{box-sizing:border-box;width:100%;min-height:42px;margin-top:18px;padding:8px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-primary);font:inherit}
+.fallback-input{box-sizing:border-box;width:100%;min-height:42px;margin-top:18px;padding:8px;border:1px solid var(--border);border-radius:var(--r-m);background:var(--surface);color:var(--ink-1);font:inherit}
 .fallback-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>

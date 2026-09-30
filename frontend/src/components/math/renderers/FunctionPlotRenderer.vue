@@ -50,18 +50,18 @@ const yAxisX = computed(() => project.x(Math.min(Math.max(0, props.spec.viewport
 </script>
 
 <style scoped>
-.math-plot { display: block; width: 100%; height: auto; color: var(--text-secondary); background: var(--surface); }
-.grid line { stroke: var(--border-subtle); stroke-width: 1; }
+.math-plot { display: block; width: 100%; height: auto; color: var(--ink-2); background: var(--surface); }
+.grid line { stroke: var(--border); stroke-width: 1; }
 .axes line { stroke: var(--border-strong); stroke-width: 1.4; }
-.axes text { fill: var(--text-tertiary); font: 12px var(--font-mono); }
+.axes text { fill: var(--ink-3); font: 12px var(--font-mono); }
 .series-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.series-1 .series-line, .series-1 .sequence-point { stroke: var(--warning); fill: var(--warning); }
-.series-2 .series-line, .series-2 .sequence-point { stroke: var(--knowledge); fill: var(--knowledge); }
-.series-3 .series-line, .series-3 .sequence-point { stroke: var(--weak); fill: var(--weak); }
+.series-1 .series-line, .series-1 .sequence-point { stroke: var(--amber); fill: var(--amber); }
+.series-2 .series-line, .series-2 .sequence-point { stroke: var(--brand); fill: var(--brand); }
+.series-3 .series-line, .series-3 .sequence-point { stroke: var(--rose); fill: var(--rose); }
 .series-line.dashed { stroke-dasharray: 8 5; }
 .area-shape { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
 .sequence-point { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
-.annotations circle { fill: var(--surface); stroke: var(--danger); stroke-width: 2.5; }
-.annotations line { stroke: var(--danger); stroke-width: 2; stroke-dasharray: 5 4; }
-.annotations text { fill: var(--text-primary); font: 13px var(--font-sans); paint-order: stroke; stroke: var(--surface); stroke-width: 4; }
+.annotations circle { fill: var(--surface); stroke: var(--rose); stroke-width: 2.5; }
+.annotations line { stroke: var(--rose); stroke-width: 2; stroke-dasharray: 5 4; }
+.annotations text { fill: var(--ink-1); font: 13px var(--font-ui); paint-order: stroke; stroke: var(--surface); stroke-width: 4; }
 </style>

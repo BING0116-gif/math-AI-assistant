@@ -1,7 +1,7 @@
 /* ============================================================
    知微 Math AI — Design System Tokens (V4.0)
    视觉方向:翡翠青品牌色 × 活力橙行动色
-   唯一令牌源:色彩 / 几何 / 字体 + V3 兼容别名层(P5 删除)
+   唯一令牌源:色彩 / 几何 / 字体
    基准:design-preview/mock.css 定稿(REFACTOR_PLAN.md §3)
    ============================================================ */
 
@@ -15,6 +15,7 @@
   --side: #FAFAFC;
   --surface: #FFFFFF;
   --surface-2: #F7F8FA;
+  --overlay: rgba(9, 11, 15, .5);
 
   /* 文字层级 */
   --ink-1: #171923;
@@ -104,6 +105,12 @@
 
   /* 排版基础 */
   --font-size-body: 14px;
+  --type-xs: 12px;
+  --type-sm: 13px;
+  --type-md: 14px;
+  --type-lg: 15px;
+  --type-xl: 17px;
+  --type-2xl: 24px;
   --line-height-base: 1.6;
   --line-height-tight: 1.35;
 }
@@ -117,6 +124,7 @@
   --side: #0E1117;
   --surface: #14171F;
   --surface-2: #1A1E29;
+  --overlay: rgba(0, 0, 0, .55);
 
   --ink-1: #E8EAF2;
   --ink-2: #9CA3B2;
@@ -155,138 +163,6 @@
   --shadow-2: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px -10px rgba(0, 0, 0, .5);
   --shadow-3: 0 16px 44px -12px rgba(0, 0, 0, .6);
   --glow: 0 1px 2px rgba(255, 154, 87, .4), inset 0 1px 0 rgba(255, 255, 255, .14);
-}
-
-/* ============================================================
-   LEGACY ALIASES — V3 → V4(P0 建立,P5 随全量迁移删除)
-   ⚠️ 语义变化警示:V3 --accent 是品牌主色(靛紫),V4 --accent 是行动橙。
-   本层无法区分两种语义,未迁移组件中的 var(--accent) 将呈现橙色;
-   P2–P5 迁移时必须逐处判断改为 --brand(品牌)或保留 --accent(行动),
-   禁止盲替换。
-   ============================================================ */
-:root {
-  /* 背景层级 */
-  --canvas: var(--bg);
-  --surface-muted: var(--surface-2);
-  --bg-card: var(--surface);
-  --bg-sidebar: var(--side);
-  --bg-secondary: var(--surface-2);
-  --bg-topbar: color-mix(in srgb, var(--bg) 82%, transparent);
-  --bg-overlay: rgba(9, 11, 15, .5);
-
-  /* 文字 */
-  --text-primary: var(--ink-1);
-  --text-secondary: var(--ink-2);
-  --text-tertiary: var(--ink-3);
-  --text-warning: var(--amber);
-
-  /* 边框 */
-  --border-subtle: var(--border);
-  --border-light: var(--border);
-  --border-default: var(--border-strong);
-  --border-warning: var(--amber);
-
-  /* 品牌/主色(V3 --primary / --color-agent 均为品牌语义 → 青) */
-  --primary: var(--brand);
-  --primary-hover: var(--brand-strong);
-  --primary-active: var(--brand-strong);
-  --primary-ghost: var(--brand-soft);
-  --accent-ghost: var(--brand-soft);
-  --accent-hover: var(--accent-strong);
-
-  /* 状态色 */
-  --success: var(--green);
-  --warning: var(--amber);
-  --danger: var(--rose);
-  --info: var(--brand);
-
-  /* 学习状态 */
-  --knowledge: var(--brand);
-  --knowledge-soft: var(--brand-soft);
-  --mastered: var(--green);
-  --learning: var(--amber);
-  --weak: var(--rose);
-  --surface-warning: var(--amber-soft);
-
-  /* 圆角(V3 名 → V4 值) */
-  --radius-xs: var(--r-s);
-  --radius-sm: 10px;
-  --radius-md: var(--r-m);
-  --radius-lg: var(--r-l);
-  --radius-xl: var(--r-xl);
-  --radius-pill: var(--r-pill);
-
-  /* 字号阶梯(V3 名 → V4 阶梯值) */
-  --font-size-xs: 12px;
-  --font-size-sm: 13px;
-  --font-size-base: 14px;
-  --font-size-lg: 15px;
-  --font-size-xl: 17px;
-  --font-size-2xl: 24px;
-  --font-size-3xl: 30px;
-
-  /* 字体族 */
-  --font-sans: var(--font-ui);
-
-  /* 阴影 */
-  --shadow-sm: var(--shadow-1);
-  --shadow-md: var(--shadow-2);
-  --shadow-lg: var(--shadow-3);
-  --shadow-glow: var(--glow);
-  --shadow-focus: 0 0 0 3px var(--brand-soft);
-
-  /* 过渡(V3 名保留,P2 起改用 §3.4 动效令牌) */
-  --transition-fast: 150ms ease-out;
-  --transition-base: 220ms ease-out;
-  --transition-slow: 360ms ease-out;
-
-  /* 布局 */
-  --content-max-width: var(--content-max);
-
-  /* 徽标 */
-  --badge-color: var(--ink-1);
-
-  /* themes.scss legacy --color-* 全集(仅现网消费的 5 个有引用,其余按映射收编) */
-  --color-canvas: var(--bg);
-  --color-surface: var(--surface);
-  --color-surface-raised: var(--surface);
-  --color-surface-muted: var(--surface-2);
-  --color-text: var(--ink-1);
-  --color-text-muted: var(--ink-2);
-  --color-text-subtle: var(--ink-3);
-  --color-text-inverse: var(--bg);
-  --color-border: var(--border);
-  --color-border-subtle: var(--border);
-  --color-focus: var(--brand);
-  --color-action: var(--ink-1);
-  --color-action-soft: var(--surface-2);
-  --color-agent: var(--brand);
-  --color-agent-soft: var(--brand-soft);
-  --color-knowledge: var(--brand);
-  --color-knowledge-soft: var(--brand-soft);
-  --color-review: var(--amber);
-  --color-review-soft: var(--amber-soft);
-  --color-success: var(--green);
-  --color-success-soft: var(--green-soft);
-  --color-warning: var(--amber);
-  --color-warning-soft: var(--amber-soft);
-  --color-danger: var(--rose);
-  --color-danger-soft: var(--rose-soft);
-  --color-info: var(--brand);
-  --color-info-soft: var(--brand-soft);
-  --color-graph: var(--bg);
-  --color-graph-surface: var(--surface);
-}
-
-/* 别名层中需要暗色专属字面值的项 */
-[data-theme='dark'] {
-  --surface-hover: #232836;
-  --color-action-hover: #F4F5F8;
-}
-
-:root {
-  --surface-hover: #ECEEF2;
-  --color-action-hover: #3A3D42;
 }
 
 /* ---- 全局重置 ---- */
@@ -380,13 +256,13 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .page-title {
-  font-size: var(--font-size-2xl);
+  font-size: var(--type-2xl);
   font-weight: 600;
   line-height: var(--line-height-tight);
 }
 
 .section-title {
-  font-size: var(--font-size-xl);
+  font-size: var(--type-xl);
   font-weight: 600;
   line-height: var(--line-height-tight);
 }

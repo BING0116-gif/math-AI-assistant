@@ -939,17 +939,17 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100vh;        /* 锁定视口高度，使中部自适应、内部三列可独立滚动 */
   overflow: hidden;     /* 整页不再随内容滚动 */
-  background: var(--canvas);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--ink-1);
+  font-family: var(--font-ui);
 }
-.wb-header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
-.wb-back { background: none; border: none; color: var(--accent); cursor: pointer; font-size: var(--font-size-sm); }
-.wb-upload { min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--radius-sm); background: var(--accent); color: white; cursor: pointer; }
+.wb-header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.wb-back { background: none; border: none; color: var(--accent); cursor: pointer; font-size: var(--type-sm); }
+.wb-upload { min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--r-m); background: var(--accent); color: white; cursor: pointer; }
 .wb-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .wb-upload.is-disabled { opacity: .55; cursor: not-allowed; }
-.wb-import-status { display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); font-size: var(--font-size-sm); flex-shrink: 0; }
-.wb-title { font-size: var(--font-size-lg); margin: 0; font-weight: 500; }
+.wb-import-status { display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--type-sm); flex-shrink: 0; }
+.wb-title { font-size: var(--type-lg); margin: 0; font-weight: 500; }
 .wb-spacer { flex: 1; }
 .wb-tabs { flex: 1 1 0; min-height: 0; padding: 0 20px; display: flex; flex-direction: column; overflow: hidden; }
 /* el-tabs 内部三件套：content 必须允许内部滚动 */
@@ -957,13 +957,13 @@ onBeforeUnmount(() => {
 .wb-tabs :deep(.el-tab-pane) { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .wb-ops { padding: 8px 0 24px; }
 .wb-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.wb-metric { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface); }
-.wb-metric span { color: var(--text-secondary); font-size: var(--font-size-sm); }
-.wb-metric strong { font-size: var(--font-size-xl); font-variant-numeric: tabular-nums; }
+.wb-metric { display: flex; justify-content: space-between; align-items: center; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--surface); }
+.wb-metric span { color: var(--ink-2); font-size: var(--type-sm); }
+.wb-metric strong { font-size: var(--type-xl); font-variant-numeric: tabular-nums; }
 .wb-ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .wb-task { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
 .wb-task .el-progress { flex: 1; }
-.wb-task-text { font-size: var(--font-size-sm); color: var(--text-secondary); }
+.wb-task-text { font-size: var(--type-sm); color: var(--ink-2); }
 /* === 关键：body 内部三列各自滚动，不再被外面撑高 === */
 .wb-body {
   display: grid;
@@ -981,52 +981,52 @@ onBeforeUnmount(() => {
   .wb-col--preview { min-height: 360px; }
 }
 /* === 三列各自内部滚动（flex 内滚三件套） === */
-.wb-col { background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 10px; overflow: hidden; min-height: 0; }
+.wb-col { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-m); padding: 10px; overflow: hidden; min-height: 0; }
 .wb-col--list { display: flex; flex-direction: column; }
 .wb-filters { display: flex; gap: 6px; margin-bottom: 8px; flex-shrink: 0; }
 .wb-candlist { overflow-y: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; }
-.wb-cand { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: none; cursor: pointer; text-align: left; font-size: var(--font-size-sm); color: var(--text-primary); }
+.wb-cand { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-m); background: none; cursor: pointer; text-align: left; font-size: var(--type-sm); color: var(--ink-1); }
 .wb-cand.is-active { border-color: var(--accent); background: var(--accent-soft); }
-.wb-cand__idx { font-weight: 500; color: var(--text-secondary); }
-.wb-cand__type { color: var(--text-secondary); }
+.wb-cand__idx { font-weight: 500; color: var(--ink-2); }
+.wb-cand__type { color: var(--ink-2); }
 .wb-col--main { overflow-y: auto; min-height: 0; }
-.wb-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 12px; margin-bottom: 10px; }
-.wb-card-title { margin: 0 0 8px; font-size: var(--font-size-base); font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.wb-partial-reasons { color: var(--warning); }
-.wb-hint { font-size: var(--font-size-xs); color: var(--text-tertiary); font-weight: 400; }
+.wb-card { border: 1px solid var(--border); border-radius: var(--r-m); padding: 12px; margin-bottom: 10px; }
+.wb-card-title { margin: 0 0 8px; font-size: var(--type-md); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.wb-partial-reasons { color: var(--amber); }
+.wb-hint { font-size: var(--type-xs); color: var(--ink-3); font-weight: 400; }
 .wb-stem { white-space: normal; margin: 0 0 8px; line-height: 1.7; }
 .wb-stem :deep(.katex) { font-size: 1.02em; }
 .wb-options { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.wb-option { padding: 4px 8px; background: var(--surface-muted); border-radius: var(--radius-xs); font-size: var(--font-size-sm); }
+.wb-option { padding: 4px 8px; background: var(--surface-2); border-radius: var(--r-s); font-size: var(--type-sm); }
 .wb-option :deep(.katex) { font-size: 1em; }
 .wb-solution { display: block; }
 .wb-solution :deep(p) { margin: 4px 0; }
-.wb-empty-inline { color: var(--text-tertiary); }
-.wb-row { display: flex; gap: 8px; font-size: var(--font-size-sm); margin: 3px 0; align-items: flex-start; }
+.wb-empty-inline { color: var(--ink-3); }
+.wb-row { display: flex; gap: 8px; font-size: var(--type-sm); margin: 3px 0; align-items: flex-start; }
 .wb-row :deep(.katex) { font-size: 1em; }
 .wb-edit-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-.wb-edit-row label { flex-shrink: 0; min-width: 84px; color: var(--text-secondary); font-size: var(--font-size-sm); }
+.wb-edit-row label { flex-shrink: 0; min-width: 84px; color: var(--ink-2); font-size: var(--type-sm); }
 .wb-edit-row .el-input, .wb-edit-row .el-textarea { flex: 1; }
 .wb-edit-kp { margin-left: 12px; }
 .wb-edit-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .wb-edit-actions .el-alert { flex: 1; margin-left: 4px; }
-.wb-k { color: var(--text-tertiary); flex-shrink: 0; min-width: 90px; }
-.wb-v { color: var(--text-primary); word-break: break-all; }
-.wb-warn { margin-top: 6px; padding: 6px 8px; background: var(--learning); color: #fff; border-radius: var(--radius-xs); font-size: var(--font-size-sm); }
-.wb-json { margin-top: 8px; border-top: 1px dashed var(--border-subtle); padding-top: 6px; }
+.wb-k { color: var(--ink-3); flex-shrink: 0; min-width: 90px; }
+.wb-v { color: var(--ink-1); word-break: break-all; }
+.wb-warn { margin-top: 6px; padding: 6px 8px; background: var(--amber); color: #fff; border-radius: var(--r-s); font-size: var(--type-sm); }
+.wb-json { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
 .wb-history { margin-top: 8px; }
 .wb-history__tag { margin-right: 4px; }
-.wb-empty { padding: 24px; text-align: center; color: var(--text-tertiary); font-size: var(--font-size-sm); }
+.wb-empty { padding: 24px; text-align: center; color: var(--ink-3); font-size: var(--type-sm); }
 .wb-col--preview { display: flex; flex-direction: column; }
-.wb-preview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
-.wb-preview-body { flex: 1; min-height: 0; overflow: auto; background: var(--surface-muted); border-radius: var(--radius-sm); }
+.wb-preview-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: var(--type-sm); color: var(--ink-2); flex-shrink: 0; }
+.wb-preview-body { flex: 1; min-height: 0; overflow: auto; background: var(--surface-2); border-radius: var(--r-m); }
 .wb-preview-img { width: 100%; display: block; }
 /* === 底部按钮固定吸底，padding-bottom 给 main 让出空间 === */
 .wb-actions {
   display: flex; align-items: center; gap: 8px; padding: 10px 0;
   flex-shrink: 0;            /* 永远不被压缩 */
   background: var(--surface);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
   position: sticky;          /* 即便 tab 内部有滚动也吸在视口内 */
   bottom: 0;
   z-index: 5;
@@ -1035,8 +1035,8 @@ onBeforeUnmount(() => {
 .wb-qbar { display: flex; align-items: center; gap: 12px; padding: 10px 0; flex-shrink: 0; }
 
 /* === 流程引导卡：折叠即可 === */
-.wb-help { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 14px; background: var(--accent-soft); border: 1px dashed var(--accent); border-radius: var(--radius-md); color: var(--text-secondary); font-size: var(--font-size-sm); margin: 10px 0 4px; flex-shrink: 0; }
-.wb-help b { color: var(--text-primary); }
+.wb-help { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 14px; background: var(--accent-soft); border: 1px dashed var(--accent); border-radius: var(--r-m); color: var(--ink-2); font-size: var(--type-sm); margin: 10px 0 4px; flex-shrink: 0; }
+.wb-help b { color: var(--ink-1); }
 .wb-help .wb-help__step { display: inline-flex; align-items: center; gap: 4px; }
 .wb-help__num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; }
 </style>

@@ -42,11 +42,11 @@ const yAxisX = computed(() => project.x(Math.min(Math.max(0, props.spec.viewport
 
 <style scoped>
 .math-plot { display: block; width: 100%; height: auto; background: var(--surface); }
-.grid line { stroke: var(--border-subtle); stroke-width: 1; }
+.grid line { stroke: var(--border); stroke-width: 1; }
 .axes line { stroke: var(--border-strong); stroke-width: 1.4; }
 .vector-series { color: var(--accent); }
 .vector-series line { stroke: currentColor; stroke-width: 3; stroke-linecap: round; }
-.vector-series text { fill: currentColor; font: 13px var(--font-sans); }
-.series-1 { color: var(--warning); } .series-2 { color: var(--knowledge); } .series-3 { color: var(--weak); }
+.vector-series text { fill: currentColor; font: 13px var(--font-ui); }
+.series-1 { color: var(--amber); } .series-2 { color: var(--brand); } .series-3 { color: var(--rose); }
 .arrow-head { fill: var(--accent); }
 </style>

@@ -81,7 +81,7 @@
   --el-box-shadow-light: var(--shadow-1);
   --el-box-shadow-lighter: var(--shadow-1);
   --el-box-shadow-dark: var(--shadow-3);
-  --el-mask-color: var(--bg-overlay);
+  --el-mask-color: var(--overlay);
 
   /* 禁用态 */
   --el-disabled-bg-color: var(--surface-2);
@@ -229,7 +229,7 @@
 }
 
 .el-loading-mask {
-  background-color: var(--bg-overlay);
+  background-color: var(--overlay);
   border-radius: var(--r-m);
 }
 

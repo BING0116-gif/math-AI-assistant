@@ -46,10 +46,10 @@ export function useProfileMetrics(
   })
   const stabilityLevelColor = computed(() => {
     const score = memoryStabilityScore.value
-    if (score >= 80) return 'var(--mastered)'
+    if (score >= 80) return 'var(--green)'
     if (score >= 60) return 'var(--accent)'
-    if (score >= 40) return 'var(--learning)'
-    return 'var(--weak)'
+    if (score >= 40) return 'var(--amber)'
+    return 'var(--rose)'
   })
   const fragilePoints = computed(() => masteryItems.value
     .filter((item: any) => item.value < 0.35)

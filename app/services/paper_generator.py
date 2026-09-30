@@ -234,13 +234,14 @@ def _grade_one(snapshot: Dict[str, Any], answer: Any) -> Dict[str, Any]:
         correct = _num_close(str(answer or ""), spec.get("value"))
     elif kind == "expression_fill":
         correct = _expr_equiv(str(answer or ""), spec.get("canonical"), spec.get("variables"))
-    correct_answer = {
-        "choice": spec.get("correct"),
-        "multi_choice": "、".join(str(item) for item in (spec.get("correct") or [])),
-        "judge": "对" if spec.get("correct") else "错",
-        "numeric_fill": spec.get("value"),
-        "expression_fill": spec.get("canonical"),
-    }.get(kind, "")
+    # 正确答案展示文案按题型惰性构造:judge 题的 spec.correct 是 bool,
+    # 不能落进 multi_choice 的 join 分支(否则 'bool' object is not iterable)。
+    if kind == "multi_choice":
+        correct_answer = "、".join(str(item) for item in (spec.get("correct") or []))
+    elif kind == "judge":
+        correct_answer = "对" if spec.get("correct") else "错"
+    else:
+        correct_answer = {"choice": spec.get("correct"), "numeric_fill": spec.get("value"), "expression_fill": spec.get("canonical")}.get(kind, "")
     result = {"correct": correct, "correct_answer": correct_answer}
     if graded_extra:
         result.update(graded_extra)

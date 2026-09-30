@@ -420,22 +420,22 @@ onMounted(async () => {
 
 <style scoped>
 .wb { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-.wb-header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
-.wb-back { background: none; border: none; color: var(--accent); cursor: pointer; font-size: var(--font-size-sm); }
-.wb-title { font-size: var(--font-size-lg); margin: 0; font-weight: 500; }
+.wb-header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.wb-back { background: none; border: none; color: var(--accent); cursor: pointer; font-size: var(--type-sm); }
+.wb-title { font-size: var(--type-lg); margin: 0; font-weight: 500; }
 .wb-spacer { flex: 1; }
 .wb-tabs { flex: 1; min-height: 0; padding: 0 20px; display: flex; flex-direction: column; overflow: hidden; }
 .wb-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: auto; }
 .wb-tabs :deep(.el-tab-pane) { display: flex; flex-direction: column; }
 .compose { max-width: 860px; display: grid; gap: 14px; padding-bottom: 32px; }
-.card { background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px; }
-.card h3 { margin: 0 0 12px; font-size: var(--font-size-base); font-weight: 500; }
-.hint { color: var(--text-tertiary); font-size: var(--font-size-sm); margin: 8px 0 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-m); padding: 16px; }
+.card h3 { margin: 0 0 12px; font-size: var(--type-md); font-weight: 500; }
+.hint { color: var(--ink-3); font-size: var(--type-sm); margin: 8px 0 0; }
 .rule-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
 .rule-item { display: flex; align-items: center; gap: 8px; }
-.rule-item label { color: var(--text-secondary); font-size: var(--font-size-sm); min-width: 62px; }
+.rule-item label { color: var(--ink-2); font-size: var(--type-sm); min-width: 62px; }
 .ops { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.preview { margin-top: 12px; border-top: 1px dashed var(--border-subtle); padding-top: 10px; }
+.preview { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
 .preview-list { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .preview-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .preview-list .stem { flex: 1; min-width: 260px; line-height: 1.6; }
@@ -443,24 +443,24 @@ onMounted(async () => {
 .paper { padding: 4px 8px; }
 .paper-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .paper-title { margin: 0; text-align: center; }
-.paper-meta { text-align: center; color: var(--text-secondary); font-size: var(--font-size-sm); }
+.paper-meta { text-align: center; color: var(--ink-2); font-size: var(--type-sm); }
 .paper-questions { margin: 16px 0 0; padding-left: 22px; display: grid; gap: 18px; }
 .paper-q-head { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .stem { line-height: 1.75; overflow-wrap: anywhere; }
 .stem :deep(.katex) { font-size: 1.02em; }
 .options { display: grid; gap: 6px; margin-top: 8px; }
-.option { padding: 4px 10px; border-radius: var(--radius-xs); background: var(--surface-muted); font-size: var(--font-size-sm); }
+.option { padding: 4px 10px; border-radius: var(--r-s); background: var(--surface-2); font-size: var(--type-sm); }
 .option.right { background: var(--accent-soft); outline: 1px solid var(--accent); }
-.answer { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-muted); border-radius: var(--radius-xs); font-size: var(--font-size-sm); }
+.answer { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: var(--r-s); font-size: var(--type-sm); }
 .answer p { margin: 0 0 6px; }
 .qt { max-width: 960px; padding-bottom: 32px; display: flex; flex-direction: column; }
 .qt-form { display: grid; gap: 8px; }
 .qt-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.qt-label { color: var(--text-secondary); font-size: var(--font-size-sm); margin-top: 4px; }
+.qt-label { color: var(--ink-2); font-size: var(--type-sm); margin-top: 4px; }
 .qt-samples { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 14px; max-height: 56vh; overflow: auto; }
 .qt-samples li { display: grid; gap: 6px; }
 .qt-sample-head { display: flex; gap: 6px; flex-wrap: wrap; }
-.qt-sample-answer { margin: 0; color: var(--text-secondary); font-size: var(--font-size-sm); }
+.qt-sample-answer { margin: 0; color: var(--ink-2); font-size: var(--type-sm); }
 /* 打印：只输出试卷内容 */
 @media print {
   .no-print { display: none !important; }
