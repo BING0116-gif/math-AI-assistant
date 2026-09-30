@@ -7,7 +7,7 @@
       <span v-if="tree" class="version-badge">{{ tree.version.name }}</span>
     </template>
 
-    <div class="catalog" :aria-busy="loading">
+    <div ref="bodyEl" class="catalog" :aria-busy="loading">
       <!-- Inline title + desc -->
       <div class="catalog-intro">
         <h1 class="catalog-title">高等数学知识图谱</h1>
@@ -32,7 +32,7 @@
 
         <!-- 图谱 + 详情面板 -->
         <div class="graph-layout">
-          <nav class="chapter-nav" aria-label="课程章节">
+          <nav class="chapter-nav card" aria-label="课程章节">
             <p class="chapter-nav-label">章节</p>
             <button v-for="chapter in chapterList" :key="chapter.id" type="button" :class="{ active: chapter.id === activeChapterId }" :aria-current="chapter.id === activeChapterId ? 'true' : undefined" @click="selectChapter(chapter.id)">
               <span>{{ chapter.name }}</span><small>{{ chapter.pointCount }} 个知识点</small>
@@ -42,12 +42,10 @@
             <KnowledgeGraph2D v-if="viewMode === '2d'" :tree="tree" :mastery="masteryMap" :active-chapter-id="activeChapterId" :selected-point-id="selectedPoint?.id || ''" @chapter-change="selectChapter" @select-point="selectPoint" />
             <KnowledgeGalaxy v-else :tree="tree" @select-point="selectPoint" @select-branch="selectBranch" />
           </div>
-          <aside class="detail-panel" :class="{ 'detail-panel--empty': !hasSelection }">
+          <aside class="detail-panel card" :class="{ 'detail-panel--empty': !hasSelection }">
             <!-- 空状态 -->
             <div v-if="!hasSelection" class="detail-empty">
-              <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.8" class="detail-empty-icon" aria-hidden="true">
-                <path d="M8 37V17l16-8 16 8v20l-16 8-16-8Z"/><path d="m8 17 16 8 16-8M24 25v20"/>
-              </svg>
+              <div class="detail-empty-icon" aria-hidden="true"><Network :size="22" :stroke-width="1.75" /></div>
               <p class="start-kicker">{{ primaryRecommendation ? '今日主推荐' : '推荐起点' }}</p>
               <h2>{{ startingPoint?.name || '从当前章节开始' }}</h2>
               <p>{{ primaryRecommendation?.reason || startingPoint?.description || '按章节顺序建立基础，再沿箭头进入下一步。' }}</p>
@@ -83,9 +81,7 @@
               <!-- 掌握度 -->
               <div class="detail-section">
                 <div class="section-label">掌握度</div>
-                <div class="mastery-bar-track">
-                  <div class="mastery-bar-fill" :style="{ width: masteryPercent + '%' }"></div>
-                </div>
+                <div class="progress mastery-progress"><i :style="{ width: masteryPercent + '%' }"></i></div>
                 <span class="mastery-text">
                   <em v-if="masteryInfo" class="mastery-status" :class="masteryInfo.status">{{ masteryLabel }}</em>
                   <em v-else>{{ masteryLabel }} · 证据 0 次</em>
@@ -152,10 +148,10 @@
 
               <!-- 操作按钮 -->
               <div class="detail-actions">
-                <button class="action-btn primary" @click="openLearning(selectedPoint)">进入学习空间</button>
-                <button class="action-btn" @click="goToPractice(selectedPoint)">推荐练习</button>
-                <button class="action-btn" @click="askAi(selectedPoint)">让 AI 讲解</button>
-                <button class="action-btn" @click="goToRelatedErrors(selectedPoint)">查看全部关联错题</button>
+                <button class="action-btn primary" @click="openLearning(selectedPoint)"><BookOpen :size="15" :stroke-width="1.75" />进入学习空间</button>
+                <button class="action-btn" @click="goToPractice(selectedPoint)"><Target :size="15" :stroke-width="1.75" />推荐练习</button>
+                <button class="action-btn" @click="askAi(selectedPoint)"><MessageCircle :size="15" :stroke-width="1.75" />让 AI 讲解</button>
+                <button class="action-btn" @click="goToRelatedErrors(selectedPoint)"><BookX :size="15" :stroke-width="1.75" />查看全部关联错题</button>
               </div>
             </article>
 
@@ -170,7 +166,7 @@
                 <div class="branch-points">
                   <button v-for="point in branchPoints" :key="point.id" class="branch-point-btn" @click="selectPoint(point.id)">
                     <span class="branch-point-name">{{ point.name }}</span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+                    <ChevronRight :size="14" :stroke-width="1.75" />
                   </button>
                 </div>
               </div>
@@ -183,11 +179,13 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { BookOpen, BookX, ChevronRight, MessageCircle, Network, Target } from 'lucide-vue-next'
 import AppShell from '@/components/shell/AppShell.vue'
 import KnowledgeGraph2D from '@/components/knowledge/KnowledgeGraph2D.vue'
+import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
 import { getCourseLearningMap, getCourseTree, getKnowledgePoint, getKnowledgePointLearning, listCourses } from '@/api/knowledge'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -207,6 +205,8 @@ const tree = ref(null)
 const loading = ref(true)
 const error = ref('')
 const requiresAuth = ref(false)
+const bodyEl = ref(null)
+const playEntrance = useEntranceAnimation(() => bodyEl.value ?? undefined, { autoplay: false })
 const selectedPoint = ref(null)
 const selectedBranch = ref(null)
 const pointLoading = ref(false)
@@ -217,7 +217,7 @@ const selectedResources = ref([])
 const activeChapterId = ref('')
 
 // 资源类型展示名
-const RESOURCE_TYPE_LABELS = { lesson: '讲解', formula: '公式', example: '例题', exercise: '练习' }
+const RESOURCE_TYPE_LABELS = { lesson: '讲解', formula: '公式', example: '例题', exercise: '练习', intuition: '直觉', concept: '概念', definition: '定义', visual: '图解', animation: '动画', worked_example: '例题', common_error: '易错', exam_focus: '考点', checkpoint: '自检', exercise_set: '练习', summary: '小结', source_reference: '来源' }
 
 // 登录成功后自动重新加载图谱
 watch(() => authStore.isAuthenticated, (val) => {
@@ -321,6 +321,8 @@ async function loadCatalog() {
     const recommended = allPoints.value.find(point => point.id === learningMap.value?.primary_recommendation?.knowledge_point_id)
     if (!requestedPoint && recommended?.chapterId) activeChapterId.value = recommended.chapterId
     if (requestedPoint) await selectPoint(requestedPoint.id, { updateRoute: false })
+    await nextTick()
+    playEntrance()
   } catch (err) {
     requiresAuth.value = err.response?.status === 401
     error.value = requiresAuth.value
@@ -424,21 +426,22 @@ onMounted(loadCatalog)
 }
 .catalog-title {
   margin: 0;
-  font-size: var(--font-size-xl);
-  color: var(--text-primary);
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  color: var(--ink-1);
   font-weight: 700;
 }
 .catalog-desc {
-  margin: 2px 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
 }
 
 .version-badge {
-  padding: 5px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand-text);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -451,36 +454,19 @@ onMounted(loadCatalog)
   gap: 18px;
   padding: 10px 14px;
   margin: 12px 0 14px;
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  font-size: 12px;
-  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-1);
+  font-size: 12.5px;
+  color: var(--ink-2);
 }
 .legend-bar .legend-hint { margin-left: 0; font-size: 13px; }
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.legend-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.legend-dot.root { background: #C8913D; }
-.legend-dot.chapter { background: #5F947C; }
-.legend-dot.section { background: #417E7A; }
-.legend-dot.point { background: #5A8A8A; }
 
 .legend-hint {
   margin-left: auto;
   font-size: 11px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   letter-spacing: 0.02em;
 }
 
@@ -488,28 +474,30 @@ onMounted(loadCatalog)
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-muted);
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
 }
 
 .view-toggle button {
   border: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--ink-2);
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .view-toggle button.active {
-  background: var(--accent);
-  color: #fff;
+  background: var(--brand-soft-2);
+  color: var(--brand-text);
+  font-weight: 600;
 }
 
 /* 图谱 + 详情布局 */
@@ -526,32 +514,30 @@ onMounted(loadCatalog)
   flex: 0 0 auto;
   padding: 14px;
   overflow-y: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
 }
 
-.chapter-nav-label { margin: 0 8px 10px; color: var(--text-tertiary); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.chapter-nav button { width: 100%; min-height: 56px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; margin-bottom: 6px; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
-.chapter-nav button:hover { background: var(--surface-hover); }.chapter-nav button.active { border-color: var(--accent); background: var(--accent-soft); }.chapter-nav button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
-.chapter-nav button span { font-size: 14px; font-weight: 650; }.chapter-nav button small { color: var(--text-tertiary); font-size: 12px; }
+.chapter-nav-label { margin: 0 8px 10px; color: var(--ink-3); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.chapter-nav button { width: 100%; min-height: 56px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; margin-bottom: 4px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-1); font: inherit; text-align: left; cursor: pointer; transition: background .15s; }
+.chapter-nav button:hover { background: var(--surface-2); }
+.chapter-nav button.active { background: var(--brand-soft-2); }
+.chapter-nav button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.chapter-nav button span { font-size: 13.5px; font-weight: 600; }
+.chapter-nav button.active span { color: var(--brand-text); }
+.chapter-nav button small { color: var(--ink-3); font-size: 12px; }
 
 .graph-area {
   flex: 1;
   min-width: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--r-l);
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  background: #f4f7fb;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
 }
 
 /* 右侧详情面板 */
 .detail-panel {
   width: 340px;
   flex-shrink: 0;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
-  background: var(--surface);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -564,25 +550,30 @@ onMounted(loadCatalog)
 /* 空状态 */
 .detail-empty {
   padding: 28px 24px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .detail-empty-icon {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
   margin-bottom: 16px;
-  opacity: 0.4;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand-text);
 }
 
 .detail-empty p {
   margin: 0 0 14px;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.6;
 }
-.detail-empty .start-kicker { margin-bottom: 4px; color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
-.detail-empty h2 { margin: 0 0 10px; color: var(--text-primary); font-size: 20px; line-height: 1.35; }
-.detail-empty ul { margin: 18px 0; padding-left: 20px; color: var(--text-secondary); font-size: 14px; line-height: 1.8; }
-.start-button { width: 100%; min-height: 44px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.detail-empty .start-kicker { margin-bottom: 4px; color: var(--accent-text); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.detail-empty h2 { margin: 0 0 10px; color: var(--ink-1); font-size: 20px; line-height: 1.35; }
+.detail-empty ul { margin: 18px 0; padding-left: 20px; color: var(--ink-2); font-size: 13.5px; line-height: 1.8; }
+.start-button { width: 100%; min-height: 44px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; transition: background .15s, box-shadow .15s; }
+.start-button:hover { background: var(--accent-strong); box-shadow: var(--glow); }
 
 /* 加载中 */
 .detail-loading {
@@ -592,15 +583,15 @@ onMounted(loadCatalog)
   justify-content: center;
   gap: 12px;
   padding: 60px 24px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   font-size: 13px;
 }
 
 .spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid var(--border-subtle);
-  border-top-color: var(--accent);
+  border: 2px solid var(--border);
+  border-top-color: var(--brand);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -624,9 +615,9 @@ onMounted(loadCatalog)
 
 .detail-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--ink-1);
   line-height: 1.4;
 }
 
@@ -634,9 +625,10 @@ onMounted(loadCatalog)
   font-size: 11px;
   font-weight: 600;
   padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--ink-2);
   white-space: nowrap;
 }
 
@@ -644,7 +636,7 @@ onMounted(loadCatalog)
   margin: 0;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .detail-section {
@@ -656,42 +648,29 @@ onMounted(loadCatalog)
 .section-label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink-2);
   letter-spacing: 0.03em;
 }
 
-/* 掌握度条 */
-.mastery-bar-track {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  overflow: hidden;
-}
-
-.mastery-bar-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 0.4s ease;
-}
+.mastery-progress { width: 100%; }
 
 .mastery-text {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
 }
 
 .mastery-status {
   font-style: normal;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   margin-right: 2px;
 }
 
-.mastery-status.mastered { background: rgba(47,143,91,.18); color: #46C77F; }
-.mastery-status.learning { background: rgba(176,138,46,.18); color: #D9B44A; }
-.mastery-status.weak { background: rgba(192,85,79,.18); color: #E08A7A; }
-.mastery-status.untouched { background: rgba(90,122,122,.16); color: rgba(180,196,188,.7); }
+.mastery-status.mastered { background: var(--green-soft); color: var(--green); }
+.mastery-status.learning { background: var(--amber-soft); color: var(--amber); }
+.mastery-status.weak { background: var(--rose-soft); color: var(--rose); }
+.mastery-status.untouched { background: var(--surface-2); color: var(--ink-2); }
 
 /* 学习资源 */
 .resource-list {
@@ -704,19 +683,19 @@ onMounted(loadCatalog)
   display: flex;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--surface-muted);
+  border-radius: 10px;
+  background: var(--surface-2);
 }
 
 .resource-type {
   flex-shrink: 0;
   align-self: flex-start;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--knowledge-soft);
-  color: var(--knowledge);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand-text);
 }
 
 .resource-body {
@@ -724,9 +703,9 @@ onMounted(loadCatalog)
 }
 
 .resource-title {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink-1);
   line-height: 1.4;
 }
 
@@ -734,7 +713,7 @@ onMounted(loadCatalog)
   margin: 2px 0 0;
   font-size: 12px;
   line-height: 1.55;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -754,8 +733,8 @@ onMounted(loadCatalog)
   justify-content: space-between;
   gap: 8px;
   padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  border: 1px solid var(--border);
   background: var(--surface);
   cursor: pointer;
   font: inherit;
@@ -764,7 +743,7 @@ onMounted(loadCatalog)
 }
 
 .related-error-item:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
   border-color: var(--border-strong);
 }
 
@@ -774,20 +753,20 @@ onMounted(loadCatalog)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  color: var(--ink-2);
 }
 
 .related-error-state {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
 }
 
-.related-error-state.ok { background: rgba(47,143,91,.18); color: #46C77F; }
-.related-error-state.bad { background: rgba(192,85,79,.18); color: #E08A7A; }
+.related-error-state.ok { background: var(--green-soft); color: var(--green); }
+.related-error-state.bad { background: var(--rose-soft); color: var(--rose); }
 
 /* 列表 */
 .detail-list {
@@ -801,16 +780,16 @@ onMounted(loadCatalog)
 
 .detail-list li {
   padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--surface-muted);
-  font-size: 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12.5px;
   line-height: 1.5;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .formula-list li {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 /* 子知识点标签 */
@@ -822,18 +801,17 @@ onMounted(loadCatalog)
 
 .child-point-tag {
   padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--knowledge-soft);
-  color: var(--knowledge);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand-text);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .child-point-tag:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--brand-soft-2);
 }
 
 /* 操作按钮 */
@@ -845,23 +823,27 @@ onMounted(loadCatalog)
 }
 
 .action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
   min-height: 44px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
+  border-radius: 10px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-strong);
   background: var(--surface);
-  color: var(--text-secondary);
+  color: var(--ink-2);
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   font-family: inherit;
 }
 
 .action-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  border-color: var(--brand);
 }
 
 .action-btn.primary {
@@ -871,8 +853,9 @@ onMounted(loadCatalog)
 }
 
 .action-btn.primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  box-shadow: var(--glow);
 }
 
 /* 章节/分支详情 */
@@ -894,24 +877,24 @@ onMounted(loadCatalog)
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  border: 1px solid var(--border);
   background: var(--surface);
   cursor: pointer;
   text-align: left;
   transition: background 0.15s, border-color 0.15s;
   font-family: inherit;
-  color: var(--text-primary);
+  color: var(--ink-1);
   width: 100%;
 }
 
 .branch-point-btn:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
   border-color: var(--border-strong);
 }
 
 .branch-point-btn svg {
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   flex-shrink: 0;
 }
 
@@ -924,31 +907,34 @@ onMounted(loadCatalog)
 .state {
   padding: 64px 20px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--ink-2);
 }
 
 .state.error-state h2 {
-  color: var(--text-primary);
+  color: var(--ink-1);
   font-size: 18px;
   margin-bottom: 8px;
 }
 
 .state.error-state p {
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   margin-bottom: 16px;
 }
 
 .state.error-state button {
   min-height: 40px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   padding: 0 18px;
   background: var(--accent);
   color: #fff;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  transition: background .15s;
 }
+
+.state.error-state button:hover { background: var(--accent-strong); }
 
 /* 响应式 */
 @media (max-width: 1100px) {
@@ -1005,11 +991,11 @@ onMounted(loadCatalog)
     overflow: visible;
   }
 
-  .catalog-header h1 {
-    font-size: 17px;
+  .catalog-title {
+    font-size: 20px;
   }
 
-  .header-desc {
+  .catalog-desc {
     font-size: 12px;
   }
 
@@ -1037,14 +1023,15 @@ onMounted(loadCatalog)
 .review-notice {
   margin: 0 0 16px;
   padding: 12px 14px;
-  border: 1px dashed var(--border-strong, #8a96a3);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  color: var(--text-primary);
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-1);
 }
 .review-notice { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+.review-notice strong { color: var(--accent-text); }
 .unlock-notice p,
-.review-notice p { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.5; }
+.review-notice p { margin: 4px 0 0; color: var(--ink-2); line-height: 1.5; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

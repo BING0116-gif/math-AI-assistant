@@ -1,8 +1,8 @@
 <template>
-  <article class="lesson-card" :class="`lesson-card--${resource.type}`" :aria-labelledby="titleId">
+  <article class="lesson-card card" :class="`lesson-card--${resource.type}`" :aria-labelledby="titleId">
     <header class="lesson-card__header">
       <div><span class="lesson-card__kind">{{ typeLabel }}</span><h3 :id="titleId">{{ resource.title }}</h3></div>
-      <button class="lesson-card__ask" type="button" @click="$emit('ask-ai', resource)">让 AI 讲这一步</button>
+      <button class="lesson-card__ask" type="button" @click="$emit('ask-ai', resource)"><MessageCircle :size="14" :stroke-width="1.75" />让 AI 讲这一步</button>
     </header>
     <ol v-if="isExample" class="example-steps">
       <li v-for="(step, index) in exampleSteps" :key="index">
@@ -43,6 +43,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { MessageCircle } from 'lucide-vue-next'
 import MathAnimationCard from '@/components/math/MathAnimationCard.vue'
 import MathVisualCard from '@/components/math/MathVisualCard.vue'
 import { renderMarkdown } from '@/utils/markdown'
@@ -72,6 +73,28 @@ function toggleFeedback(index) { feedbackOpen[index] = !feedbackOpen[index] }
 </script>
 
 <style scoped>
-.lesson-card{scroll-margin-top:20px;padding:24px;border:1px solid var(--border-light);border-radius:18px;background:var(--bg-card);box-shadow:0 8px 24px rgba(15,23,42,.05)}
-.lesson-card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.lesson-card__kind{color:var(--primary);font-size:12px;font-weight:700;letter-spacing:.08em}.lesson-card h3{margin:4px 0 0;color:var(--text-primary);font-size:20px}.lesson-card__ask{flex:none;min-height:44px;padding:0 14px;border:1px solid var(--border-light);border-radius:10px;background:transparent;color:var(--primary);cursor:pointer}.math-content{color:var(--text-secondary);line-height:1.8;overflow-wrap:anywhere}.example-steps,.checkpoint-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}.example-steps li,.checkpoint-list li{overflow:hidden;border:1px solid var(--border-light);border-radius:12px;background:var(--bg-secondary)}.example-steps button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:0;background:transparent;color:var(--text-primary);cursor:pointer;text-align:left}.example-steps button strong{color:var(--primary);font-size:13px}.example-steps .math-content{padding:4px 16px 16px}.checkpoint-note{margin:0 0 14px;color:var(--text-secondary)}.checkpoint-list li{padding:16px}.checkpoint-list button,.practice-button{min-height:44px;margin-top:10px;padding:0 14px;border:0;border-radius:9px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer}.checkpoint-feedback{margin-top:12px;padding:14px;border-left:4px solid var(--warning);border-radius:8px;background:var(--bg-card);color:var(--text-secondary)}.checkpoint-feedback p{margin:6px 0;line-height:1.7}.resource-fallback{margin-top:14px}button:focus-visible{outline:3px solid var(--primary);outline-offset:3px}@media(max-width:600px){.lesson-card{padding:18px 16px}.lesson-card__header{display:block}.lesson-card__ask{width:100%;margin-top:12px}.lesson-card h3{font-size:18px}.math-content{font-size:16px}.example-steps button{align-items:flex-start;flex-direction:column}}
+.lesson-card{scroll-margin-top:20px;padding:24px}
+.lesson-card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.lesson-card__kind{color:var(--brand-text);font-size:12px;font-weight:700;letter-spacing:.08em}
+.lesson-card h3{margin:4px 0 0;color:var(--ink-1);font-size:20px}
+.lesson-card__ask{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border:1px solid var(--border-strong);border-radius:10px;background:transparent;color:var(--ink-2);font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.lesson-card__ask:hover{color:var(--brand-text);border-color:var(--brand);background:var(--brand-soft)}
+.math-content{color:var(--ink-2);line-height:1.8;overflow-wrap:anywhere}
+.example-steps,.checkpoint-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.example-steps li,.checkpoint-list li{overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.example-steps button{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:0;background:transparent;color:var(--ink-1);cursor:pointer;text-align:left;font:inherit}
+.example-steps button strong{color:var(--brand-text);font-size:13px}
+.example-steps .math-content{padding:4px 16px 16px}
+.checkpoint-note{margin:0 0 14px;color:var(--ink-2)}
+.checkpoint-list li{padding:16px}
+.checkpoint-list button,.practice-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;margin-top:10px;padding:0 14px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.checkpoint-list button:hover,.practice-button:hover{color:var(--brand-text);border-color:var(--brand);background:var(--brand-soft)}
+.practice-button{border-color:var(--accent);background:var(--accent);color:#fff}
+.practice-button:hover{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff;box-shadow:var(--glow)}
+.checkpoint-feedback{margin-top:12px;padding:14px;border-left:4px solid var(--amber);border-radius:8px;background:var(--amber-soft);color:var(--ink-2)}
+.checkpoint-feedback strong{color:var(--amber)}
+.checkpoint-feedback p{margin:6px 0;line-height:1.7}
+.resource-fallback{margin-top:14px}
+button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+@media(max-width:600px){.lesson-card{padding:18px 16px}.lesson-card__header{display:block}.lesson-card__ask{width:100%;margin-top:12px}.lesson-card h3{font-size:18px}.math-content{font-size:16px}.example-steps button{align-items:flex-start;flex-direction:column}}
 </style>
