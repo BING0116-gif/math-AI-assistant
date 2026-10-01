@@ -222,6 +222,13 @@ class Settings(BaseSettings):
     # 单次解析 subprocess 超时（秒）
     CONTENT_PARSER_TIMEOUT_SECONDS: int = Field(default=600, alias="CONTENT_PARSER_TIMEOUT_SECONDS")
 
+    # ── 手写笔记（T02；SQL 只存已校验的相对 storage_key）──
+    NOTE_STORAGE_ROOT: str = Field(default="./runtime/notes", alias="NOTE_STORAGE_ROOT")
+    NOTE_MAX_REVISION_BYTES: int = Field(default=5 * 1024 * 1024, alias="NOTE_MAX_REVISION_BYTES")
+    NOTE_MAX_ASSET_BYTES: int = Field(default=20 * 1024 * 1024, alias="NOTE_MAX_ASSET_BYTES")
+    NOTE_ASSET_CLEANUP_DELAY_HOURS: int = Field(default=24, alias="NOTE_ASSET_CLEANUP_DELAY_HOURS")
+    NOTE_RETENTION_HOURS: int = Field(default=24 * 30, alias="NOTE_RETENTION_HOURS")
+
     # ── MathAnimator（T15，默认关闭；启用后由对话 Agent 工具按教学价值触发）──
     MATH_ANIMATION_ENABLED: bool = Field(default=False, alias="MATH_ANIMATION_ENABLED")
     ANIMATION_STORAGE_ROOT: str = Field(default="./runtime/animations", alias="ANIMATION_STORAGE_ROOT")

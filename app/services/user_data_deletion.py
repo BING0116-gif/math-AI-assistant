@@ -59,7 +59,10 @@ async def delete_user_data(session: AsyncSession, user_id: str) -> Dict[str, int
         ),
     )
 
+    from app.services.note_cleanup import queue_user_note_purge
+
     counts: Dict[str, int] = {}
+    counts["note_storage_objects"] = await queue_user_note_purge(session, user_id)
     for name, statement in statements:
         result = await session.execute(statement)
         counts[name] = max(result.rowcount or 0, 0)

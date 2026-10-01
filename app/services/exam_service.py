@@ -69,7 +69,7 @@ async def exam_options(course_id: str | None = None) -> dict[str, Any]:
         chapters = list((await db.execute(select(Chapter).where(Chapter.version_id == version.id).order_by(Chapter.sort_order))).scalars())
         points = list((await db.execute(select(KnowledgePoint).where(KnowledgePoint.version_id == version.id).order_by(KnowledgePoint.sort_order))).scalars())
         counts = dict((await db.execute(select(Question.question_type, func.count(Question.id)).where(Question.course_id == course.id, Question.version_id == version.id, Question.review_status == "published", Question.exam_eligible.is_(True), Question.auto_grading_eligible.is_(True), Question.grading_mode == "deterministic", Question.question_type.in_(SUPPORTED_TYPES)).group_by(Question.question_type))).all())
-        return {"courses": [{"id": row.id, "name": row.name} for row in courses], "course_id": course.id, "version_id": version.id, "chapters": [{"id": row.id, "name": row.name} for row in chapters], "knowledge_points": [{"code": row.code, "name": row.name, "chapter_id": row.chapter_id} for row in points], "question_types": [{"value": kind, "available": int(counts.get(kind, 0))} for kind in sorted(SUPPORTED_TYPES)]}
+        return {"courses": [{"id": row.id, "name": row.name} for row in courses], "course_id": course.id, "version_id": version.id, "chapters": [{"id": row.id, "name": row.name, "parent_id": row.parent_id, "level": row.level} for row in chapters], "knowledge_points": [{"code": row.code, "name": row.name, "chapter_id": row.chapter_id} for row in points], "question_types": [{"value": kind, "available": int(counts.get(kind, 0))} for kind in sorted(SUPPORTED_TYPES)]}
 
 
 async def create_exam(user_id: str, config: dict[str, Any]) -> dict[str, Any]:

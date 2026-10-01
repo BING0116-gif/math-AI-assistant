@@ -291,6 +291,11 @@ class MemoryScheduledTasks:
             replace_existing=True,
         )
 
+        # 手写笔记资产清理：过期资产入队 + 处理清理任务
+        from app.services.note_cleanup import process_note_cleanup_tasks, queue_expired_note_cleanup
+        self._scheduler.add_job(queue_expired_note_cleanup, "interval", hours=1, id="queue_expired_note_cleanup", replace_existing=True)
+        self._scheduler.add_job(process_note_cleanup_tasks, "interval", minutes=10, id="process_note_cleanup_tasks", replace_existing=True)
+
         # 每日凌晨 2:00 执行记忆强度衰减
         self._scheduler.add_job(
             self._run_async(self.decay_memory_strength),
