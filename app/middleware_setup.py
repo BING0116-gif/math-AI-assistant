@@ -23,7 +23,7 @@ MAX_IMAGE_BODY_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 class RequestBodySizeMiddleware:
-    """限制请求体大小，防止超大请求。"""
+    """限制实际请求体大小，不能只信任可伪造或缺失的 Content-Length。"""
 
     def __init__(self, app: ASGIApp):
         self.app = app
@@ -33,13 +33,23 @@ class RequestBodySizeMiddleware:
             await self.app(scope, receive, send)
             return
 
-        content_length = 0
+        declared_length = None
         for header_name, header_value in scope.get("headers", []):
             if header_name == b"content-length":
-                content_length = int(header_value)
+                try:
+                    declared_length = int(header_value)
+                except ValueError:
+                    response = JSONResponse(
+                        status_code=400,
+                        content={"detail": "无效的 Content-Length"},
+                    )
+                    await response(scope, receive, send)
+                    return
                 break
 
-        if content_length > MAX_TEXT_BODY_SIZE:
+        if declared_length is not None and (
+            declared_length < 0 or declared_length > MAX_TEXT_BODY_SIZE
+        ):
             response = JSONResponse(
                 status_code=413,
                 content={"detail": "请求体过大，文本请求最大允许 10MB"},
@@ -47,7 +57,39 @@ class RequestBodySizeMiddleware:
             await response(scope, receive, send)
             return
 
-        await self.app(scope, receive, send)
+        # Read at most limit + one chunk before entering route parsing. This also
+        # covers HTTP/1.1 chunked and HTTP/2 bodies without Content-Length.
+        buffered_messages = []
+        actual_length = 0
+        while True:
+            message = await receive()
+            buffered_messages.append(message)
+            if message["type"] == "http.disconnect":
+                break
+            if message["type"] != "http.request":
+                continue
+            actual_length += len(message.get("body", b""))
+            if actual_length > MAX_TEXT_BODY_SIZE:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": "请求体过大，文本请求最大允许 10MB"},
+                )
+                await response(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        message_index = 0
+
+        async def replay_receive():
+            nonlocal message_index
+            if message_index < len(buffered_messages):
+                message = buffered_messages[message_index]
+                message_index += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
 
 
 def setup_middleware(app: FastAPI):
