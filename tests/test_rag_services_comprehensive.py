@@ -637,7 +637,15 @@ class TestRAGRecommenderRecommend:
                      options=[], answer="A", category="导数", difficulty=3, usage_count=0)
 
         mock_vs = MagicMock()
-        mock_vs.hybrid_search = AsyncMock(return_value=[])
+        mock_vs.hybrid_search = AsyncMock(return_value=[
+            VectorSearchResult(
+                id="Q001",
+                content="相关题目",
+                metadata={"category": "导数", "difficulty": 3},
+                score=0.88,
+                distance=0.12,
+            ),
+        ])
 
         mock_llm = MagicMock()
         mock_llm.generate = AsyncMock(return_value=LLMResponse(
@@ -797,12 +805,26 @@ class TestSearchTool:
     async def test_execute(self):
         from tools.search_tool import SearchTool
         tool = SearchTool()
-        result = await tool.execute(ToolInput(
-            query="导数",
-            parameters={"query": "导数", "limit": 3},
-            context={},
-        ))
+        mock_store = MagicMock()
+        mock_store.hybrid_search = AsyncMock(return_value=[
+            VectorSearchResult(
+                id="Q1", content="求导数", metadata={"difficulty": 3},
+                score=0.9, distance=0.1,
+            ),
+        ])
+        with patch("app.services.vector_store.get_vector_store", new_callable=AsyncMock, return_value=mock_store):
+            result = await tool.execute(ToolInput(
+                query="导数",
+                parameters={"query": "导数", "limit": 3},
+                context={},
+            ))
+
         assert isinstance(result, ToolOutput)
+        assert result.success is True
+        mock_store.hybrid_search.assert_awaited_once_with(
+            query="导数", category_filter=None,
+            difficulty_range=None, n_results=3,
+        )
 
 
 class TestErrorBookTool:

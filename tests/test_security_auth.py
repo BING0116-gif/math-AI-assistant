@@ -7,7 +7,7 @@ from starlette.requests import Request
 
 from app.api.error_api import get_error_book
 from app.config.middleware_config import middleware_config
-from app.security.access_control import require_admin_role, verify_resource_ownership
+from app.security.access_control import normalize_role, require_admin_role, verify_resource_ownership
 
 
 def _request(user=None, path="/") -> Request:
@@ -76,6 +76,19 @@ def test_dashboard_admin_only():
 
     admin_request = _request(SimpleNamespace(id="admin", role="admin"))
     require_admin_role(admin_request)
+
+
+def test_reserved_teacher_role_is_student_level():
+    assert normalize_role("teacher") == "teacher"
+    teacher_request = _request(SimpleNamespace(id="teacher", role="teacher"))
+    with pytest.raises(HTTPException) as exc:
+        require_admin_role(teacher_request)
+    assert exc.value.status_code == 403
+
+
+def test_unknown_role_fails_closed_to_student():
+    assert normalize_role(None) == "student"
+    assert normalize_role("superuser") == "student"
 
 
 def test_mock_api_debug_only():

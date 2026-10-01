@@ -6,7 +6,8 @@
 - 支持语义搜索、混合搜索（向量 + 关键词 + 筛选）
 - payload 过滤在 ANN 前应用（召回率稳定）
 - 支持量化技术（可选，减少内存占用）
-- 降级策略：Qdrant 不可用时自动降级到内存模式
+- 降级策略：Qdrant 不可用时由上层显式降级到 SQL-only；不使用进程内
+  内存索引，避免多实例之间产生不一致的学生可见结果
 - 重试机制：初始化失败自动重试 3 次
 - Embedding 模型集成：SentenceTransformer 自动生成向量
 """
@@ -280,6 +281,8 @@ class QdrantVectorStoreManager:
         try:
             payload = self._clean_metadata(metadata)
             payload["question_id"] = question_id
+            payload.setdefault("content", content)
+            payload.setdefault("content_kind", "question")
 
             point = PointStruct(
                 id=_to_qdrant_id(question_id),
@@ -327,6 +330,8 @@ class QdrantVectorStoreManager:
 
                 payload = self._clean_metadata(metadata)
                 payload["question_id"] = question_id
+                payload.setdefault("content", content)
+                payload.setdefault("content_kind", "question")
 
                 points.append(
                     PointStruct(
@@ -384,16 +389,30 @@ class QdrantVectorStoreManager:
 
     async def hybrid_search(
         self,
-        query_vector: List[float],
-        query_text: str,
+        query: str,
         category_filter: Optional[str] = None,
         difficulty_range: Optional[Tuple[int, int]] = None,
         n_results: int = 10,
         vector_weight: float = 0.7,
     ) -> List[VectorSearchResult]:
+        """Search the published question corpus using text plus vector ranking.
+
+        The public contract intentionally accepts text only.  Keeping embedding
+        generation here prevents callers (API, Agent tools, and recommenders)
+        from drifting on query_vector/query_text argument conventions.
+        """
         await self.initialize()
 
-        where_filter = {}
+        query_text = str(query or "").strip()
+        if not query_text:
+            return []
+
+        query_vector = await self._embedding.encode_async(query_text)
+
+        where_filter = {
+            "content_kind": "question",
+            "review_status": "published",
+        }
         if category_filter:
             where_filter["category"] = category_filter
         if difficulty_range:
@@ -626,10 +645,14 @@ class QdrantVectorStoreManager:
         metadata: Dict[str, Any],
         vector: List[float],
     ) -> bool:
+        payload = self._clean_metadata(metadata)
+        payload["question_id"] = question_id
+        payload.setdefault("content", content)
+        payload.setdefault("content_kind", "question")
         point = PointStruct(
             id=question_id,
             vector=vector,
-            payload=self._clean_metadata(metadata),
+            payload=payload,
         )
         self._in_memory_points[question_id] = point
         return True

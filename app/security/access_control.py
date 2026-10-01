@@ -23,8 +23,6 @@ class RolePermissionMapping:
         "teacher": {
             Permission.READ_OWN_DATA,
             Permission.WRITE_OWN_DATA,
-            Permission.READ_ALL_DATA,
-            Permission.EXPORT_DATA,
         },
         "admin": {
             Permission.READ_OWN_DATA,
@@ -35,6 +33,20 @@ class RolePermissionMapping:
             Permission.EXPORT_DATA,
         },
     }
+
+
+SUPPORTED_ROLES = frozenset(RolePermissionMapping.MAPPING)
+
+
+def normalize_role(role: str | None) -> str:
+    """Return the effective role used by authorization decisions.
+
+    ``teacher`` remains a persisted, reserved role for forward compatibility,
+    but is intentionally mapped to student-level permissions until a teacher
+    surface is implemented. Unknown or empty values fail closed as students.
+    """
+    value = (role or "").strip().lower()
+    return value if value in SUPPORTED_ROLES else "student"
 
 
 def check_data_ownership(requesting_user_id: str, resource_owner_id: str) -> bool:
@@ -64,7 +76,7 @@ def require_permission(permission: Permission):
             if user is None:
                 raise HTTPException(status_code=401, detail="未认证")
 
-            user_role = getattr(user, "role", "student")
+            user_role = normalize_role(getattr(user, "role", "student"))
             user_permissions = RolePermissionMapping.MAPPING.get(user_role, set())
 
             if Permission.READ_ALL_DATA in user_permissions:
@@ -90,7 +102,7 @@ def verify_resource_ownership(
     if user is None:
         raise HTTPException(status_code=401, detail="未认证")
 
-    user_role = getattr(user, "role", "student")
+    user_role = normalize_role(getattr(user, "role", "student"))
 
     if is_admin(user_role):
         return
@@ -105,7 +117,7 @@ def require_admin_role(request: Request) -> None:
     user = getattr(request.state, "current_user", None)
     if user is None:
         raise HTTPException(status_code=401, detail="未认证")
-    user_role = getattr(user, "role", "student")
+    user_role = normalize_role(getattr(user, "role", "student"))
     if not is_admin(user_role):
         raise HTTPException(status_code=403, detail="权限不足: 需要管理员角色")
 

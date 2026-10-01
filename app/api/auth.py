@@ -11,6 +11,7 @@ from app.middleware.auth import (
 )
 from app.middleware.security import validate_input, SecurityValidationError
 from app.config.settings import settings
+from app.security.access_control import normalize_role
 
 router = APIRouter(prefix="/api/auth", tags=["认证"])
 
@@ -73,8 +74,24 @@ async def login(request: LoginRequest):
         "data": {
             "user_id": user.id,
             "username": user.username,
-            "role": user.role,
+            "role": normalize_role(user.role),
             **tokens.model_dump(),
+        },
+    }
+
+
+@router.get("/me")
+async def me(request: Request):
+    """Return the authenticated user's server-authoritative identity."""
+    user = getattr(request.state, "current_user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="未认证")
+    return {
+        "code": 0,
+        "data": {
+            "user_id": str(user.id),
+            "username": user.username,
+            "role": normalize_role(user.role),
         },
     }
 

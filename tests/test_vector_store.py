@@ -270,6 +270,54 @@ class TestVectorStoreManager:
         assert results == []
 
     @pytest.mark.asyncio
+    async def test_hybrid_search_accepts_text_and_builds_question_filter(self, manager):
+        manager._status = VectorStoreStatus.READY
+        manager._is_available = True
+        manager._last_availability_check = __import__("time").time()
+        manager._client = MagicMock()
+        manager._embedding.encode_async = AsyncMock(return_value=[0.1] * 512)
+        manager.semantic_search = AsyncMock(return_value=[
+            VectorSearchResult(
+                id="q1", content="求导数", metadata={"category": "导数"},
+                score=0.9, distance=0.1,
+            ),
+        ])
+
+        results = await manager.hybrid_search(
+            query="导数计算", category_filter="导数",
+            difficulty_range=(2, 4), n_results=5,
+        )
+
+        assert len(results) == 1
+        manager._embedding.encode_async.assert_awaited_once_with("导数计算")
+        manager.semantic_search.assert_awaited_once()
+        call = manager.semantic_search.await_args.kwargs
+        assert call["query_vector"] == [0.1] * 512
+        assert call["where"] == {
+            "content_kind": "question",
+            "review_status": "published",
+            "category": "导数",
+            "difficulty": {"gte": 2, "lte": 4},
+        }
+
+    @pytest.mark.asyncio
+    async def test_batch_upsert_preserves_content_payload(self, manager):
+        manager._status = VectorStoreStatus.READY
+        manager._is_available = True
+        manager._last_availability_check = __import__("time").time()
+        manager._client = MagicMock()
+        manager._embedding.encode = MagicMock(return_value=[0.1] * 512)
+
+        count = await manager.add_questions_batch([
+            ("q1", "题目正文", {"category": "导数", "review_status": "published"}, None),
+        ])
+
+        assert count == 1
+        point = manager._client.upsert.call_args.kwargs["points"][0]
+        assert point.payload["content"] == "题目正文"
+        assert point.payload["content_kind"] == "question"
+
+    @pytest.mark.asyncio
     async def test_get_all_ids_empty(self, manager):
         """测试空集合获取 ID"""
         manager._use_memory_fallback = True
