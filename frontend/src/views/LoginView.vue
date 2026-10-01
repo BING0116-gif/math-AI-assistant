@@ -129,7 +129,7 @@ async function submit() {
 .brand, .mobile-brand { display: inline-flex; align-items: center; gap: 10px; color: inherit; font-family: var(--font-disp); font-size: 18px; font-weight: 700; text-decoration: none; }
 .brand-mark { width: 34px; height: 34px; display: inline-grid; place-items: center; border-radius: 11px; background: rgba(255,255,255,.16); }
 .eyebrow { display: inline-flex; align-items: center; gap: 7px; margin: clamp(72px, 13vh, 150px) 0 20px; color: rgba(255,255,255,.82); font-size: 13px; letter-spacing: .04em; }
-h1 { max-width: 560px; margin: 0; font-family: var(--font-disp); font-size: clamp(38px, 4.6vw, 70px); line-height: 1.11; letter-spacing: -.04em; }
+h1 { max-width: 560px; margin: 0; font-family: var(--font-disp); font-size: clamp(34px, 4vw, 60px); line-height: 1.14; letter-spacing: -.04em; text-wrap: balance; }
 h1 em { color: color-mix(in srgb, #fff 78%, var(--accent-bright)); font-style: normal; }
 .hero-copy { max-width: 460px; margin: 24px 0 0; color: rgba(255,255,255,.78); font-size: 15px; line-height: 1.8; }
 .feature-list { display: grid; gap: 18px; margin-top: 48px; }

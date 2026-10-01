@@ -2,6 +2,16 @@
 
 日期：2026-09-30
 
+## 补充走查（2026-10-01，新增表面）
+
+随管理端总览、独立登录页与知识网络视图合入的三张新表面补档（均为运行时真实截图）：
+
+- `admin-overview-light-1440.png` / `admin-overview-dark-1440.png`：`/admin` 总览页 + AdminShell 导航壳，统计卡数据经 `/api/admin/overview` 真实返回（用户 3、已发布题目 194、学习事件 23），亮暗两态令牌正确。
+- `knowledge-network-light-1440.png` / `knowledge-network-dark-1440.png`：知识目录「知识网络」力导向视图（98 节点），主题按钮切换后 cytoscape 经 `watch(ui.theme)` 实时重绘为暗色配色，验证 P3 主题跟随机制在 force 布局下同样成立。
+- 独立登录页证据见 `qa/p4/login-page-*.png`；登录 → 角色同步（`/auth/me`）→ admin 自动落位 `/admin` 全链路实测通过。
+
+## 初始记录（2026-09-30）
+
 ## 范围与验收清单
 
 | 学生可见范围 | 功能与视觉验证 | 证据 |

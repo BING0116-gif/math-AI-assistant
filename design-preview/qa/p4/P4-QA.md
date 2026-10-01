@@ -2,6 +2,18 @@
 
 日期：2026-09-30
 
+## 补充走查（2026-10-01，暗色与移动端留档）
+
+初始走查截图仅有 light-1440，本节按 §12.2 矩阵补齐暗色与 375px 证据，同日合并入分支：
+
+- 新增暗色 1440：`login-page`、`applyhub`、`practice-setup`、`practice-runner`（真实会话答题流）、`practice-result`、`exam-setup`、`assessment-setup`。
+- 新增亮色 375：`login-page`、`applyhub`、`practice-result`。
+- 登录页（P4 LoginDialog 之外的独立 `/login` 路由页，随管理端工作流引入）在亮/暗/375 三态走查通过；主标题经 `text-wrap: balance` + 字号 clamp 校准后无孤字换行。
+- 练习全流程（选题 → 5 题作答 → 完成练习 → 结果页）在暗色下实测通过，KaTeX 公式、选项、导航与语义色正常。
+- 走查方法备注：IAB 截图表面偶发 3s 准备超时，等待后重试即恢复；低分辨率整页截图中 1.75 stroke 细线图标会因缩放近似隐形，经原分辨率裁查确认渲染正常，非缺陷。
+
+## 初始走查（2026-09-30）
+
 ## 覆盖范围
 
 - `ApplyHubView`
