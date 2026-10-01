@@ -24,7 +24,9 @@ def report(operation: str, apply: bool, details: dict) -> None:
         "details": details}, ensure_ascii=False, indent=2, default=str))
 
 
-async def qdrant_sync(apply: bool, question_id: str | None) -> None:
+async def qdrant_sync(
+    apply: bool, question_id: str | None, reindex: bool = False
+) -> None:
     async with get_db_session() as db:
         query = select(Question).where(Question.review_status == "published")
         if question_id: query = query.where(Question.id == question_id)
@@ -33,17 +35,29 @@ async def qdrant_sync(apply: bool, question_id: str | None) -> None:
     store = await get_vector_store()
     indexed = set(await store.get_all_ids()) if await store.check_availability() else set()
     sql_ids = {q.id for q in rows}
-    missing, stale = sorted(sql_ids - indexed), sorted(indexed - sql_ids) if not question_id else []
+    missing = sorted(sql_ids - indexed)
+    # The question store may also contain knowledge-resource points until the
+    # collections are physically split.  This repair operation owns question
+    # ids only and must never delete resource vectors.
+    stale = (
+        sorted(qid for qid in indexed - sql_ids if not qid.startswith("knowledge-resource:"))
+        if not question_id else []
+    )
     changed = 0
     if apply:
-        targets = [q for q in rows if q.id in missing]
+        targets = [q for q in rows if reindex or q.id in missing]
         changed = await store.add_questions_batch([(q.id, q.content, {
-            "question_type": q.question_type, "difficulty": q.difficulty,
-            "review_status": q.review_status}, None) for q in targets])
+            "content": q.content,
+            "content_kind": "question",
+            "category": q.category,
+            "question_type": q.question_type,
+            "difficulty": q.difficulty,
+            "review_status": q.review_status,
+        }, None) for q in targets])
         for qid in stale:
             changed += int(await store.remove_question(qid))
     report("qdrant_sync", apply, {"sql_published": len(sql_ids), "indexed": len(indexed),
-        "missing": missing, "stale": stale, "changed": changed})
+        "missing": missing, "stale": stale, "reindex": reindex, "changed": changed})
 
 
 async def replay(apply: bool, event_id: str | None) -> None:
@@ -87,13 +101,15 @@ async def main() -> None:
     parser.add_argument("--user-id")
     parser.add_argument("--question-id")
     parser.add_argument("--event-id")
+    parser.add_argument("--reindex", action="store_true")
     args = parser.parse_args()
     database_url = settings.ASYNC_DATABASE_URL or settings.DATABASE_URL
     if args.operation in {"qdrant-sync", "replay"} and not database_url.startswith("postgresql"):
         raise SystemExit("qdrant-sync/replay require an explicit PostgreSQL DATABASE_URL")
     await init_db()
     try:
-        if args.operation == "qdrant-sync": await qdrant_sync(args.apply, args.question_id)
+        if args.operation == "qdrant-sync":
+            await qdrant_sync(args.apply, args.question_id, args.reindex)
         elif args.operation == "replay": await replay(args.apply, args.event_id)
         else: await redis_recover(args.apply, args.user_id)
     finally:

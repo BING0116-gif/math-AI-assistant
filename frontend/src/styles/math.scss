@@ -1,0 +1,62 @@
+/* ============================================================
+   知微 Math AI — 数学公式样式(V4)
+   REFACTOR_PLAN.md §7.4:.formula 公式卡 / KaTeX 容器 / mathlive 主题
+   ============================================================ */
+
+/* 公式展示卡:MessageItem / LearningResourceCard 的展示块 */
+.formula {
+  font-family: var(--font-math);
+  font-size: 17px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
+  padding: 14px 18px;
+  margin: 10px 0 14px;
+  text-align: center;
+  color: var(--ink-1);
+  overflow-x: auto;
+}
+
+.formula i,
+.formula em {
+  font-style: italic;
+}
+
+/* KaTeX 容器:移动端长公式横向可滚 */
+.katex-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+.katex-display {
+  margin: 0;
+}
+
+.katex-display > .katex {
+  white-space: nowrap;
+}
+
+/* mathlive 公式输入:光标/选区走 V4 品牌与行动色 */
+math-field {
+  --caret-color: var(--accent);
+  --selection-color: var(--brand-soft-2);
+  --selection-background-color: var(--brand-soft);
+  --contains-highlight-background-color: var(--brand-soft);
+  --highlight-text-color: var(--brand-text);
+  --placeholder-color: var(--ink-4);
+  --placeholder-opacity: 1;
+  --text-font-family: var(--font-math);
+  color: var(--ink-1);
+}
+
+/* 数学容器内斜体变量统一衬线 */
+.math {
+  font-family: var(--font-math);
+}
+
+.math i,
+.math em {
+  font-family: var(--font-math);
+  font-style: italic;
+}

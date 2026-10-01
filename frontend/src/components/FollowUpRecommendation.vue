@@ -1,10 +1,7 @@
 <template>
-  <div class="follow-up-card" v-if="questions.length">
-
+  <div class="follow-up-card ai-card" v-if="questions.length">
     <div class="header">
-      <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-        <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-      </svg>
+      <span class="header-icon" aria-hidden="true"><Lightbulb :size="16" :stroke-width="1.75" /></span>
       <span class="title">推荐练习</span>
     </div>
     <div class="questions">
@@ -15,7 +12,7 @@
         @click="$emit('select', q)"
       >
         <div class="question-header">
-          <span class="label" :class="i === 0 ? 'basic' : 'advanced'">
+          <span class="label tag" :class="i === 0 ? 'tag-soft-green' : 'tag-soft-accent'">
             {{ i === 0 ? '基础巩固' : '能力提升' }}
           </span>
           <span class="difficulty">难度 {{ q.difficulty }}/5</span>
@@ -29,7 +26,8 @@
     </div>
     <div class="practice-cta">
       <button class="practice-btn" type="button" :disabled="busy" @click="goPractice">
-        {{ busy ? '智能选材中…' : '练类似题 →' }}
+        {{ busy ? '智能选材中…' : '练类似题' }}
+        <ArrowRight v-if="!busy" :size="14" :stroke-width="1.75" aria-hidden="true" />
       </button>
       <span v-if="hint" class="practice-hint">{{ hint }}</span>
     </div>
@@ -39,6 +37,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Lightbulb, ArrowRight } from 'lucide-vue-next'
 import { renderMarkdown } from '@/utils/markdown'
 import { recommendApi } from '@/api/recommend'
 
@@ -76,193 +75,182 @@ async function goPractice() {
 </script>
 
 <style scoped>
+/* V4 重皮(对照 chat.html):AI 来源卡片走 ai-card 渐变描边 + surface 卡体;
+   练习项 surface-2 内嵌面,基础巩固=green、能力提升=brand(全局 tag 语言) */
 .follow-up-card {
-  margin: 16px 0;
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  padding: 16px;
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-sm);
-  transition: all 0.3s ease;
-}
-
-.follow-up-card:hover {
-  box-shadow: var(--shadow-md);
-  border-color: rgba(99, 102, 241, 0.2);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-l);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
-  border-bottom: 1.5px solid var(--border-light);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-icon {
-  color: var(--primary);
-  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-s);
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--brand-soft);
+  color: var(--brand-text);
 }
 
 .title {
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--ink-1);
   letter-spacing: 0.02em;
 }
 
 .questions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .question-item {
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: var(--bg-secondary);
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--r-m);
+  background: var(--surface-2);
   border: 1px solid transparent;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
 }
 
 .question-item:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  border-color: rgba(99, 102, 241, 0.15);
+  background: var(--surface);
+  border-color: var(--brand);
   transform: translateY(-1px);
-  background: var(--bg-card);
+  box-shadow: var(--shadow-1);
 }
 
 .question-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
-  gap: 8px;
-}
-
-.label {
-  font-weight: 600;
-  font-size: 12px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  letter-spacing: 0.02em;
-}
-
-.label.basic {
-  background: rgba(16, 185, 129, 0.1);
-  color: #059669;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-}
-
-.label.advanced {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--primary);
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  margin-bottom: var(--space-2);
+  gap: var(--space-2);
 }
 
 .difficulty {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   font-weight: 500;
 }
 
 .question-content {
   font-size: 14px;
   line-height: 1.7;
-  color: var(--text-primary);
+  color: var(--ink-1);
   word-break: break-word;
 }
 
 .question-content :deep(.katex) {
-  font-size: 1.1em !important;
+  font-size: 1.05em !important;
 }
 
 .question-content :deep(.katex-display) {
-  margin: 12px 0 !important;
-  padding: 12px 16px !important;
-  background: var(--bg-card) !important;
-  border-radius: 8px !important;
+  margin: var(--space-3) 0 !important;
+  padding: var(--space-3) var(--space-4) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--r-m) !important;
   overflow-x: auto !important;
 }
 
 .answer-section {
-  margin-top: 10px;
-  border-top: 1px solid var(--border-light);
-  padding-top: 8px;
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
 }
 
 .answer-section summary {
   font-size: 13px;
   font-weight: 600;
-  color: var(--primary);
+  color: var(--brand-text);
   cursor: pointer;
-  padding: 4px 0;
+  padding: 2px 0;
   user-select: none;
-  transition: color 0.2s;
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .answer-section summary:hover {
-  color: var(--primary-hover);
+  color: var(--brand-strong);
 }
 
 .answer-body {
   font-size: 14px;
   line-height: 1.7;
-  color: var(--text-secondary);
-  padding: 10px 0 4px;
+  color: var(--ink-2);
+  padding: var(--space-2) 0 var(--space-1);
 }
 
 .answer-body :deep(.katex) {
-  font-size: 1.1em !important;
+  font-size: 1.05em !important;
 }
 
 .answer-body :deep(.katex-display) {
-  margin: 10px 0 !important;
-  padding: 10px 14px !important;
-  background: var(--bg-card) !important;
-  border-radius: 8px !important;
+  margin: var(--space-3) 0 !important;
+  padding: var(--space-3) var(--space-4) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--r-m) !important;
+  overflow-x: auto !important;
 }
 
 .practice-cta {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1.5px solid var(--border-light);
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 
+/* AI 卡内行动位:原型 chat.html「生成 5 道变式练习」强调 chip 语言(brand 描边+soft 底) */
 .practice-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 9px 18px;
-  border: none;
-  border-radius: 10px;
-  background: var(--primary);
-  color: #fff;
-  font-size: 14px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--brand);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
 }
 
 .practice-btn:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.25);
+  background: var(--brand-soft-2);
+  box-shadow: var(--shadow-1);
 }
 
 .practice-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
 .practice-hint {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--rose);
 }
 </style>

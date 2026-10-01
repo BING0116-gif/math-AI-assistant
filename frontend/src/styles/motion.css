@@ -1,0 +1,24 @@
+/* ============================================================
+   知微 Math AI — Motion Tokens (V4)
+   源自 design-preview/anim.js 定稿参数(REFACTOR_PLAN.md §3.4)
+   ============================================================ */
+
+:root {
+  /* 缓动 */
+  --ease-standard: cubic-bezier(.22, .61, .25, 1);   /* 位移/尺寸/描线 */
+  --ease-pop: cubic-bezier(.34, 1.5, .64, 1);        /* 圆点/格子弹出(微过冲) */
+  --ease-route: cubic-bezier(.4, 0, .2, 1);          /* 路由过渡 */
+
+  /* 时长 */
+  --dur-enter: 520ms;   /* 卡片浮入 */
+  --dur-grow: 820ms;    /* 柱条宽度生长 */
+  --dur-draw: 1150ms;   /* 折线描绘 */
+  --dur-route: 320ms;   /* 路由过渡(App.vue slide-fade) */
+  --dur-fast: 160ms;    /* 微交互 */
+
+  /* 交错延迟 */
+  --stagger-card: 45ms; /* 卡片 */
+  --stagger-bar: 55ms;  /* 水平条 */
+  --stagger-week: 70ms; /* 周柱 */
+  --stagger-heat: 26ms; /* 热力列 */
+}

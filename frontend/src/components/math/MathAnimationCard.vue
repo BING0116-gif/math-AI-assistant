@@ -71,21 +71,21 @@ onBeforeUnmount(() => { stopPolling(); if (videoUrl.value) URL.revokeObjectURL(v
 </template>
 
 <style scoped>
-.animation-card { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: linear-gradient(145deg, var(--surface), var(--surface-muted)); }
+.animation-card { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--r-m); background: linear-gradient(145deg, var(--surface), var(--surface-2)); }
 .animation-card__header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .animation-card__header > div { display: grid; gap: 2px; }
-.animation-card__eyebrow { color: var(--accent); font-size: var(--font-size-xs); letter-spacing: .08em; }
-.animation-card__header strong { color: var(--text-primary); font-size: var(--font-size-sm); }
+.animation-card__eyebrow { color: var(--accent); font-size: var(--type-xs); letter-spacing: .08em; }
+.animation-card__header strong { color: var(--ink-1); font-size: var(--type-sm); }
 .animation-card__pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
-.animation-card__note, .animation-card__fallback { margin: var(--space-3) 0 0; color: var(--text-secondary); font-size: var(--font-size-sm); line-height: 1.6; }
-.animation-card__video { display: block; width: 100%; max-height: 420px; margin-top: var(--space-3); border-radius: var(--radius-sm); background: #111; }
-.animation-card__progress { display: flex; align-items: center; gap: 5px; margin-top: var(--space-3); color: var(--text-tertiary); }
+.animation-card__note, .animation-card__fallback { margin: var(--space-3) 0 0; color: var(--ink-2); font-size: var(--type-sm); line-height: 1.6; }
+.animation-card__video { display: block; width: 100%; max-height: 420px; margin-top: var(--space-3); border-radius: var(--r-m); background: #111; }
+.animation-card__progress { display: flex; align-items: center; gap: 5px; margin-top: var(--space-3); color: var(--ink-3); }
 .animation-card__progress span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: pulse 1.2s ease-in-out infinite; }
 .animation-card__progress span:nth-child(2) { animation-delay: .15s; }
 .animation-card__progress span:nth-child(3) { animation-delay: .3s; }
 .animation-card__progress small { margin-left: var(--space-2); }
-.animation-card__cancel { margin-top: var(--space-3); padding: 4px 0; border: 0; background: transparent; color: var(--text-tertiary); cursor: pointer; font: inherit; font-size: var(--font-size-xs); }
-.animation-card__cancel:hover { color: var(--text-primary); }
+.animation-card__cancel { margin-top: var(--space-3); padding: 4px 0; border: 0; background: transparent; color: var(--ink-3); cursor: pointer; font: inherit; font-size: var(--type-xs); }
+.animation-card__cancel:hover { color: var(--ink-1); }
 @keyframes pulse { 0%, 100% { opacity: .3; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .animation-card__pulse, .animation-card__progress span { animation: none; } }
 </style>

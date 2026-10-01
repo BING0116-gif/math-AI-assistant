@@ -87,27 +87,27 @@ const summary = computed(() => {
 </script>
 
 <style scoped>
-.visual-card { margin-top: var(--space-4); overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.visual-card { margin-top: var(--space-4); overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--surface); box-shadow: var(--shadow-1); }
 .visual-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-2); }
-.visual-eyebrow { margin: 0 0 var(--space-1); color: var(--knowledge); font-size: var(--font-size-xs); font-weight: 600; letter-spacing: .08em; }
-.visual-header h3 { margin: 0; color: var(--text-primary); font-size: var(--font-size-base); line-height: var(--line-height-tight); }
-.verified-badge { flex: none; padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); font-size: var(--font-size-xs); font-weight: 600; }
-.visual-canvas { aspect-ratio: 16 / 9; width: 100%; min-height: 220px; border-block: 1px solid var(--border-subtle); background: var(--surface); }
-.visual-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: var(--space-3) var(--space-4); list-style: none; color: var(--text-secondary); font-size: var(--font-size-sm); }
+.visual-eyebrow { margin: 0 0 var(--space-1); color: var(--brand); font-size: var(--type-xs); font-weight: 600; letter-spacing: .08em; }
+.visual-header h3 { margin: 0; color: var(--ink-1); font-size: var(--type-md); line-height: var(--line-height-tight); }
+.verified-badge { flex: none; padding: var(--space-1) var(--space-2); border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: var(--type-xs); font-weight: 600; }
+.visual-canvas { aspect-ratio: 16 / 9; width: 100%; min-height: 220px; border-block: 1px solid var(--border); background: var(--surface); }
+.visual-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: 0; padding: var(--space-3) var(--space-4); list-style: none; color: var(--ink-2); font-size: var(--type-sm); }
 .visual-legend li { display: inline-flex; align-items: center; gap: var(--space-2); }
-.legend-swatch { width: 18px; height: 3px; border-radius: var(--radius-pill); background: var(--accent); }
-.legend-1 { background: var(--warning); } .legend-2 { background: var(--knowledge); } .legend-3 { background: var(--weak); }
-.teaching-note { margin: 0; padding: 0 var(--space-4) var(--space-4); color: var(--text-secondary); font-size: var(--font-size-sm); line-height: var(--line-height-base); }
-.interaction-panel { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-subtle); background: var(--surface-hover); }
-.interaction-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.legend-swatch { width: 18px; height: 3px; border-radius: var(--r-pill); background: var(--accent); }
+.legend-1 { background: var(--amber); } .legend-2 { background: var(--brand); } .legend-3 { background: var(--rose); }
+.teaching-note { margin: 0; padding: 0 var(--space-4) var(--space-4); color: var(--ink-2); font-size: var(--type-sm); line-height: var(--line-height-base); }
+.interaction-panel { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.interaction-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--ink-2); font-size: var(--type-sm); }
 .interaction-label { font-weight: 600; }
-.interaction-value { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: var(--surface); color: var(--accent); font-family: var(--font-mono); font-weight: 700; }
+.interaction-value { padding: var(--space-1) var(--space-2); border-radius: var(--r-m); background: var(--surface); color: var(--accent); font-family: var(--font-mono); font-weight: 700; }
 .interaction-slider { display: block; width: 100%; min-height: 44px; accent-color: var(--accent); cursor: pointer; }
 .step-controls { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.step-controls button { min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-secondary); cursor: pointer; transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast); }
+.step-controls button { min-height: 44px; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--r-m); background: var(--surface); color: var(--ink-2); cursor: pointer; transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard); }
 .step-controls button:hover, .step-controls button:focus-visible { border-color: var(--accent); color: var(--accent); }
 .step-controls button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.frame-note, .step-explanation { margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--font-size-sm); line-height: var(--line-height-base); }
-.step-explanation { color: var(--text-primary); }
+.frame-note, .step-explanation { margin: var(--space-2) 0 0; color: var(--ink-2); font-size: var(--type-sm); line-height: var(--line-height-base); }
+.step-explanation { color: var(--ink-1); }
 @media (max-width: 480px) { .visual-header { padding: var(--space-3); } .visual-canvas { min-height: 190px; } .visual-legend { padding-inline: var(--space-3); } .teaching-note { padding-inline: var(--space-3); } }
 </style>

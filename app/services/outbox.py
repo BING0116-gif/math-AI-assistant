@@ -64,6 +64,7 @@ async def _handle_question_upsert(event: OutboxEvent) -> None:
             should_delete = False
             metadata = {
                 "content": question.content,
+                "content_kind": "question",
                 "category": question.category,
                 "difficulty": question.difficulty,
                 "question_type": question.question_type,

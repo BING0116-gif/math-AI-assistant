@@ -1,8 +1,9 @@
 <template>
   <div class="message-item" :class="[`msg-${message.sender}`, { streaming: isStreaming }]" :id="`msg-${message.id}`">
-    <!-- AI 消息：无大气泡，左对齐，占正文宽度 — 文档 §6.3 -->
+    <!-- AI 消息:∑ 头像 + 左对齐正文列(原型 chat.html .msg-ai) -->
     <div v-if="message.sender === 'ai'" class="msg-ai-wrap">
-      <div class="msg-body msg-body--ai">
+      <span class="ai-avatar" aria-hidden="true">∑</span>
+      <div class="ai-body">
         <div v-if="message.type === 'image'" class="msg-image-wrap">
           <img :src="message.content" class="msg-image" alt="图片消息" />
           <div v-if="message.text" class="msg-image-text">{{ message.text }}</div>
@@ -32,7 +33,7 @@
           <span class="msg-loading-text">正在组织推导…</span>
         </div>
 
-        <!-- 消息操作 — 文档 §6.3: 默认弱化，hover 显示 -->
+        <!-- 消息操作 — 默认弱化,hover 显示(原型 .msg-meta) -->
         <div v-if="!isStreaming" class="msg-actions">
           <template v-if="message.errorBookStatus === 'added'">
             <button class="msg-action-btn msg-action-btn--done" disabled>已加入错题本</button>
@@ -50,19 +51,17 @@
           </template>
         </div>
       </div>
-      <div class="msg-time">{{ message.timestamp }}</div>
     </div>
 
-    <!-- 用户消息：右对齐，小范围中性背景，最大宽度 80% — 文档 §6.3 -->
+    <!-- 用户消息:右对齐橙色气泡(原型 .msg-user .bubble) -->
     <div v-else class="msg-user-wrap">
-      <div class="msg-body msg-body--user">
+      <div class="msg-bubble">
         <div v-if="message.type === 'image'" class="msg-image-wrap">
           <img :src="message.content" class="msg-image" alt="图片消息" />
           <div v-if="message.text" class="msg-image-text">{{ message.text }}</div>
         </div>
         <div v-else class="msg-content" v-html="renderedContent"></div>
       </div>
-      <div class="msg-time">{{ message.timestamp }}</div>
     </div>
   </div>
 </template>
@@ -95,10 +94,10 @@ const renderedContent = computed(() => {
 </script>
 
 <style scoped>
-/* 文档 §6.3:
-   - 用户消息右对齐，小范围中性背景，最大宽度 80%
-   - AI 消息左对齐、无大气泡、占正文宽度
-   - 时间戳和操作按钮默认弱化 */
+/* 原型 chat.html:
+   - 用户消息右对齐橙色气泡(白字,16/16/4/16 圆角)
+   - AI 消息 ∑ 头像 + 无气泡正文列(14px/1.75)
+   - 操作默认弱化,hover 显示 */
 
 .message-item {
   width: 100%;
@@ -113,15 +112,26 @@ const renderedContent = computed(() => {
 /* ---- AI 消息 ---- */
 .msg-ai-wrap {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  gap: 13px;
   width: 100%;
 }
-
-.msg-body--ai {
-  width: 100%;
-  /* 无大气泡：不加背景、边框、阴影 */
-  padding: 0;
+.ai-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 2px;
+  font-family: var(--font-disp);
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #17A98A, #0B7A5E 45%, #0AA2C4);
+}
+.ai-body {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---- 用户消息 ---- */
@@ -129,45 +139,51 @@ const renderedContent = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  max-width: 80%;
-  margin-left: auto; /* 右对齐 */
+  max-width: 82%;
+  margin-left: auto;
 }
-
-.msg-body--user {
-  /* 小范围中性背景 */
-  background: var(--surface-muted);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-4);
+.msg-bubble {
+  background: var(--accent);
+  color: #fff;
+  padding: 11px 16px;
+  border-radius: 16px 16px 4px 16px;
+  font-size: 14px;
+  line-height: 1.65;
+  box-shadow: 0 2px 8px rgba(244, 87, 10, 0.3);
   max-width: 100%;
+  overflow-wrap: break-word;
+}
+[data-theme='dark'] .msg-bubble {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
 /* ---- 内容排版 ---- */
 .msg-content {
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-base);
-  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--ink-1);
   word-break: break-word;
 }
 
-.msg-body--user .msg-content {
-  font-size: var(--font-size-sm);
+.msg-bubble .msg-content {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #fff;
 }
 
 .visual-fallback {
   margin-top: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--warning);
-  color: var(--text-secondary);
-  background: var(--surface-muted);
-  font-size: var(--font-size-sm);
+  border-left: 3px solid var(--amber);
+  color: var(--ink-2);
+  background: var(--surface-2);
+  font-size: 13px;
+  border-radius: 0 var(--r-s) var(--r-s) 0;
 }
 
-/* Markdown 元素 */
+/* Markdown 元素(AI 正文对齐原型 ai-body) */
 .msg-content :deep(p) {
-  margin: var(--space-2) 0;
-}
-.msg-content :deep(p:first-child) {
-  margin-top: 0;
+  margin: 0 0 10px;
 }
 .msg-content :deep(p:last-child) {
   margin-bottom: 0;
@@ -175,19 +191,18 @@ const renderedContent = computed(() => {
 
 .msg-content :deep(h1),
 .msg-content :deep(h2),
-.msg-content :deep(h3) {
+.msg-content :deep(h3),
+.msg-content :deep(h4) {
+  font-size: 14.5px;
   font-weight: 600;
-  line-height: var(--line-height-tight);
-  margin: var(--space-4) 0 var(--space-2);
-  color: var(--text-primary);
+  line-height: 1.4;
+  margin: 2px 0 8px;
+  color: var(--ink-1);
 }
-.msg-content :deep(h1) { font-size: var(--font-size-xl); }
-.msg-content :deep(h2) { font-size: var(--font-size-lg); }
-.msg-content :deep(h3) { font-size: var(--font-size-base); }
 
 .msg-content :deep(strong) {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink-1);
 }
 
 .msg-content :deep(em) {
@@ -204,34 +219,33 @@ const renderedContent = computed(() => {
 }
 
 .msg-content :deep(code) {
-  background: var(--surface-muted);
+  background: var(--surface-2);
   padding: 2px 6px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--r-s);
   font-family: var(--font-mono);
   font-size: 0.875em;
-  color: var(--text-primary);
+  color: var(--ink-1);
 }
 
 .msg-content :deep(pre) {
-  background: var(--surface-muted);
+  background: var(--surface-2);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-m);
   overflow-x: auto;
   margin: var(--space-3) 0;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
 }
 .msg-content :deep(pre code) {
   background: none;
   padding: 0;
   border: none;
-  color: var(--text-primary);
 }
 
 .msg-content :deep(blockquote) {
   margin: var(--space-3) 0;
   padding: var(--space-2) var(--space-4);
   border-left: 3px solid var(--border-strong);
-  color: var(--text-secondary);
+  color: var(--ink-2);
   font-style: italic;
 }
 
@@ -239,34 +253,42 @@ const renderedContent = computed(() => {
   width: 100%;
   border-collapse: collapse;
   margin: var(--space-3) 0;
-  font-size: var(--font-size-sm);
+  font-size: 13px;
 }
 .msg-content :deep(th),
 .msg-content :deep(td) {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   text-align: left;
 }
 .msg-content :deep(th) {
-  background: var(--surface-muted);
+  background: var(--surface-2);
   font-weight: 600;
 }
 
-/* KaTeX 公式 — 文档 §6.3: 行内公式与文字基线对齐，块级公式上下至少 16px 留白 */
+/* KaTeX 公式 — 块级公式走公式卡样式(math.scss .formula 语言) */
 .msg-content :deep(.katex) {
   font-size: 1.05em;
 }
 .msg-content :deep(.katex-display) {
   margin: var(--space-4) 0 !important;
-  padding: var(--space-3) var(--space-4) !important;
+  padding: 14px 18px !important;
   overflow-x: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
+  text-align: center;
 }
 .msg-content :deep(.math-display) {
   display: block;
   margin: var(--space-4) 0;
-  padding: var(--space-3) var(--space-4);
+  padding: 14px 18px;
   overflow-x: auto;
   text-align: center;
+  font-family: var(--font-math);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
 }
 .msg-content :deep(.math-inline) {
   display: inline;
@@ -278,30 +300,22 @@ const renderedContent = computed(() => {
 }
 .msg-image {
   max-width: 280px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-m);
   display: block;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
 }
 .msg-image-text {
   margin-top: var(--space-2);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  line-height: var(--line-height-base);
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.6;
   word-break: break-word;
 }
-
-/* ---- 时间戳 — 默认弱化 ---- */
-.msg-time {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  margin-top: var(--space-1);
-  opacity: 0.7;
+.msg-bubble .msg-image {
+  border-color: rgba(255, 255, 255, 0.35);
 }
-.msg-ai-wrap .msg-time {
-  text-align: left;
-}
-.msg-user-wrap .msg-time {
-  text-align: right;
+.msg-bubble .msg-image-text {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 /* ---- 消息操作 — 默认弱化 ---- */
@@ -310,33 +324,37 @@ const renderedContent = computed(() => {
   gap: var(--space-2);
   margin-top: var(--space-2);
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--dur-fast);
 }
-.message-item:hover .msg-actions {
+.message-item:hover .msg-actions,
+.message-item:focus-within .msg-actions {
   opacity: 1;
 }
 
 .msg-action-btn {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xs);
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
   background: var(--surface);
-  color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
 }
 .msg-action-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  border-color: var(--brand);
 }
 .msg-action-btn--done {
-  color: var(--mastered);
-  border-color: var(--mastered);
+  color: var(--green);
+  border-color: var(--green);
+  background: var(--green-soft);
   cursor: default;
 }
 .msg-action-btn--skipped {
-  color: var(--text-tertiary);
+  color: var(--ink-3);
   cursor: default;
   text-decoration: line-through;
 }
@@ -355,14 +373,14 @@ const renderedContent = computed(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-tertiary);
+  background: var(--brand);
   animation: msgDotPulse 1.4s ease-in-out infinite;
 }
 .msg-loading-dot:nth-child(2) { animation-delay: 0.2s; }
 .msg-loading-dot:nth-child(3) { animation-delay: 0.4s; }
 .msg-loading-text {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--ink-3);
   margin-left: var(--space-1);
 }
 @keyframes msgDotPulse {
@@ -386,10 +404,18 @@ const renderedContent = computed(() => {
 /* ---- 响应式 ---- */
 @media (max-width: 768px) {
   .msg-user-wrap {
-    max-width: 85%;
+    max-width: 92%;
   }
   .msg-image {
     max-width: 220px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-item,
+  .msg-loading-dot,
+  .message-item.streaming .msg-content::after {
+    animation: none;
   }
 }
 </style>

@@ -282,7 +282,7 @@ async function streamAgentReply(
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
         content: rawContentBuffer || '抱歉，未获取到有效回复。',
-        timestamp: new Date().toLocaleString(),
+        timestamp: new Date().toISOString(),
       })
       nextTick(() => scrollToBottom())
     }
@@ -329,7 +329,7 @@ async function streamAgentReply(
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
         content: '发生错误: ' + err.message,
-        timestamp: new Date().toLocaleString(),
+        timestamp: new Date().toISOString(),
       })
     }
   }
@@ -344,7 +344,7 @@ async function handleTextSend(text: string) {
   askCard.value = null
 
   const chatId = store.currentChatId
-  store.addMessage(chatId, { content: text, sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
+  store.addMessage(chatId, { content: text, sender: 'user', timestamp: new Date().toISOString(), type: 'text' })
   store.persistChats()
   nextTick(() => scrollToBottom())
 
@@ -368,7 +368,7 @@ async function handleClarificationSubmit({ answer }: { answer: string; optionLab
   modeGuardNotice.value = ''
 
   const chatId = store.currentChatId
-  store.addMessage(chatId, { content: answer.trim(), sender: 'user', timestamp: new Date().toLocaleString(), type: 'text' })
+  store.addMessage(chatId, { content: answer.trim(), sender: 'user', timestamp: new Date().toISOString(), type: 'text' })
   store.persistChats()
   nextTick(() => scrollToBottom())
 
@@ -403,7 +403,7 @@ async function handleSendWithImage(text: string, imageData: string) {
   store.addMessage(chatId, {
     content: imageData,
     sender: 'user',
-    timestamp: new Date().toLocaleString(),
+    timestamp: new Date().toISOString(),
     type: 'image',
     text: userMessageContent,
   })
@@ -447,7 +447,7 @@ async function handleSendWithImage(text: string, imageData: string) {
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
         content: rawContentBuffer || '抱歉，未获取到有效回复。',
-        timestamp: new Date().toLocaleString(),
+        timestamp: new Date().toISOString(),
       })
       nextTick(() => scrollToBottom())
     }
@@ -457,7 +457,7 @@ async function handleSendWithImage(text: string, imageData: string) {
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
         content: '发生错误，请重试。',
-        timestamp: new Date().toLocaleString(),
+        timestamp: new Date().toISOString(),
       })
     }
 
@@ -474,7 +474,7 @@ async function handleSendWithImage(text: string, imageData: string) {
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
         content: '发生错误: ' + err.message,
-        timestamp: new Date().toLocaleString(),
+        timestamp: new Date().toISOString(),
       })
     }
   }
@@ -603,16 +603,16 @@ function handleSkip(msgId: string) {
 </template>
 
 <style scoped>
-/* 文档 §6.3: 会话正文最大宽度 820px，页面滚动容器只有一个 */
+/* 原型 chat.html:正文列 768px 居中,消息区间距 22px,composer 吸底悬浮 */
 .chat-view {
   flex: 1;
-  /* 作为 .shell-content 的 flex 子项，必须允许收缩（min-height:0），
-     否则长对话会撑破容器变回整页滚动，消息区内滚与固定输入框全部失效。 */
+  /* 作为 .shell-content 的 flex 子项,必须允许收缩(min-height:0),
+     否则长对话会撑破容器变回整页滚动,消息区内滚与固定输入框全部失效。 */
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--canvas);
+  background: var(--bg);
 }
 
 .messages-area {
@@ -622,64 +622,72 @@ function handleSkip(msgId: string) {
 }
 
 .messages-inner {
-  max-width: var(--content-max-width);
+  max-width: 768px;
   margin: 0 auto;
-  padding: var(--space-6) var(--space-6) var(--space-4);
+  padding: 28px 32px 12px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 22px;
   width: 100%;
 }
 
-/* 文档 §6.3: 输入框区域 — 底部固定，无顶部分隔线，让 composer 圆角卡片悬浮在画布上 */
+/* 输入区 — 底部固定,composer 圆角卡片悬浮在画布上 */
 .composer-area {
   flex-shrink: 0;
-  padding: var(--space-3) var(--space-5) var(--space-5);
-  max-width: var(--content-max-width);
+  padding: 8px 32px 18px;
+  max-width: 100%;
   margin: 0 auto;
   width: 100%;
-  background: var(--canvas);
+  background: var(--bg);
 }
-.tutor-modes{max-width:820px;margin:0 auto 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text-secondary);font-size:14px}.tutor-modes button{min-height:44px;padding:0 12px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-primary);cursor:pointer}.tutor-modes button.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}.tutor-modes button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width: 768px) {
+  .composer-area {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+}
+.tutor-modes{max-width:768px;margin:0 auto 9px;display:flex;align-items:center;gap:4px;flex-wrap:wrap;color:var(--ink-2);font-size:12.5px}.tutor-modes>span{padding:0 6px;font-size:11.5px;color:var(--ink-3)}.tutor-modes button{height:27px;padding:0 12px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-2);font-size:12.5px;font-weight:500;cursor:pointer;transition:all .15s}.tutor-modes button.active{border-color:transparent;background:var(--brand-soft-2);color:var(--brand-text);font-weight:600}.tutor-modes button:not(.active):hover{color:var(--ink-1)}.tutor-modes button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 
 .stop-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  border: 1.5px solid var(--danger);
-  border-radius: var(--radius-sm);
-  color: var(--danger);
-  background: transparent;
-  font-size: var(--font-size-sm);
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--rose);
+  border-radius: 8px;
+  color: var(--rose);
+  background: var(--rose-soft);
+  font-size: 12.5px;
   cursor: pointer;
-  font-weight: 500;
-  transition: background var(--transition-fast);
+  font-weight: 600;
+  transition: background var(--dur-fast);
 }
 .stop-btn:hover {
-  background: rgba(184, 78, 78, 0.08);
+  background: color-mix(in srgb, var(--rose) 18%, transparent);
 }
 .stop-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--rose);
 }
 
 .action-btn {
-  padding: 6px 14px;
-  border: 1.5px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12.5px;
   cursor: pointer;
   font-weight: 500;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
 }
 .action-btn:hover:not(:disabled) {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+  border-color: var(--border-strong);
+  color: var(--ink-1);
 }
 .action-btn:disabled {
   opacity: 0.4;
@@ -694,8 +702,8 @@ function handleSkip(msgId: string) {
   align-self: flex-start;
 }
 .loading-text {
-  font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--ink-3);
 }
 
 .scroll-to-bottom {
@@ -704,17 +712,17 @@ function handleSkip(msgId: string) {
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 16px;
-  border: 1.5px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
   background: var(--surface);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  color: var(--ink-2);
+  font-size: 12.5px;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  z-index: 10;
+  box-shadow: var(--shadow-2);
+  z-index: var(--z-sticky);
 }
 .scroll-to-bottom:hover {
-  background: var(--surface-hover);
+  background: var(--surface-2);
 }
 
 @media (max-width: 768px) {
@@ -724,6 +732,9 @@ function handleSkip(msgId: string) {
   }
   .composer-area {
     padding: var(--space-2) var(--space-4) var(--space-3);
+  }
+  .msg-user-wrap {
+    max-width: 92%;
   }
 }
 </style>

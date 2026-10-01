@@ -5,23 +5,51 @@ import { loadFromStorage, saveToStorage } from '@/utils/storage'
 const THEME_KEY = 'math_ai_theme'
 const SIDEBAR_KEY = 'sidebar_collapsed'
 
+type ThemePreference = 'light' | 'dark' | 'system'
+
+const systemDarkQuery =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null
+
+/** 持久化值兜底:旧值 'light'/'dark' 直迁,'system' 合法,其余归 light */
+function normalizeTheme(value: unknown): ThemePreference {
+  return value === 'dark' || value === 'system' ? value : 'light'
+}
+
 export const useUiStore = defineStore('ui', () => {
-  const theme = ref<'light' | 'dark'>(loadFromStorage(THEME_KEY, 'light'))
+  const theme = ref<ThemePreference>(normalizeTheme(loadFromStorage(THEME_KEY, 'light')))
   const sidebarCollapsed = ref(loadFromStorage(SIDEBAR_KEY, false))
   const inspectorOpen = ref(false)
   const mobileDrawerOpen = ref(false)
 
+  function resolveTheme(t: ThemePreference): 'light' | 'dark' {
+    if (t === 'system') return systemDarkQuery?.matches ? 'dark' : 'light'
+    return t
+  }
+
+  function applyTheme(t: ThemePreference) {
+    const resolved = resolveTheme(t)
+    document.documentElement.setAttribute('data-theme', resolved)
+    // Element Plus dark css-vars 以 html.dark 为激活条件(§9/§10)
+    document.documentElement.classList.toggle('dark', resolved === 'dark')
+    saveToStorage(THEME_KEY, t)
+  }
+
+  function onSystemChange() {
+    if (theme.value === 'system') applyTheme('system')
+  }
+
   function init() {
     applyTheme(theme.value)
+    systemDarkQuery?.addEventListener?.('change', onSystemChange)
   }
 
+  /** 循环切换:亮 → 暗 → 跟随系统 → 亮 */
   function toggleTheme() {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
-  }
-
-  function applyTheme(t: 'light' | 'dark') {
-    document.documentElement.setAttribute('data-theme', t)
-    saveToStorage(THEME_KEY, t)
+    const order: ThemePreference[] = ['light', 'dark', 'system']
+    const next = order[(order.indexOf(theme.value) + 1) % order.length]
+    theme.value = next
   }
 
   watch(theme, applyTheme)

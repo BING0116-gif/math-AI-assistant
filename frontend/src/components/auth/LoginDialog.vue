@@ -10,6 +10,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
+import BaseButton from '@/components/ui/BaseButton.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -128,9 +129,9 @@ async function submit() {
         />
       </div>
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
-      <button type="submit" class="auth-submit" :disabled="submitting">
+      <BaseButton type="submit" variant="primary" size="lg" class="auth-submit" :loading="submitting">
         {{ submitting ? '处理中…' : (isLogin ? '登录' : '注册并登录') }}
-      </button>
+      </BaseButton>
     </form>
     <template #footer>
       <button class="mode-switch" type="button" @click="toggleMode">
@@ -142,8 +143,8 @@ async function submit() {
 
 <style scoped>
 .auth-hint {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+  font-size: var(--type-sm);
+  color: var(--ink-2);
   margin-bottom: var(--space-4);
 }
 .auth-form {
@@ -157,55 +158,40 @@ async function submit() {
   gap: var(--space-1);
 }
 .auth-label {
-  font-size: var(--font-size-sm);
+  font-size: var(--type-sm);
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--ink-1);
 }
 .auth-input {
   height: 40px;
   padding: 0 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-1);
+  font-size: var(--type-sm);
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
 }
 .auth-input:focus {
-  border-color: var(--accent);
+  border-color: var(--brand);
   background: var(--surface);
+  box-shadow: 0 0 0 3px var(--brand-soft);
 }
 .auth-error {
-  font-size: var(--font-size-sm);
-  color: var(--danger);
+  font-size: var(--type-sm);
+  color: var(--rose);
   margin: 0;
 }
 .auth-submit {
   width: 100%;
-  height: 42px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: #fff;
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-.auth-submit:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.auth-submit:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 .mode-switch {
   width: 100%;
   background: none;
   border: none;
-  color: var(--accent);
-  font-size: var(--font-size-sm);
+  color: var(--brand-text);
+  font-size: var(--type-sm);
   cursor: pointer;
   padding: var(--space-2) 0;
   text-align: center;

@@ -175,7 +175,10 @@ class RAGRecommender:
                     "recommended_difficulty": recommended_difficulty,
                     "weak_points": weak_points,
                     "context": request.context,
-                    "retrieval_method": "hybrid" if self.enable_rag else "sql_only",
+                    # Report the method actually used.  A configured vector
+                    # branch that failed or returned no candidates is still
+                    # SQL-only from the user's perspective.
+                    "retrieval_method": "hybrid" if vector_results else "sql_only",
                     "sql_result_count": len(sql_results),
                     "vector_result_count": len(vector_results),
                     "final_count": len(final_questions),

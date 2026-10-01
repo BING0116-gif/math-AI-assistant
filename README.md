@@ -81,6 +81,10 @@ ops/                     Prometheus 与数学可视化实验资产
 docs/                    本地开发文档和阶段报告
 ```
 
+## 学生端视觉
+
+学生端已采用 Design System V4：翡翠青用于品牌与导航，活力橙用于主要行动，亮色与暗色主题共享同一组设计令牌。首页、看板、聊天、错题复盘、画像、知识学习与练习考试流程的视觉基准和验收截图保存在 [design-preview](design-preview/)；例如：[首页](design-preview/screenshots/00-home.png)、[看板](design-preview/screenshots/01-dashboard.png)、[暗色聊天](design-preview/screenshots/02-chat-dark.png)。
+
 ## 数据存储边界
 
 | 组件 | 职责 | 说明 |
@@ -334,7 +338,7 @@ npm test
 npm run build
 ```
 
-本次验证结果：**29 个测试文件、110 个测试通过；生产构建通过**。构建仍会提示 Sass legacy API、`authStore` 动态/静态导入和大 chunk（约 1 MB）警告，这些是后续性能与工程清理项，不是构建失败。
+本次视觉重构收尾验证结果：**34 个测试文件、126 个测试通过；生产构建与 bundle 预算通过**。初始加载 gzip 为 226.28 KB（预算 650 KB），最大分包 gzip 为 222.70 KB（预算 300 KB）。构建仍会提示 Sass legacy API、`authStore` 动态/静态导入和大 chunk 警告，这些是后续性能与工程清理项，不是构建失败。
 
 ### CI
 

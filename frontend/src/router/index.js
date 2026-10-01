@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
-import { useLoginDialog } from '@/composables/useLoginDialog'
 
 const routes = [
   {
@@ -8,6 +7,12 @@ const routes = [
     name: 'Home',
     component: () => import('@/views/HomeView.vue'),
     meta: { title: '数学AI助手', transition: 'slide-fade' },
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { title: '登录 - 数学AI助手', transition: 'fade', guestOnly: true },
   },
   {
     path: '/chat',
@@ -72,6 +77,12 @@ const routes = [
   { path: '/apply/exam/sessions/:sessionId', name: 'ExamSession', component: () => import('@/views/ExamSessionView.vue'), meta: { title: '自主考试 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/exam/sessions/:sessionId/report', name: 'ExamReport', component: () => import('@/views/ExamReportView.vue'), meta: { title: '考试报告 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   {
+    path: '/admin',
+    name: 'AdminHome',
+    component: () => import('@/views/AdminHomeView.vue'),
+    meta: { title: '管理后台 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: '/admin/review',
     name: 'AdminReview',
     component: () => import('@/views/AdminReviewView.vue'),
@@ -101,15 +112,17 @@ router.beforeEach((to) => {
     document.title = to.meta.title
   }
 
+  const authStore = useAuthStore()
+
+  if (to.meta.guestOnly && authStore.isAuthenticated) {
+    return authStore.role === 'admin' ? { path: '/admin' } : { path: '/' }
+  }
+
   // 路由守卫：受保护页面需要认证
   if (to.meta.requiresAuth) {
-    const authStore = useAuthStore()
     if (!authStore.isAuthenticated) {
-      // 未登录 → 重定向到首页并打开登录对话框
-      // 记住原本要去的地址（redirect），登录成功后由 LoginDialog 自动回跳
-      const { openLogin } = useLoginDialog()
-      openLogin('login')
-      return { path: '/', query: { login: 'required', redirect: to.fullPath } }
+      // 未登录 → 进入独立登录页，并记住原本要去的地址
+      return { path: '/login', query: { redirect: to.fullPath } }
     }
     if (to.meta.requiresAdmin && authStore.role !== 'admin') {
       return { path: '/', query: { error: 'admin_required' } }

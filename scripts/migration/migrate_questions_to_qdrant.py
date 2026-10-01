@@ -42,7 +42,9 @@ logger = logging.getLogger(__name__)
 
 async def fetch_all_questions() -> List[Question]:
     async with get_db_session() as db:
-        result = await db.execute(select(Question))
+        result = await db.execute(
+            select(Question).where(Question.review_status == "published")
+        )
         questions = result.scalars().all()
         return questions
 
@@ -215,6 +217,7 @@ async def migrate_questions(batch_size: int = 100) -> Dict[str, Any]:
                 try:
                     metadata = {
                         "content": q.content,
+                        "content_kind": "question",
                         "category": q.category or "",
                         "difficulty": q.difficulty or 3,
                         "knowledge_points": (
@@ -223,6 +226,7 @@ async def migrate_questions(batch_size: int = 100) -> Dict[str, Any]:
                             else []
                         ),
                         "question_type": q.question_type or "",
+                        "review_status": q.review_status,
                         "estimated_time": q.estimated_time or 3,
                         "source": q.source or "",
                     }

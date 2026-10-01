@@ -16,7 +16,7 @@ defineProps({
 
 <style scoped>
 .content-ai-partial-badge {
-  --el-tag-text-color: var(--warning);
-  --el-tag-border-color: var(--warning);
+  --el-tag-text-color: var(--amber);
+  --el-tag-border-color: var(--amber);
 }
 </style>

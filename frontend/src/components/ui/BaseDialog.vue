@@ -90,8 +90,8 @@ onUnmounted(() => {
 .dialog-panel {
   width: 90%;
   background: var(--surface);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-l);
+  box-shadow: var(--shadow-3);
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -103,10 +103,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-5) var(--space-6);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
 }
 .dialog-title {
-  font-size: var(--font-size-lg);
+  font-size: var(--type-lg);
   font-weight: 600;
 }
 .dialog-close {
@@ -114,11 +114,11 @@ onUnmounted(() => {
   height: 36px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  transition: background var(--transition-fast);
+  border-radius: var(--r-m);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-standard);
 }
-.dialog-close:hover { background: var(--surface-hover); }
+.dialog-close:hover { background: var(--surface-2); }
 .dialog-body {
   padding: var(--space-6);
   overflow-y: auto;
@@ -126,7 +126,7 @@ onUnmounted(() => {
 }
 .dialog-footer {
   padding: var(--space-4) var(--space-6);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);

@@ -78,9 +78,10 @@ class VectorStoreProtocol(Protocol):
     async def hybrid_search(
         self,
         query: str,
-        top_k: int = 5,
-        keywords: Optional[list[str]] = None,
-        filter_metadata: Optional[dict] = None,
+        category_filter: Optional[str] = None,
+        difficulty_range: Optional[tuple[int, int]] = None,
+        n_results: int = 10,
+        vector_weight: float = 0.7,
     ) -> list:
         ...
 
