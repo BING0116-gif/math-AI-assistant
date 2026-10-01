@@ -1,14 +1,14 @@
 <template>
-  <section class="path-view" aria-labelledby="path-heading">
+  <section :class="layoutMode === 'force' ? 'network-view' : 'path-view'" aria-labelledby="path-heading">
     <header class="path-toolbar">
       <div>
-        <p class="eyebrow">当前学习路径</p>
+        <p class="eyebrow">{{ layoutMode === 'force' ? '知识网络' : '当前学习路径' }}</p>
         <h2 id="path-heading">{{ activeChapter?.name || '选择章节' }}</h2>
-        <p>{{ projection.points.length }} 个知识点 · 箭头指向下一步</p>
+        <p>{{ projection.points.length }} 个知识点 · {{ layoutMode === 'force' ? '拖动节点探索关联' : '箭头指向下一步' }}</p>
       </div>
       <div class="path-actions">
         <label class="search-box"><span class="sr-only">搜索知识点名称或编号</span><input v-model="searchQuery" type="search" placeholder="搜索知识点或编号" aria-label="搜索知识点名称或编号" :aria-expanded="Boolean(searchResults.length)" aria-controls="knowledge-search-results" @keydown="onSearchKeydown" /></label>
-        <button type="button" class="secondary-button" @click="resetPath">返回学习路径</button>
+        <button type="button" class="secondary-button" @click="resetPath">{{ layoutMode === 'force' ? '重置网络' : '返回学习路径' }}</button>
       </div>
       <ul v-if="searchResults.length" id="knowledge-search-results" class="search-results" role="listbox">
         <li v-for="(point, index) in searchResults" :key="point.id"><button type="button" role="option" :aria-selected="index === searchIndex" :class="{ active: index === searchIndex }" @mouseenter="searchIndex = index" @click="chooseSearchResult(point)"><span>{{ point.name }}</span><small>{{ point.chapterName }} · {{ point.code }}</small></button></li>
@@ -16,7 +16,7 @@
     </header>
 
     <div class="path-stage">
-      <div ref="cyContainer" class="cy-canvas" role="application" tabindex="0" aria-label="知识点学习路径。使用方向键切换节点，按回车查看详情。" @keydown="onGraphKeydown"></div>
+      <div ref="cyContainer" class="cy-canvas" role="application" tabindex="0" :aria-label="layoutMode === 'force' ? '知识网络。使用方向键切换节点，按回车查看详情。' : '知识点学习路径。使用方向键切换节点，按回车查看详情。'" @keydown="onGraphKeydown"></div>
       <ol class="mobile-path" aria-label="当前章节知识点列表">
         <li v-for="(point, index) in projection.points" :key="point.id"><button type="button" :class="{ selected: point.id === selectedPointId }" :aria-current="point.id === selectedPointId ? 'step' : undefined" @click="selectPoint(point)"><span class="step-number">{{ index + 1 }}</span><span class="step-copy"><strong>{{ point.name }}</strong><small>{{ statusLabel(point.status) }}<template v-if="point.isExternalPrerequisite"> · 跨章前置</template></small></span><span aria-hidden="true">→</span></button></li>
       </ol>
@@ -34,7 +34,7 @@ import { chartVar } from '@/composables/useChartTheme'
 import { useUiStore } from '@/stores/uiStore'
 
 cytoscape.use(dagre)
-const props = defineProps({ tree: { type: Object, required: true }, mastery: { type: Object, default: () => ({}) }, activeChapterId: { type: String, default: '' }, selectedPointId: { type: String, default: '' } })
+const props = defineProps({ tree: { type: Object, required: true }, mastery: { type: Object, default: () => ({}) }, activeChapterId: { type: String, default: '' }, selectedPointId: { type: String, default: '' }, layoutMode: { type: String, default: 'path' } })
 const emit = defineEmits(['select-point', 'chapter-change'])
 const ui = useUiStore()
 const cyContainer = ref(null)
@@ -46,7 +46,9 @@ let resizeObserver
 
 const catalog = computed(() => flattenKnowledgeTree(props.tree, props.mastery))
 const effectiveChapterId = computed(() => props.activeChapterId || getDefaultChapterId(catalog.value.chapters))
-const projection = computed(() => buildLocalProjection(catalog.value.points, effectiveChapterId.value, props.selectedPointId))
+const projection = computed(() => props.layoutMode === 'force'
+  ? { activeChapterId: effectiveChapterId.value, points: catalog.value.points }
+  : buildLocalProjection(catalog.value.points, effectiveChapterId.value, props.selectedPointId))
 const activeChapter = computed(() => catalog.value.chapters.find(chapter => chapter.id === projection.value.activeChapterId))
 const searchResults = computed(() => searchKnowledgePoints(catalog.value.points, searchQuery.value))
 const statusLabel = status => ({ mastered: '已掌握', learning: '学习中', weak: '薄弱', locked: '未解锁', untouched: '未学习' }[status] || '未学习')
@@ -55,7 +57,7 @@ const statusLabel = status => ({ mastered: '已掌握', learning: '学习中', w
    locked→ink-4、selected→accent、predecessor/successor→brand-strong/teal、边→border-strong、related→amber */
 function graphStyle() {
   return [
-    { selector: 'node', style: { shape: 'round-rectangle', width: 136, height: 56, label: 'data(label)', 'font-size': 14, 'font-weight': 600, 'font-family': 'inherit', color: chartVar('--ink-1'), 'text-wrap': 'wrap', 'text-max-width': 112, 'text-valign': 'center', 'text-halign': 'center', 'background-color': chartVar('--surface'), 'border-color': chartVar('--border-strong'), 'border-width': 2, 'overlay-padding': 8, 'overlay-opacity': 0 } },
+    { selector: 'node', style: { shape: props.layoutMode === 'force' ? 'ellipse' : 'round-rectangle', width: props.layoutMode === 'force' ? 92 : 136, height: props.layoutMode === 'force' ? 92 : 56, label: 'data(label)', 'font-size': props.layoutMode === 'force' ? 12 : 14, 'font-weight': 600, 'font-family': 'inherit', color: chartVar('--ink-1'), 'text-wrap': 'wrap', 'text-max-width': props.layoutMode === 'force' ? 74 : 112, 'text-valign': 'center', 'text-halign': 'center', 'background-color': chartVar('--surface'), 'border-color': chartVar('--border-strong'), 'border-width': 2, 'overlay-padding': 8, 'overlay-opacity': 0 } },
     { selector: 'node[status = "mastered"]', style: { 'background-color': chartVar('--green-soft'), 'border-color': chartVar('--green') } },
     { selector: 'node[status = "learning"]', style: { 'background-color': chartVar('--brand-soft-2'), 'border-color': chartVar('--brand') } },
     { selector: 'node[status = "weak"]', style: { 'background-color': chartVar('--rose-soft'), 'border-color': chartVar('--rose'), 'border-style': 'double', 'border-width': 4 } },
@@ -65,7 +67,7 @@ function graphStyle() {
     { selector: 'node.predecessor', style: { 'border-color': chartVar('--brand-strong'), 'border-width': 3 } },
     { selector: 'node.successor', style: { 'border-color': chartVar('--teal'), 'border-width': 3 } },
     { selector: 'node.dimmed', style: { opacity: 0.24 } },
-    { selector: 'edge', style: { width: 2, 'curve-style': 'taxi', 'taxi-direction': 'rightward', 'taxi-turn': 30, 'line-color': chartVar('--border-strong'), 'target-arrow-color': chartVar('--border-strong'), 'target-arrow-shape': 'triangle', 'arrow-scale': 1.1 } },
+    { selector: 'edge', style: { width: props.layoutMode === 'force' ? 1.5 : 2, 'curve-style': props.layoutMode === 'force' ? 'bezier' : 'taxi', 'taxi-direction': 'rightward', 'taxi-turn': 30, 'line-color': chartVar('--border-strong'), 'target-arrow-color': chartVar('--border-strong'), 'target-arrow-shape': 'triangle', 'arrow-scale': 1.1 } },
     { selector: 'edge[kind = "related"]', style: { 'line-style': 'dashed', 'target-arrow-shape': 'none', 'line-color': chartVar('--amber') } },
     { selector: 'edge.highlighted', style: { width: 4, 'line-color': chartVar('--accent'), 'target-arrow-color': chartVar('--accent'), opacity: 1 } },
     { selector: 'edge.dimmed', style: { opacity: 0.12 } }
@@ -75,7 +77,10 @@ function graphStyle() {
 function initGraph() {
   if (!cyContainer.value) return
   instance?.destroy()
-  instance = cytoscape({ container: cyContainer.value, elements: buildGraphElements(projection.value.points), style: graphStyle(), layout: { name: 'dagre', rankDir: 'LR', nodeSep: 32, rankSep: 72, edgeSep: 16, padding: 40, animate: false }, minZoom: 1, maxZoom: 1.6, boxSelectionEnabled: false })
+  const layout = props.layoutMode === 'force'
+    ? { name: 'cose', animate: !reducedMotion.value, animationDuration: 260, padding: 56, nodeRepulsion: 9000, idealEdgeLength: 150, edgeElasticity: 80, nestingFactor: 1.2, gravity: 0.45, numIter: 700 }
+    : { name: 'dagre', rankDir: 'LR', nodeSep: 32, rankSep: 72, edgeSep: 16, padding: 40, animate: false }
+  instance = cytoscape({ container: cyContainer.value, elements: buildGraphElements(projection.value.points), style: graphStyle(), layout, minZoom: 0.45, maxZoom: 2.4, boxSelectionEnabled: false })
   instance.on('tap', 'node', event => selectById(event.target.id()))
   if (props.selectedPointId) highlightNeighborhood(props.selectedPointId, false)
   requestAnimationFrame(fitReadable)
@@ -140,7 +145,8 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); instance?.destroy() })
 </script>
 
 <style scoped>
-.path-view { height: 100%; min-height: 560px; display: flex; flex-direction: column; background: var(--surface-2); color: var(--ink-1); }
+.path-view, .network-view { height: 100%; min-height: 560px; display: flex; flex-direction: column; background: var(--surface-2); color: var(--ink-1); }
+.network-view .path-toolbar { background: color-mix(in srgb, var(--surface) 92%, var(--brand-soft)); }
 .path-toolbar { position: relative; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .path-toolbar h2 { margin: 1px 0 2px; font-size: 20px; line-height: 1.3; }.path-toolbar p { margin: 0; color: var(--ink-2); font-size: 14px; }.path-toolbar .eyebrow { color: var(--brand); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .path-actions { display: flex; align-items: center; gap: 8px; }.search-box input { width: 220px; min-height: 44px; border: 1px solid var(--border-strong); border-radius: var(--r-m); padding: 0 13px; background: var(--surface); color: var(--ink-1); font: inherit; font-size: 14px; }
@@ -150,7 +156,7 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); instance?.destroy() })
 .path-legend { position: absolute; left: 16px; bottom: 14px; display: flex; flex-wrap: wrap; gap: 10px 16px; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-m); background: color-mix(in srgb, var(--surface) 94%, transparent); color: var(--ink-2); font-size: 12px; backdrop-filter: blur(8px); }.path-legend span { display: inline-flex; align-items: center; gap: 6px; }.line { width: 26px; border-top: 2px solid var(--ink-3); }.line.dashed { border-top-style: dashed; }.node-sample { width: 18px; height: 12px; border: 2px solid var(--border-strong); border-radius: 4px; background: var(--surface); }.node-sample.weak { border: 3px double var(--rose); background: var(--rose-soft); }.node-sample.locked { border-style: dashed; border-color: var(--ink-4); background: var(--surface-2); }.node-sample.mastered { border-color: var(--green); background: var(--green-soft); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 1100px) { .path-toolbar { flex-wrap: wrap; }.path-actions { width: 100%; }.search-box { flex: 1; }.search-box input { width: 100%; } }
-@media (max-width: 768px) { .path-view { min-height: 0; }.path-toolbar { align-items: stretch; flex-direction: column; gap: 12px; padding: 16px; }.path-actions { width: 100%; }.search-box { flex: 1; }.search-box input { width: 100%; font-size: 16px; }.search-results { top: 132px; left: 16px; right: 16px; width: auto; }.cy-canvas, .path-legend { display: none; }.path-stage { overflow: visible; }.mobile-path { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 14px 16px 18px; list-style: none; }.mobile-path button { width: 100%; min-height: 64px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: var(--r-m); padding: 8px 12px; background: var(--surface); color: var(--ink-1); font: inherit; text-align: left; cursor: pointer; }.mobile-path button.selected { border: 3px solid var(--accent); background: var(--accent-soft); }.step-number { width: 34px; height: 34px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-weight: 750; }.step-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }.step-copy strong { font-size: 16px; }.step-copy small { color: var(--ink-3); font-size: 13px; } }
+@media (max-width: 768px) { .path-view, .network-view { min-height: 0; }.path-toolbar { align-items: stretch; flex-direction: column; gap: 12px; padding: 16px; }.path-actions { width: 100%; }.search-box { flex: 1; }.search-box input { width: 100%; font-size: 16px; }.search-results { top: 132px; left: 16px; right: 16px; width: auto; }.cy-canvas, .path-legend { display: none; }.path-stage { overflow: visible; }.mobile-path { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 14px 16px 18px; list-style: none; }.mobile-path button { width: 100%; min-height: 64px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: var(--r-m); padding: 8px 12px; background: var(--surface); color: var(--ink-1); font: inherit; text-align: left; cursor: pointer; }.mobile-path button.selected { border: 3px solid var(--accent); background: var(--accent-soft); }.step-number { width: 34px; height: 34px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-weight: 750; }.step-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }.step-copy strong { font-size: 16px; }.step-copy small { color: var(--ink-3); font-size: 13px; } }
 @media (prefers-contrast: more) { .path-view, .path-toolbar, .mobile-path button { border-color: currentColor; }.path-toolbar p, .step-copy small { color: var(--ink-1); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 </style>

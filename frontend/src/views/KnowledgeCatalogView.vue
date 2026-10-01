@@ -23,10 +23,11 @@
       <template v-else-if="tree">
         <!-- 视图控制 -->
         <div class="legend-bar">
-          <span class="legend-hint">默认显示当前章节与必要前置，选择节点可查看前置和后续。</span>
+          <span class="legend-hint">{{ viewHint }}</span>
           <div class="view-toggle">
-            <button :class="{ active: viewMode === '2d' }" @click="viewMode = '2d'">依赖图</button>
-            <button v-if="threeDEnabled" :class="{ active: viewMode === '3d' }" @click="viewMode = '3d'">3D 实验视图</button>
+            <button type="button" :class="{ active: viewMode === '3d' }" @click="viewMode = '3d'">3D 知识星球</button>
+            <button type="button" :class="{ active: viewMode === 'network' }" @click="viewMode = 'network'">知识网络</button>
+            <button type="button" :class="{ active: viewMode === '2d' }" @click="viewMode = '2d'">依赖路径</button>
           </div>
         </div>
 
@@ -39,7 +40,7 @@
             </button>
           </nav>
           <div class="graph-area">
-            <KnowledgeGraph2D v-if="viewMode === '2d'" :tree="tree" :mastery="masteryMap" :active-chapter-id="activeChapterId" :selected-point-id="selectedPoint?.id || ''" @chapter-change="selectChapter" @select-point="selectPoint" />
+            <KnowledgeGraph2D v-if="viewMode !== '3d'" :tree="tree" :mastery="masteryMap" :active-chapter-id="activeChapterId" :selected-point-id="selectedPoint?.id || ''" :layout-mode="viewMode === 'network' ? 'force' : 'path'" @chapter-change="selectChapter" @select-point="selectPoint" />
             <KnowledgeGalaxy v-else :tree="tree" @select-point="selectPoint" @select-branch="selectBranch" />
           </div>
           <aside class="detail-panel card" :class="{ 'detail-panel--empty': !hasSelection }">
@@ -196,10 +197,8 @@ const route = useRoute()
 const errorBookStore = useErrorBookStore()
 const authStore = useAuthStore()
 const { openLogin } = useLoginDialog()
-// The legacy Three.js prototype is opt-in until student trials demonstrate
-// that it matches the 2D path's navigation success rate. Dynamic import keeps
-// Three.js out of the default learning-path request.
-const threeDEnabled = import.meta.env.VITE_ENABLE_KNOWLEDGE_3D === 'true'
+// Three.js is the primary knowledge-space view. The 2D dependency path remains
+// available as a complementary, keyboard-friendly view for precise sequencing.
 const KnowledgeGalaxy = defineAsyncComponent(() => import('@/components/knowledge/KnowledgeGalaxy.vue'))
 const tree = ref(null)
 const loading = ref(true)
@@ -210,11 +209,16 @@ const playEntrance = useEntranceAnimation(() => bodyEl.value ?? undefined, { aut
 const selectedPoint = ref(null)
 const selectedBranch = ref(null)
 const pointLoading = ref(false)
-const viewMode = ref('2d')
+const viewMode = ref('network')
 const masteryMap = ref({}) // { code: { mastery, attempts, correct, status } }
 const learningMap = ref(null)
 const selectedResources = ref([])
 const activeChapterId = ref('')
+const viewHint = computed(() => ({
+  '3d': '拖动旋转知识星球，滚轮缩放，点击节点查看学习内容。',
+  network: '像 Obsidian 一样浏览知识网络：拖动节点、缩放画布，点击节点查看关联内容。',
+  '2d': '按依赖顺序查看当前章节，箭头表示必要前置。'
+}[viewMode.value]))
 
 // 资源类型展示名
 const RESOURCE_TYPE_LABELS = { lesson: '讲解', formula: '公式', example: '例题', exercise: '练习', intuition: '直觉', concept: '概念', definition: '定义', visual: '图解', animation: '动画', worked_example: '例题', common_error: '易错', exam_focus: '考点', checkpoint: '自检', exercise_set: '练习', summary: '小结', source_reference: '来源' }
