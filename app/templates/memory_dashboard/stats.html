@@ -1,0 +1,32 @@
+{% extends "memory_dashboard/base.html" %}
+{% block content %}
+<h1>🧠 记忆系统 Dashboard</h1>
+<a class="refresh-btn" href="/api/dashboard/memory/stats">🔄 刷新数据</a>
+<section class="stats-grid">
+{% for label, key, tone in stat_cards %}
+  <article class="stat-card {{ tone }}"><h3>{{ label }}</h3><div class="value">{{ stats[key] }}</div></article>
+{% endfor %}
+</section>
+<section class="section"><h2>📋 最近记忆（最新 10 条）</h2>
+{% if recent_error %}<div class="empty">获取失败，请稍后重试</div>
+{% elif not recent_memories %}<div class="empty">暂无记忆数据</div>
+{% else %}{% for memory in recent_memories %}
+  <article class="memory-item">
+    <span class="type {{ memory.type_class }}">{{ memory.memory_type }}</span>
+    <strong>{{ memory.high_category }} / {{ memory.category }}</strong>
+    <span class="progress-bar"><span class="fill" style="width: {{ memory.strength_pct }}%;"></span></span>
+    <span class="meta">强度 {{ memory.strength_pct }}%</span>
+    <div class="summary">{{ memory.summary }}...</div>
+    <div class="meta">用户: {{ memory.user_id }} | ID: {{ memory.id }} | 状态: {{ memory.status }}</div>
+  </article>
+{% endfor %}{% endif %}
+</section>
+<section class="section"><h2>👤 用户画像概览</h2>
+{% if profiles_error %}<div class="empty">画像表尚未创建，请先执行 Alembic 迁移。<br><code>alembic -c app/data/alembic.ini upgrade head</code></div>
+{% elif not profiles %}<div class="empty">暂无画像数据。请使用 Mock 接口模拟用户行为后刷新。</div>
+{% else %}{% for profile in profiles %}
+  <article class="memory-item"><strong>👤 {{ profile.user_id }}</strong> <span class="meta">版本 {{ profile.version }}</span><div class="summary">{{ profile.summary }}...</div></article>
+{% endfor %}{% endif %}
+</section>
+<footer class="footer">最后更新: {{ updated_at }} | <a href="/docs">API 文档</a></footer>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% if not memories %}<div class="empty">该用户暂无记忆数据</div>
+{% else %}{% for memory in memories %}
+  <article class="memory-item">
+    <span class="type-badge {{ memory.type_class }}">{{ memory.memory_type }}</span>
+    <strong>{{ memory.high_category }} / {{ memory.category }}</strong>
+    <span class="strength-bar"><span class="strength-fill" style="width: {{ memory.strength_pct }}%;"></span></span>
+    <span class="meta">{{ memory.strength_pct }}%</span>
+    <div class="summary">{{ memory.summary }}...</div>
+    <div class="meta">ID: {{ memory.id }} | 重要度: {{ "%.1f"|format(memory.importance) }} | 状态: {{ memory.status }}</div>
+  </article>
+{% endfor %}{% endif %}
