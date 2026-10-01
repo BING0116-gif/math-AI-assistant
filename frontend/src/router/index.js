@@ -14,6 +14,8 @@ const routes = [
     component: () => import('@/views/LoginView.vue'),
     meta: { title: '登录 - 数学AI助手', transition: 'fade', guestOnly: true },
   },
+  { path: '/notes', name: 'NotesLibrary', component: () => import('@/views/NotesLibraryView.vue'), meta: { title: '我的笔记 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/notes/:noteId', name: 'NoteWorkspace', component: () => import('@/views/NoteWorkspaceView.vue'), meta: { title: '手写笔记 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   {
     path: '/chat',
     name: 'Chat',

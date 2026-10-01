@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     Integer,
+    BigInteger,
     ForeignKey,
     JSON,
     Index,
@@ -1571,3 +1572,170 @@ class AnimationArtifact(Base):
         CheckConstraint("length(sha256) = 64 AND size_bytes >= 0", name="ck_animation_artifact_integrity"),
         Index("ix_animation_artifact_owner_job_kind", "user_id", "job_id", "kind"),
     )
+class StudyNote(Base):
+    """Owner-scoped handwritten note metadata; page content lives in revisions."""
+
+    __tablename__ = "study_notes"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False, default="未命名笔记")
+    note_type = Column(String(20), nullable=False, default="handwritten")
+    status = Column(String(20), nullable=False, default="active")
+    primary_course_id = Column(String(36), ForeignKey("courses.id", ondelete="SET NULL"), nullable=True)
+    primary_knowledge_point_id = Column(String(36), ForeignKey("knowledge_points.id", ondelete="SET NULL"), nullable=True)
+    current_revision = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    pages = relationship("NotePage", back_populates="note", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint("note_type = 'handwritten'", name="ck_study_note_type"),
+        CheckConstraint("status IN ('active','archived','deleted')", name="ck_study_note_status"),
+        Index("ix_study_note_owner_updated", "user_id", "updated_at"),
+        Index("ix_study_note_owner_status", "user_id", "status"),
+    )
+
+
+class NotePage(Base):
+    __tablename__ = "note_pages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    note_id = Column(String(36), ForeignKey("study_notes.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    page_number = Column(Integer, nullable=False, default=1)
+    width = Column(Integer, nullable=False, default=1200)
+    height = Column(Integer, nullable=False, default=800)
+    background_type = Column(String(20), nullable=False, default="dot")
+    current_revision = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    note = relationship("StudyNote", back_populates="pages")
+    revisions = relationship("NoteRevision", back_populates="page", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint("page_number > 0 AND width > 0 AND height > 0", name="ck_note_page_dimensions"),
+        CheckConstraint("background_type IN ('blank','lined','grid','dot')", name="ck_note_page_background"),
+        UniqueConstraint("note_id", "page_number", name="uq_note_page_number"),
+        Index("ix_note_page_owner_note", "user_id", "note_id"),
+    )
+
+
+class NoteRevision(Base):
+    __tablename__ = "note_revisions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    page_id = Column(String(36), ForeignKey("note_pages.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    revision_number = Column(Integer, nullable=False)
+    base_revision = Column(Integer, nullable=False)
+    stroke_storage_key = Column(String(500), nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    size_bytes = Column(BigInteger, nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    page = relationship("NotePage", back_populates="revisions")
+
+    __table_args__ = (
+        CheckConstraint("revision_number > 0 AND base_revision >= 0 AND size_bytes >= 0", name="ck_note_revision_values"),
+        CheckConstraint("length(sha256) = 64", name="ck_note_revision_sha"),
+        UniqueConstraint("page_id", "revision_number", name="uq_note_revision_number"),
+        UniqueConstraint("user_id", "idempotency_key", name="uq_note_revision_owner_idem"),
+        Index("ix_note_revision_owner_page", "user_id", "page_id"),
+    )
+
+
+class NoteAsset(Base):
+    __tablename__ = "note_assets"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    note_id = Column(String(36), ForeignKey("study_notes.id", ondelete="CASCADE"), nullable=False)
+    page_id = Column(String(36), ForeignKey("note_pages.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    storage_key = Column(String(500), nullable=False, unique=True)
+    original_filename = Column(String(255), nullable=False)
+    media_type = Column(String(100), nullable=False)
+    size_bytes = Column(BigInteger, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    asset_kind = Column(String(20), nullable=False, default="image")
+    status = Column(String(20), nullable=False, default="active")
+    cleanup_after = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        CheckConstraint("asset_kind IN ('image','preview')", name="ck_note_asset_kind"),
+        CheckConstraint("status IN ('active','pending_cleanup')", name="ck_note_asset_status"),
+        CheckConstraint("size_bytes >= 0", name="ck_note_asset_size"),
+        CheckConstraint("length(sha256) = 64", name="ck_note_asset_sha"),
+        Index("ix_note_asset_owner_page", "user_id", "page_id"),
+    )
+
+
+class NoteCleanupTask(Base):
+    """Durable post-commit deletion manifest; files are never removed first."""
+    __tablename__ = "note_cleanup_tasks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    storage_keys = Column(JSON, nullable=False, default=list)
+    status = Column(String(20), nullable=False, default="pending")
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','processing','completed')", name="ck_note_cleanup_task_status"),
+        Index("ix_note_cleanup_task_status_created", "status", "created_at"),
+    )
+
+class NoteAiRun(Base):
+    __tablename__ = "note_ai_runs"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    note_id = Column(String(36), ForeignKey("study_notes.id", ondelete="CASCADE"), nullable=False)
+    page_id = Column(String(36), ForeignKey("note_pages.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source_revision = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    model = Column(String(100), nullable=False)
+    prompt_version = Column(String(40), nullable=False)
+    result = Column(JSON, nullable=True)
+    error = Column(String(500), nullable=True)
+    attempt_no = Column(Integer, nullable=False, default=0)
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (CheckConstraint("status IN ('pending','running','needs_review','failed')", name="ck_note_ai_run_status"), UniqueConstraint("user_id", "idempotency_key", name="uq_note_ai_run_owner_idem"), Index("ix_note_ai_run_page_revision", "page_id", "source_revision"))
+
+
+class NoteKnowledgeLink(Base):
+    """An owner-scoped AI suggestion or an explicit human classification."""
+
+    __tablename__ = "note_knowledge_links"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    note_id = Column(String(36), ForeignKey("study_notes.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    knowledge_point_id = Column(String(36), ForeignKey("knowledge_points.id", ondelete="RESTRICT"), nullable=False)
+    knowledge_point_code_snapshot = Column(String(100), nullable=False)
+    relation_type = Column(String(30), nullable=False, default="covers")
+    source = Column(String(20), nullable=False)
+    confidence = Column(Float, nullable=True)
+    status = Column(String(20), nullable=False)
+    ai_run_id = Column(String(36), ForeignKey("note_ai_runs.id", ondelete="SET NULL"), nullable=True)
+    confirmed_by_user_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        CheckConstraint("source IN ('ai','manual')", name="ck_note_knowledge_link_source"),
+        CheckConstraint("status IN ('suggested','confirmed','rejected')", name="ck_note_knowledge_link_status"),
+        CheckConstraint("confidence IS NULL OR (confidence >= 0 AND confidence <= 1)", name="ck_note_knowledge_link_confidence"),
+        UniqueConstraint("note_id", "knowledge_point_id", "relation_type", name="uq_note_knowledge_link_target"),
+        Index("ix_note_knowledge_link_owner_status", "user_id", "status"),
+        Index("ix_note_knowledge_link_note", "user_id", "note_id"),
+    )
+
+
