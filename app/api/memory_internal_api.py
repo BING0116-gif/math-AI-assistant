@@ -207,7 +207,7 @@ async def internal_update_strength(
         updated_count = 0
 
         for mid in memory_ids:
-            success = await store.update_memory_access(mid)
+            success = await store.update_memory_access(mid, user_id=user_id)
             if success:
                 updated_count += 1
 

@@ -1,63 +1,36 @@
 """
-记忆存储层 — MySQL + Qdrant 数据操作。
+记忆存储层 — PostgreSQL + Qdrant 数据操作。
 
 提供 4 类记忆（错题、对话、里程碑、画像）的写入、查询、更新、归档操作。
 支持异步写入、状态流转、Qdrant 向量同步。
 """
 
-import asyncio
 import json
 import logging
-import math
 import time
-import uuid
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.config.settings import settings
 from app.data.database import get_db_session
+from app.services.memory_policy import (
+    DECAY_LAMBDA,
+    MEMORY_INIT_STRENGTH,
+    MEMORY_TTL,
+    MEMORY_TYPE_CONVERSATION,
+    MEMORY_TYPE_ERROR,
+    MEMORY_TYPE_MILESTONE,
+    MEMORY_TYPE_PROFILE,
+    STATUS_ACTIVE,
+    STATUS_ARCHIVED,
+    STATUS_DELETED,
+    STATUS_PENDING,
+    build_embedding_summary,
+)
 
 logger = logging.getLogger(__name__)
 
-# 记忆类型常量
-MEMORY_TYPE_ERROR = "error"
-MEMORY_TYPE_CONVERSATION = "conversation"
-MEMORY_TYPE_MILESTONE = "milestone"
-MEMORY_TYPE_PROFILE = "profile"
-
-# 记忆状态常量
-STATUS_PENDING = "pending"
-STATUS_ACTIVE = "active"
-STATUS_ARCHIVED = "archived"
-STATUS_DELETED = "deleted"
-
-# 初始强度配置
-MEMORY_INIT_STRENGTH = {
-    MEMORY_TYPE_ERROR: 0.70,
-    MEMORY_TYPE_CONVERSATION: 0.60,
-    MEMORY_TYPE_MILESTONE: 0.85,
-    MEMORY_TYPE_PROFILE: 1.0,
-}
-
-# 有效期配置（秒）
-MEMORY_TTL = {
-    MEMORY_TYPE_ERROR: 2 * 365 * 86400,       # 2 年
-    MEMORY_TYPE_CONVERSATION: 180 * 86400,     # 6 个月
-    MEMORY_TYPE_MILESTONE: 100 * 365 * 86400,  # 永久（100年）
-    MEMORY_TYPE_PROFILE: 30 * 86400,           # 30 天
-}
-
-# 衰减系数（每日）
-DECAY_LAMBDA = {
-    MEMORY_TYPE_ERROR: 0.0045,
-    MEMORY_TYPE_CONVERSATION: 0.0045,
-    MEMORY_TYPE_MILESTONE: 0.0015,
-    MEMORY_TYPE_PROFILE: 0.0,  # 不参与日常衰减
-}
-
-
 class MemoryStore:
-    """记忆存储层，封装 MySQL + Qdrant 操作。"""
+    """记忆存储层，封装 PostgreSQL + Qdrant 操作。"""
 
     def __init__(self):
         self._qdrant_client = None
@@ -133,15 +106,7 @@ class MemoryStore:
 
         优先模板拼接，可选调用 LLM 精炼。
         """
-        if memory_type == MEMORY_TYPE_ERROR:
-            return f"错题: {content[:150]}"
-        elif memory_type == MEMORY_TYPE_CONVERSATION:
-            return f"对话: {content[:120]}"
-        elif memory_type == MEMORY_TYPE_MILESTONE:
-            return f"里程碑: {content[:80]}"
-        elif memory_type == MEMORY_TYPE_PROFILE:
-            return f"画像: {content[:50]}"
-        return content[:150]
+        return build_embedding_summary(content, memory_type, metadata)
 
     # ========================================================================
     # 记忆写入
@@ -162,7 +127,7 @@ class MemoryStore:
     ) -> Optional[int]:
         """创建错题记忆。
 
-        1. 写入 MySQL（status=pending）
+        1. 写入 PostgreSQL（status=pending）
         2. 异步生成 embedding_summary
         3. 生成向量并写入 Qdrant
         4. 更新 MySQL 状态为 active
@@ -236,19 +201,12 @@ class MemoryStore:
                     db=db,
                     memory_id=memory_id,
                     user_id=user_id,
-                    memory_type=MEMORY_TYPE_ERROR,
-                    high_category=high_category,
-                    category=category,
-                    summary=summary,
-                    importance=0.7,
-                    difficulty=difficulty,
-                    tags=knowledge_points or [],
                     status=STATUS_ACTIVE,
                     expire_at=expire_at,
                 )
 
                 # 更新状态为 active
-                await db.execute(
+                result = await db.execute(
                     sa_text("""
                         UPDATE memories SET status = :status
                         WHERE id = :id
@@ -331,12 +289,6 @@ class MemoryStore:
                     db=db,
                     memory_id=memory_id,
                     user_id=user_id,
-                    memory_type=MEMORY_TYPE_CONVERSATION,
-                    high_category=high_category,
-                    category=category,
-                    summary=summary,
-                    importance=importance,
-                    tags=tags or [],
                     status=STATUS_ACTIVE,
                     expire_at=expire_at,
                 )
@@ -399,16 +351,19 @@ class MemoryStore:
                 )
                 memory_id = result.lastrowid or 0
 
+                if milestone_type:
+                    await db.execute(
+                        sa_text("""
+                            INSERT INTO memory_tags (memory_id, tag_name)
+                            VALUES (:memory_id, :tag_name)
+                        """),
+                        {"memory_id": memory_id, "tag_name": milestone_type},
+                    )
+
                 await self._sync_to_qdrant(
                     db=db,
                     memory_id=memory_id,
                     user_id=user_id,
-                    memory_type=MEMORY_TYPE_MILESTONE,
-                    high_category=high_category,
-                    category=category,
-                    summary=description[:80],
-                    importance=0.85,
-                    tags=[milestone_type],
                     status=STATUS_ACTIVE,
                     expire_at=expire_at,
                 )
@@ -466,16 +421,18 @@ class MemoryStore:
                 )
                 memory_id = result.lastrowid or 0
 
+                await db.execute(
+                    sa_text("""
+                        INSERT INTO memory_tags (memory_id, tag_name)
+                        VALUES (:memory_id, :tag_name)
+                    """),
+                    {"memory_id": memory_id, "tag_name": "profile"},
+                )
+
                 await self._sync_to_qdrant(
                     db=db,
                     memory_id=memory_id,
                     user_id=user_id,
-                    memory_type=MEMORY_TYPE_PROFILE,
-                    high_category=high_category,
-                    category=category,
-                    summary=summary_text,
-                    importance=1.0,
-                    tags=["profile"],
                     status=STATUS_ACTIVE,
                     expire_at=expire_at,
                 )
@@ -495,13 +452,6 @@ class MemoryStore:
         db,
         memory_id: int,
         user_id: str,
-        memory_type: str,
-        high_category: str,
-        category: str,
-        summary: str,
-        importance: float,
-        difficulty: Optional[int] = None,
-        tags: Optional[List[str]] = None,
         status: str = STATUS_ACTIVE,
         expire_at: Optional[int] = None,
     ):
@@ -623,12 +573,13 @@ class MemoryStore:
         self, user_id: str, memory_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """获取用户所有 active 状态记忆。"""
-        return await self.get_user_memories(
+        memories, _ = await self.get_user_memories(
             user_id=user_id,
             memory_type=memory_type,
             status=STATUS_ACTIVE,
             limit=1000,
         )
+        return memories
 
     # ========================================================================
     # 记忆更新
@@ -642,7 +593,7 @@ class MemoryStore:
             async with get_db_session() as db:
                 from sqlalchemy import text as sa_text
 
-                await db.execute(
+                result = await db.execute(
                     sa_text("""
                         UPDATE memories
                         SET memory_strength = :strength, last_accessed = :now
@@ -650,31 +601,45 @@ class MemoryStore:
                     """),
                     {"strength": strength, "now": int(time.time()), "id": memory_id},
                 )
-                return True
+                return result.rowcount > 0
         except Exception as e:
             logger.error(f"[记忆存储] 更新记忆强度失败: {e}")
             return False
 
     async def update_memory_access(
-        self, memory_id: int, strength_increment: float = 0.06
+        self,
+        memory_id: int,
+        strength_increment: float = 0.06,
+        *,
+        user_id: Optional[str] = None,
     ) -> bool:
-        """更新记忆访问（命中后强化）。"""
+        """更新记忆访问；提供 ``user_id`` 时同时强制校验所有权。"""
         try:
             async with get_db_session() as db:
                 from sqlalchemy import text as sa_text
 
                 now = int(time.time())
-                await db.execute(
+                result = await db.execute(
                     sa_text("""
                         UPDATE memories
-                        SET memory_strength = LEAST(memory_strength + :inc, 1.0),
+                        SET memory_strength = CASE
+                                WHEN memory_strength + :inc > 1.0 THEN 1.0
+                                ELSE memory_strength + :inc
+                            END,
                             access_count = access_count + 1,
                             last_accessed = :now
-                        WHERE id = :id AND status = 'active'
+                        WHERE id = :id
+                          AND status = 'active'
+                          AND (:user_id IS NULL OR user_id = :user_id)
                     """),
-                    {"inc": strength_increment, "now": now, "id": memory_id},
+                    {
+                        "inc": strength_increment,
+                        "now": now,
+                        "id": memory_id,
+                        "user_id": user_id,
+                    },
                 )
-                return True
+                return result.rowcount > 0
         except Exception as e:
             logger.error(f"[记忆存储] 更新记忆访问失败: {e}")
             return False
@@ -698,7 +663,7 @@ class MemoryStore:
             async with get_db_session() as db:
                 from sqlalchemy import text as sa_text
 
-                await db.execute(
+                result = await db.execute(
                     sa_text("""
                         UPDATE memories
                         SET content = :content, embedding_summary = :summary
@@ -706,7 +671,7 @@ class MemoryStore:
                     """),
                     {"content": content, "summary": summary, "id": memory_id},
                 )
-                return True
+                return result.rowcount > 0
         except Exception as e:
             logger.error(f"[记忆存储] 更新记忆内容失败: {e}")
             return False
@@ -721,7 +686,7 @@ class MemoryStore:
             async with get_db_session() as db:
                 from sqlalchemy import text as sa_text
 
-                await db.execute(
+                result = await db.execute(
                     sa_text("""
                         UPDATE memories
                         SET status = :status
@@ -729,6 +694,8 @@ class MemoryStore:
                     """),
                     {"status": STATUS_ARCHIVED, "id": memory_id},
                 )
+                if result.rowcount <= 0:
+                    return False
                 from app.services.outbox import enqueue_outbox
                 await enqueue_outbox(
                     db, event_type="memory.vector.delete", aggregate_type="memory",
@@ -746,7 +713,7 @@ class MemoryStore:
                 from sqlalchemy import text as sa_text
 
                 now = int(time.time())
-                await db.execute(
+                result = await db.execute(
                     sa_text("""
                         UPDATE memories
                         SET status = :status, deleted_at = :now
@@ -754,6 +721,8 @@ class MemoryStore:
                     """),
                     {"status": STATUS_DELETED, "now": now, "id": memory_id},
                 )
+                if result.rowcount <= 0:
+                    return False
                 from app.services.outbox import enqueue_outbox
                 await enqueue_outbox(
                     db, event_type="memory.vector.delete", aggregate_type="memory",

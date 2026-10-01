@@ -1,0 +1,10 @@
+{% extends "memory_dashboard/base.html" %}
+{% block title %}用户记忆详情 - {{ user_id }}{% endblock %}
+{% block content %}
+<a href="/api/dashboard/memory/stats" class="back-link">← 返回概览</a>
+<h1>👤 用户: {{ user_id }}</h1>
+<section class="profile-box"><h2>📊 用户画像</h2><div class="summary">{{ summary }}</div></section>
+<section class="profile-box"><h2>📝 记忆列表 ({{ total }} 条)</h2>
+{% include "memory_dashboard/memory_items.html" %}
+</section>
+{% endblock %}
