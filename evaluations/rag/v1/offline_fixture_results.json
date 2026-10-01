@@ -1,0 +1,16 @@
+{
+  "mode": "offline_fixture",
+  "embedding_model": "none",
+  "qdrant_mode": "not_run",
+  "generated_at": "2026-09-24T00:00:00+08:00",
+  "results": [
+    {"case_id": "rag-normal-001", "retrieved_ids": ["q-function-domain"], "latency_ms": 2.1, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-ambiguous-001", "retrieved_ids": ["q-limit-definition", "q-limit-laws"], "latency_ms": 2.4, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-noise-001", "retrieved_ids": ["q-derivative-power"], "latency_ms": 2.2, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-out-of-scope-001", "retrieved_ids": [], "latency_ms": 1.9, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-unpublished-001", "retrieved_ids": [], "latency_ms": 2.0, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-retired-001", "retrieved_ids": [], "latency_ms": 2.0, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-plausible-001", "retrieved_ids": ["q-infinitesimal-correct"], "latency_ms": 2.5, "degraded": false, "metadata": {"source": "fixture"}},
+    {"case_id": "rag-degraded-001", "retrieved_ids": ["q-substitution-sql"], "latency_ms": 3.2, "degraded": true, "metadata": {"source": "sql_fallback"}}
+  ]
+}

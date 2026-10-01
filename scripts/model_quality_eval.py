@@ -1,4 +1,4 @@
-"""CLI for validating, executing, comparing, and promoting Step 3.4 evaluations."""
+"""CLI for validating, executing, comparing, and promoting Phase 4 evaluations."""
 
 from __future__ import annotations
 
@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+# Direct execution puts ``scripts/`` before the repository root on sys.path,
+# causing this file to shadow the sibling ``model_quality_eval`` package.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from model_quality_eval.dataset import DatasetValidationError, load_dataset
 from model_quality_eval.reporting import (
@@ -159,7 +164,7 @@ def command_promote(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Phase 3 Step 3.4 model quality evaluation")
+    parser = argparse.ArgumentParser(description="Phase 4 model quality evaluation")
     subcommands = parser.add_subparsers(dest="command", required=True)
     validate = subcommands.add_parser("validate")
     validate.add_argument("--dataset", required=True)

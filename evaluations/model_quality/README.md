@@ -1,4 +1,4 @@
-# Phase 3 Step 3.4 模型质量评测集
+# Phase 4 模型质量评测集
 
 本目录只用于开发、CI 和人工质量复核，不是学生题库，也不会由 FastAPI 或前端公开。
 
@@ -37,7 +37,7 @@ python -m scripts.model_quality_eval promote --report artifacts/model-quality/li
 - `EVAL_DATABASE_URL`，且目标为名称含 `_eval` 或 `_test` 的 PostgreSQL 数据库
 - 与评测目标不同的常规 `DATABASE_URL`，或不设置该变量
 - 两个显式成本变量 `EVAL_INPUT_COST_PER_MILLION`、`EVAL_OUTPUT_COST_PER_MILLION`
-- 正数预算变量 `EVAL_MAX_COST_USD`；Step 3.6 封版受控运行使用 `2.00`
+- 正数预算变量 `EVAL_MAX_COST_USD`；Phase 4 封版受控运行使用 `2.00`
 
 Live runner 在任何应用导入、迁移或模型调用前验证数据库目标，然后将现有 Chat/Tutor/Agent 边界指向该一次性数据库。
 它不会写正式业务数据库，不创建新的业务表，也不会直接实例化模型供应商客户端。

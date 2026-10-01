@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "top_k": 5,
+  "thresholds": {
+    "min_recall_at_k": 0.9,
+    "min_mrr": 0.85,
+    "max_irrelevant_recall_rate": 0.0,
+    "max_latency_p95_ms": 250.0
+  },
+  "cases": [
+    {"case_id": "rag-normal-001", "kind": "normal", "query": "函数的定义域和值域", "expected_ids": ["q-function-domain"], "forbidden_ids": ["q-derivative-rule"]},
+    {"case_id": "rag-ambiguous-001", "kind": "ambiguous", "query": "这个极限怎么判断", "expected_ids": ["q-limit-definition", "q-limit-laws"], "forbidden_ids": ["q-sequence-unrelated"]},
+    {"case_id": "rag-noise-001", "kind": "noisy", "query": "求 导 数。。。x平方 ？？", "expected_ids": ["q-derivative-power"], "forbidden_ids": ["q-integral-power"]},
+    {"case_id": "rag-out-of-scope-001", "kind": "out_of_scope", "query": "线性代数特征值", "expected_ids": [], "forbidden_ids": ["q-linear-algebra"]},
+    {"case_id": "rag-unpublished-001", "kind": "unpublished", "query": "拉格朗日中值定理条件", "expected_ids": [], "forbidden_ids": ["q-mvt-draft"]},
+    {"case_id": "rag-retired-001", "kind": "retired", "query": "旧版导数定义", "expected_ids": [], "forbidden_ids": ["q-derivative-retired"]},
+    {"case_id": "rag-plausible-001", "kind": "wrong_but_plausible", "query": "无穷小替换的适用条件", "expected_ids": ["q-infinitesimal-correct"], "forbidden_ids": ["q-infinitesimal-plausible-wrong"]},
+    {"case_id": "rag-degraded-001", "kind": "vector_unavailable", "query": "定积分换元", "expected_ids": ["q-substitution-sql"], "forbidden_ids": ["q-substitution-draft"], "expected_degraded": true}
+  ]
+}
