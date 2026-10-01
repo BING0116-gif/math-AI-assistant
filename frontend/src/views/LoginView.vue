@@ -1,0 +1,151 @@
+<script setup>
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { ArrowRight, BookOpen, Eye, EyeOff, ShieldCheck, Sparkles } from 'lucide-vue-next'
+import { useAuthStore } from '@/stores/authStore'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const mode = ref('login')
+const showPassword = ref(false)
+const submitting = ref(false)
+const error = ref('')
+const form = reactive({ username: '', password: '' })
+
+const isLogin = computed(() => mode.value === 'login')
+const submitLabel = computed(() => {
+  if (submitting.value) return isLogin.value ? '正在登录…' : '正在创建账号…'
+  return isLogin.value ? '登录学习账号' : '注册并开始学习'
+})
+
+function switchMode(nextMode) {
+  mode.value = nextMode
+  error.value = ''
+  showPassword.value = false
+}
+
+function safeRedirect() {
+  const redirect = route.query.redirect
+  if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
+    if (!redirect.startsWith('/admin') || authStore.role === 'admin') return redirect
+  }
+  return authStore.role === 'admin' ? '/admin' : '/'
+}
+
+async function submit() {
+  error.value = ''
+  const username = form.username.trim()
+  if (username.length < 3 || form.password.length < 6) {
+    error.value = '用户名至少 3 位，密码至少 6 位。'
+    return
+  }
+
+  submitting.value = true
+  try {
+    if (isLogin.value) {
+      await authStore.login({ username, password: form.password })
+    } else {
+      await authStore.register({ username, password: form.password })
+    }
+    ElMessage.success(isLogin.value ? '登录成功' : '注册并登录成功')
+    await router.replace(safeRedirect())
+  } catch (err) {
+    error.value = err.response?.data?.detail || '操作失败，请检查用户名和密码后重试。'
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+
+<template>
+  <main class="login-page">
+    <section class="login-hero" aria-labelledby="login-heading">
+      <div class="hero-orbit hero-orbit--one" aria-hidden="true"></div>
+      <div class="hero-orbit hero-orbit--two" aria-hidden="true"></div>
+      <div class="hero-content">
+        <RouterLink class="brand" to="/" aria-label="返回数学 AI 助手首页">
+          <span class="brand-mark"><Sparkles :size="18" /></span>
+          <span>数学 AI 助手</span>
+        </RouterLink>
+        <p class="eyebrow"><BookOpen :size="15" /> 为大学数学学习而设计</p>
+        <h1 id="login-heading">把每一次练习，<br /><em>变成真正的进步。</em></h1>
+        <p class="hero-copy">登录后继续你的对话、错题复盘和知识点学习。每个账号拥有独立的学习记录。</p>
+        <div class="feature-list" aria-label="平台功能">
+          <div class="feature-item"><span class="feature-icon"><Sparkles :size="16" /></span><span><strong>AI 数学辅导</strong><small>随时提问，分步理解解题思路</small></span></div>
+          <div class="feature-item"><span class="feature-icon"><BookOpen :size="16" /></span><span><strong>个人学习空间</strong><small>错题、画像与进度只属于你的账号</small></span></div>
+        </div>
+      </div>
+      <p class="hero-footer">让数学学习更有方向感</p>
+    </section>
+
+    <section class="login-panel" aria-label="账号登录">
+      <div class="panel-inner">
+        <div class="mobile-brand"><span class="brand-mark"><Sparkles :size="18" /></span>数学 AI 助手</div>
+        <div class="panel-heading">
+          <p class="panel-kicker">欢迎回来</p>
+          <h2>{{ isLogin ? '登录你的学习账号' : '创建一个学习账号' }}</h2>
+          <p>{{ isLogin ? '继续探索你的数学学习路径。' : '注册后即可保存自己的学习进度。' }}</p>
+        </div>
+
+        <div class="mode-tabs" role="tablist" aria-label="登录或注册">
+          <button type="button" role="tab" :aria-selected="isLogin" :class="{ active: isLogin }" @click="switchMode('login')">登录</button>
+          <button type="button" role="tab" :aria-selected="!isLogin" :class="{ active: !isLogin }" @click="switchMode('register')">注册</button>
+        </div>
+
+        <form class="login-form" @submit.prevent="submit">
+          <div class="field">
+            <label for="page-login-username">用户名</label>
+            <input id="page-login-username" v-model.trim="form.username" type="text" autocomplete="username" minlength="3" maxlength="32" placeholder="输入用户名" required />
+          </div>
+          <div class="field">
+            <div class="field-label-row"><label for="page-login-password">密码</label><span v-if="!isLogin">至少 6 位</span></div>
+            <div class="password-wrap">
+              <input id="page-login-password" v-model="form.password" :type="showPassword ? 'text' : 'password'" :autocomplete="isLogin ? 'current-password' : 'new-password'" minlength="6" maxlength="64" placeholder="输入密码" required />
+              <button class="password-toggle" type="button" :aria-label="showPassword ? '隐藏密码' : '显示密码'" @click="showPassword = !showPassword">
+                <EyeOff v-if="showPassword" :size="18" /><Eye v-else :size="18" />
+              </button>
+            </div>
+          </div>
+          <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+          <button class="submit-button" type="submit" :disabled="submitting">
+            <span>{{ submitLabel }}</span><ArrowRight :size="17" />
+          </button>
+        </form>
+
+        <p class="account-hint">{{ isLogin ? '还没有账号？' : '已经有账号？' }}<button type="button" @click="switchMode(isLogin ? 'register' : 'login')">{{ isLogin ? '立即注册' : '返回登录' }}</button></p>
+        <div class="security-note"><ShieldCheck :size="16" /><span>你的学习数据按账号隔离保存。管理员账号由系统单独配置。</span></div>
+      </div>
+    </section>
+  </main>
+</template>
+
+<style scoped>
+.login-page { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, 0.92fr) minmax(480px, 1.08fr); background: var(--surface-2); color: var(--ink-1); }
+.login-hero { position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 48px clamp(36px, 6vw, 96px) 42px; color: #fff; background: linear-gradient(145deg, var(--accent-strong) 0%, var(--accent) 58%, color-mix(in srgb, var(--accent-strong) 72%, #000) 125%); }
+.hero-content, .hero-footer { position: relative; z-index: 1; }.hero-content { animation: login-content-in .7s cubic-bezier(.22,1,.36,1) both; }
+.brand, .mobile-brand { display: inline-flex; align-items: center; gap: 10px; color: inherit; font-family: var(--font-disp); font-size: 18px; font-weight: 700; text-decoration: none; }
+.brand-mark { width: 34px; height: 34px; display: inline-grid; place-items: center; border-radius: 11px; background: rgba(255,255,255,.16); }
+.eyebrow { display: inline-flex; align-items: center; gap: 7px; margin: clamp(72px, 13vh, 150px) 0 20px; color: rgba(255,255,255,.82); font-size: 13px; letter-spacing: .04em; }
+h1 { max-width: 560px; margin: 0; font-family: var(--font-disp); font-size: clamp(38px, 4.6vw, 70px); line-height: 1.11; letter-spacing: -.04em; }
+h1 em { color: color-mix(in srgb, #fff 78%, var(--accent-bright)); font-style: normal; }
+.hero-copy { max-width: 460px; margin: 24px 0 0; color: rgba(255,255,255,.78); font-size: 15px; line-height: 1.8; }
+.feature-list { display: grid; gap: 18px; margin-top: 48px; }
+.feature-item { display: flex; align-items: flex-start; gap: 12px; max-width: 360px; animation: feature-in .6s .35s cubic-bezier(.22,1,.36,1) both; }.feature-item:nth-child(2) { animation-delay: .48s; }
+.feature-icon { width: 32px; height: 32px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.22); border-radius: 10px; color: #fff; background: rgba(255,255,255,.11); }
+.feature-item span:last-child { display: grid; gap: 3px; }.feature-item strong { font-size: 14px; }.feature-item small { color: rgba(255,255,255,.68); font-size: 12px; }.hero-footer { color: rgba(255,255,255,.55); font-size: 12px; }
+.hero-orbit { position: absolute; border: 1px solid rgba(255,255,255,.14); border-radius: 50%; pointer-events: none; animation: orbit-drift 18s ease-in-out infinite alternate; }.hero-orbit--one { width: 540px; height: 540px; right: -260px; top: 13%; }.hero-orbit--two { width: 350px; height: 350px; left: -220px; bottom: -170px; animation-delay: -6s; animation-duration: 22s; }
+.login-panel { display: grid; place-items: center; padding: 48px clamp(24px, 7vw, 120px); background: var(--surface); }.panel-inner { width: min(100%, 420px); animation: panel-in .75s .08s cubic-bezier(.22,1,.36,1) both; }.mobile-brand { display: none; color: var(--accent-text); margin-bottom: 48px; }.mobile-brand .brand-mark { color: #fff; background: var(--accent); }
+.panel-kicker { margin: 0 0 10px; color: var(--accent-text); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }.panel-heading h2 { margin: 0; font-family: var(--font-disp); font-size: clamp(26px, 3vw, 34px); letter-spacing: -.03em; }.panel-heading p:last-child { margin: 10px 0 0; color: var(--ink-2); font-size: 14px; }
+.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 34px; padding: 4px; border-radius: 12px; background: var(--surface-2); }.mode-tabs button { min-height: 42px; border: 0; border-radius: 9px; color: var(--ink-2); background: transparent; font: inherit; font-size: 14px; cursor: pointer; }.mode-tabs button.active { color: var(--accent-text); background: var(--surface); box-shadow: var(--shadow-1); font-weight: 650; }.mode-tabs button:focus-visible, .password-toggle:focus-visible, .account-hint button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.login-form { display: grid; gap: 20px; margin-top: 26px; }.field { display: grid; gap: 8px; }.field label, .field-label-row span { color: var(--ink-1); font-size: 13px; font-weight: 600; }.field-label-row { display: flex; align-items: center; justify-content: space-between; }.field-label-row span { color: var(--ink-3); font-size: 12px; font-weight: 400; }.field input { box-sizing: border-box; width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: 11px; color: var(--ink-1); background: var(--surface); font: inherit; outline: none; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }.field input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); transform: translateY(-1px); }.password-wrap { position: relative; }.password-wrap input { padding-right: 48px; }.password-toggle { position: absolute; top: 50%; right: 7px; width: 36px; height: 36px; display: grid; place-items: center; transform: translateY(-50%); border: 0; border-radius: 8px; color: var(--ink-2); background: transparent; cursor: pointer; }.password-toggle:hover { color: var(--accent-text); background: var(--accent-soft); }.form-error { margin: -4px 0 0; color: var(--rose); font-size: 13px; line-height: 1.5; }.submit-button { position: relative; overflow: hidden; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 11px; color: #fff; background: var(--accent); box-shadow: var(--shadow-2); font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }.submit-button::after { content: ''; position: absolute; inset: 0 auto 0 -80%; width: 45%; transform: skewX(-18deg); background: rgba(255,255,255,.22); transition: left .55s ease; }.submit-button:hover:not(:disabled)::after { left: 135%; }.submit-button:hover:not(:disabled) { background: var(--accent-strong); transform: translateY(-1px); box-shadow: var(--shadow-3); }.submit-button:disabled { opacity: .65; cursor: wait; }.account-hint { margin: 24px 0 0; color: var(--ink-2); text-align: center; font-size: 13px; }.account-hint button { padding: 0; border: 0; color: var(--accent-text); background: transparent; font: inherit; font-weight: 650; cursor: pointer; }.security-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 42px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--ink-3); font-size: 12px; line-height: 1.6; }.security-note svg { flex: 0 0 auto; color: var(--accent-text); margin-top: 2px; }
+@keyframes login-content-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(24px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes feature-in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes orbit-drift { from { transform: translate3d(-10px, 8px, 0) rotate(-4deg); } to { transform: translate3d(14px, -12px, 0) rotate(5deg); } }
+@media (max-width: 820px) { .login-page { display: block; }.login-hero { min-height: 245px; padding: 28px 24px 30px; }.brand, .hero-copy, .feature-list, .hero-footer { display: none; }.eyebrow { margin: 20px 0 12px; }.login-hero h1 { font-size: 34px; }.login-panel { min-height: calc(100vh - 245px); padding: 34px 24px 46px; }.mobile-brand { display: inline-flex; }.panel-inner { width: min(100%, 460px); } }
+@media (max-width: 420px) { .login-hero { min-height: 220px; padding: 22px 20px 24px; }.login-hero h1 { font-size: 30px; }.login-panel { padding: 28px 20px 40px; }.mobile-brand { margin-bottom: 34px; } }
+@media (prefers-reduced-motion: reduce) { .hero-content, .panel-inner, .feature-item, .hero-orbit { animation: none; }.field input, .submit-button { transition: none; }.submit-button::after { display: none; } }
+</style>

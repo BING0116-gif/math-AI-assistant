@@ -2,7 +2,7 @@
  * Protected Route Guard 测试。
  *
  * 覆盖：
- * - 未认证 + requiresAuth route → redirect home + trigger LoginDialog
+ * - 未认证 + requiresAuth route → redirect to standalone login page
  * - 已认证 + requiresAuth route → 正常进入
  * - 公开路由不受影响
  */
@@ -10,7 +10,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
-import { useLoginDialog } from '@/composables/useLoginDialog'
 
 // 使用同步组件避免懒加载引入的异步问题
 const HomeView = { template: '<div>Home</div>' }
@@ -30,6 +29,7 @@ describe('Protected Route Guard', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/', name: 'Home', component: HomeView },
+        { path: '/login', name: 'Login', component: HomeView },
         { path: '/chat', name: 'Chat', component: ChatView },
         {
           path: '/error-book',
@@ -54,9 +54,7 @@ describe('Protected Route Guard', () => {
       if (to.meta.requiresAuth) {
         const authStore = useAuthStore()
         if (!authStore.isAuthenticated) {
-          const { openLogin } = useLoginDialog()
-          openLogin('login')
-          return { path: '/', query: { login: 'required' } }
+          return { path: '/login', query: { redirect: to.fullPath } }
         }
       }
     })
@@ -66,22 +64,17 @@ describe('Protected Route Guard', () => {
   // Unauthenticated
   // ============================================================
   describe('unauthenticated', () => {
-    it('should redirect to home when accessing a protected route', async () => {
-      const { loginDialogVisible } = useLoginDialog()
-      expect(loginDialogVisible.value).toBe(false)
-
+    it('should redirect to the standalone login page when accessing a protected route', async () => {
       await router.push('/error-book')
 
-      expect(router.currentRoute.value.path).toBe('/')
-      expect(router.currentRoute.value.query.login).toBe('required')
-      // LoginDialog 被触发
-      expect(loginDialogVisible.value).toBe(true)
+      expect(router.currentRoute.value.path).toBe('/login')
+      expect(router.currentRoute.value.query.redirect).toBe('/error-book')
     })
 
     it('should redirect to home for any requiresAuth route', async () => {
       await router.push('/dashboard')
-      expect(router.currentRoute.value.path).toBe('/')
-      expect(router.currentRoute.value.query.login).toBe('required')
+      expect(router.currentRoute.value.path).toBe('/login')
+      expect(router.currentRoute.value.query.redirect).toBe('/dashboard')
     })
   })
 

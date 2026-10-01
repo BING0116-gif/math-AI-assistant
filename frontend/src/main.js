@@ -40,6 +40,9 @@ import { setAuthTokenGetter } from '@/api'
 const authStore = useAuthStore()
 setAuthTokenGetter(() => authStore.getAccessToken())
 authStore.restoreSession()
+if (authStore.isAuthenticated) {
+  void authStore.syncCurrentUser()
+}
 
 app.use(router)
 app.mount('#app')

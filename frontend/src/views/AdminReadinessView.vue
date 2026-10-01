@@ -1,4 +1,5 @@
 <template>
+  <AdminShell>
   <div class="rd">
     <header class="rd-head">
       <div class="rd-head-main">
@@ -67,11 +68,13 @@
       轻量探测无法验证密钥是否真实有效——「key 存在但无效」只能由实际调用发现。
     </footer>
   </div>
+  </AdminShell>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue'
 import { readinessApi, unwrap } from '@/api/readiness'
+import AdminShell from '@/components/shell/AdminShell.vue'
 
 const loading = ref(false)
 const error = ref('')

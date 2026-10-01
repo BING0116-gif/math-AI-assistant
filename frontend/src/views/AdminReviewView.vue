@@ -11,6 +11,7 @@ import { adminReviewApi, unwrap } from '@/api/adminReview'
 import ContentAIPartialBadge from '@/components/admin/ContentAIPartialBadge.vue'
 import katex from 'katex'
 import { renderMarkdown } from '@/utils/markdown'
+import AdminShell from '@/components/shell/AdminShell.vue'
 
 // 渲染题干/选项/答案/解析：
 // 1) 若文本已含 $...$ 或 $$...$$ 标记，走 markdown + KaTeX 插件（精确）
@@ -613,6 +614,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <AdminShell>
   <div class="wb">
     <header class="wb-header">
       <button class="wb-back" @click="router.push('/')">← 返回</button>
@@ -930,6 +932,7 @@ onBeforeUnmount(() => {
       </el-timeline>
     </el-drawer>
   </div>
+  </AdminShell>
 </template>
 
 <style scoped>

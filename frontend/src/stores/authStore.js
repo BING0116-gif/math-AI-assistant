@@ -97,6 +97,25 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Synchronize identity and role with the authenticated server session. */
+  async function syncCurrentUser() {
+    if (!accessToken.value) return false
+    try {
+      const { data } = await api.get('/auth/me')
+      const user = data.data
+      const normalized = {
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role || 'student',
+      }
+      saveUser(normalized)
+      currentUser.value = normalized
+      return true
+    } catch {
+      return false
+    }
+  }
+
   /**
    * 启动时恢复会话：从 localStorage 读取已有 tokens。
    * 返回 true 表示已有有效会话。
@@ -185,6 +204,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     refresh,
+    syncCurrentUser,
     restoreSession,
     clearSession,
     getAccessToken,

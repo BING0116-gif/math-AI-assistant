@@ -8,6 +8,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { adminPaperApi, unwrapPaper } from '@/api/adminPaper'
 import { renderMathBank } from '@/utils/mathBankRender'
+import AdminShell from '@/components/shell/AdminShell.vue'
 
 const router = useRouter()
 const activeTab = ref('compose')
@@ -201,6 +202,7 @@ onMounted(async () => {
 </script>
 
 <template>
+  <AdminShell>
   <div class="wb">
     <header class="wb-header no-print">
       <button class="wb-back" @click="router.push('/')">← 返回</button>
@@ -416,6 +418,7 @@ onMounted(async () => {
       </div>
     </el-drawer>
   </div>
+  </AdminShell>
 </template>
 
 <style scoped>

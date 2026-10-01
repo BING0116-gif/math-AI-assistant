@@ -8,7 +8,7 @@ import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useLearningActivity } from '@/composables/useLearningActivity'
 import {
   Plus, Search, LayoutDashboard, UserRound, Network, FileText, Target, BookX,
-  PanelLeftClose, PanelLeftOpen, Sun, Moon, Menu, X, Trash2,
+  PanelLeftClose, PanelLeftOpen, Sun, Moon, Menu, X, Trash2, ShieldCheck,
 } from 'lucide-vue-next'
 import { formatRelativeTime } from '@/utils/dateTime'
 
@@ -187,6 +187,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             class="count"
           >{{ pendingReviewCount }}</span>
         </RouterLink>
+        <RouterLink
+          v-if="authStore.role === 'admin'"
+          to="/admin"
+          class="nav-item nav-item--admin"
+          :class="{ 'nav-item--active': isActive('/admin') }"
+          :aria-current="isActive('/admin') ? 'page' : undefined"
+          title="管理员后台"
+        >
+          <ShieldCheck :size="17" :stroke-width="1.75" aria-hidden="true" />
+          <span v-if="!ui.sidebarCollapsed" class="nav-item__label">管理后台</span>
+        </RouterLink>
       </nav>
 
       <!-- 最近对话 -->
@@ -309,6 +320,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           >
             <component :is="item.icon" :size="17" :stroke-width="1.75" />
             {{ item.label }}
+          </RouterLink>
+          <RouterLink
+            v-if="authStore.role === 'admin'"
+            to="/admin"
+            class="mobile-drawer__link"
+            :class="{ 'mobile-drawer__link--active': isActive('/admin') }"
+            @click="ui.mobileDrawerOpen = false"
+          >
+            <ShieldCheck :size="17" :stroke-width="1.75" />
+            管理后台
           </RouterLink>
           <div class="mobile-drawer__foot">
             <button class="mobile-drawer__theme" aria-label="切换主题" @click="ui.toggleTheme()">
