@@ -1139,6 +1139,7 @@ class PracticeSession(Base):
     completion_reason = Column(String(30), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    source_paper_id = Column(String(36), ForeignKey("student_papers.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
@@ -1146,6 +1147,7 @@ class PracticeSession(Base):
     attempts = relationship("PracticeAttempt", back_populates="session", cascade="all, delete-orphan")
     blueprint = relationship("AssessmentBlueprint", back_populates="session", uselist=False, cascade="all, delete-orphan")
     draft_answers = relationship("PracticeSessionDraftAnswer", back_populates="session", cascade="all, delete-orphan")
+    source_paper = relationship("StudentPaper", back_populates="sessions")
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_practice_session_owner_idempotency"),
@@ -1737,5 +1739,79 @@ class NoteKnowledgeLink(Base):
         Index("ix_note_knowledge_link_owner_status", "user_id", "status"),
         Index("ix_note_knowledge_link_note", "user_id", "note_id"),
     )
+
+
+class StudentPaper(Base):
+    """Owner-scoped reusable paper assembled by a student.
+
+    A paper is an editable composition artifact.  Started practice/exam sessions
+    copy its question snapshots and remain immutable learning facts.
+    """
+    __tablename__ = "student_papers"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    course_id = Column(String(36), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=False, index=True)
+    version_id = Column(String(36), ForeignKey("knowledge_graph_versions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    source_type = Column(String(20), nullable=False, default="manual")
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    blueprint_snapshot = Column(JSON, nullable=False, default=dict)
+    revision = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    questions = relationship("StudentPaperQuestion", back_populates="paper", cascade="all, delete-orphan", order_by="StudentPaperQuestion.position")
+    sessions = relationship("PracticeSession", back_populates="source_paper")
+
+    __table_args__ = (
+        CheckConstraint("source_type IN ('manual','ai','recommended')", name="ck_student_paper_source_type"),
+        CheckConstraint("status IN ('draft','ready','archived')", name="ck_student_paper_status"),
+        Index("ix_student_paper_owner_updated", "user_id", "updated_at"),
+    )
+
+
+class StudentPaperQuestion(Base):
+    __tablename__ = "student_paper_questions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    paper_id = Column(String(36), ForeignKey("student_papers.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False)
+    position = Column(Integer, nullable=False)
+    score = Column(Float, nullable=False, default=1.0)
+    question_snapshot = Column(JSON, nullable=False)
+    selection_reason = Column(JSON, nullable=True)
+
+    paper = relationship("StudentPaper", back_populates="questions")
+
+    __table_args__ = (
+        UniqueConstraint("paper_id", "position", name="uq_student_paper_position"),
+        UniqueConstraint("paper_id", "question_id", name="uq_student_paper_question"),
+    )
+
+
+class PracticeDiagnosticEvent(Base):
+    """Idempotent audit trail for deterministic post-error micro questions."""
+    __tablename__ = "practice_diagnostic_events"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("practice_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False)
+    attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="CASCADE"), nullable=False, index=True)
+    template_code = Column(String(100), nullable=False)
+    step_index = Column(Integer, nullable=False)
+    prompt_snapshot = Column(JSON, nullable=False)
+    selected_answer = Column(JSON, nullable=True)
+    correct = Column(Boolean, nullable=True)
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_practice_diagnostic_owner_key"),
+        UniqueConstraint("attempt_id", "step_index", name="uq_practice_diagnostic_attempt_step"),
+    )
+
+
 
 

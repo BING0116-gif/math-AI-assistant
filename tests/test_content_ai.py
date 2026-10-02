@@ -382,7 +382,7 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "b6c7d8e9f0a1"  # RBAC v1 role normalization
+        assert script.get_current_head() == "f9a0b1c2d3e4"  # student papers & diagnostics on top of notes chain
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3
