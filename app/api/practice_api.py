@@ -10,10 +10,12 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.api.student_contracts import STUDENT_API_RESPONSES, StudentOperationEnvelope
 from app.services.practice_service import (
     PracticeError, complete_session, create_error_book_session, create_session, get_session,
     practice_options, recent_sessions, result, save_practice_snapshot, start_session, submit_attempt,
 )
+from app.services.practice_diagnostic_service import answer_diagnostic, get_diagnostic, start_diagnostic
 
 router = APIRouter(prefix="/api/practice", tags=["专项练习"])
 
@@ -63,6 +65,7 @@ class SubmitPracticeAttemptRequest(BaseModel):
     time_spent_seconds: int | None = Field(default=None, ge=0, le=86400)
     hint_used: bool = False
     solution_viewed: bool = False
+    uncertain: bool = False
 
 
 class CreateFromErrorBookRequest(BaseModel):
@@ -81,6 +84,17 @@ class RecoverySnapshotRequest(BaseModel):
     current_question_id: str | None = Field(default=None, max_length=36)
 
 
+class DiagnosticStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class DiagnosticAnswerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answer: Any
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
 def _user_id(request: Request) -> str:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
@@ -93,7 +107,7 @@ def _raise(error: PracticeError) -> None:
     raise HTTPException(status_code=status, detail={"code": error.code, "message": error.message, **error.extra})
 
 
-@router.get("/options")
+@router.get("/options", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_options(course_id: str | None = Query(default=None, max_length=36)):
     try:
         return {"code": 0, "data": await practice_options(course_id)}
@@ -101,12 +115,12 @@ async def get_options(course_id: str | None = Query(default=None, max_length=36)
         _raise(error)
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_recent_sessions(request: Request, limit: int = Query(default=8, ge=1, le=20)):
     return {"code": 0, "data": await recent_sessions(_user_id(request), limit)}
 
 
-@router.post("/sessions")
+@router.post("/sessions", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_session(request: Request, body: CreatePracticeSessionRequest):
     try:
         return {"code": 0, "data": await create_session(_user_id(request), body.model_dump(exclude_none=True))}
@@ -114,7 +128,7 @@ async def post_session(request: Request, body: CreatePracticeSessionRequest):
         _raise(error)
 
 
-@router.post("/sessions/from-error-book")
+@router.post("/sessions/from-error-book", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_session_from_error_book(request: Request, body: CreateFromErrorBookRequest):
     try:
         return {"code": 0, "data": await create_error_book_session(
@@ -128,7 +142,7 @@ async def post_session_from_error_book(request: Request, body: CreateFromErrorBo
         _raise(error)
 
 
-@router.put("/sessions/{session_id}/recovery-snapshot")
+@router.put("/sessions/{session_id}/recovery-snapshot", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def put_recovery_snapshot(request: Request, session_id: str, body: RecoverySnapshotRequest):
     try:
         return {"code": 0, "data": await save_practice_snapshot(_user_id(request), session_id, body.current_question_id), "message": "ok"}
@@ -136,7 +150,7 @@ async def put_recovery_snapshot(request: Request, session_id: str, body: Recover
         _raise(error)
 
 
-@router.get("/sessions/{session_id}")
+@router.get("/sessions/{session_id}", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_practice_session(request: Request, session_id: str):
     try:
         return {"code": 0, "data": await get_session(_user_id(request), session_id)}
@@ -144,7 +158,7 @@ async def get_practice_session(request: Request, session_id: str):
         _raise(error)
 
 
-@router.post("/sessions/{session_id}/start")
+@router.post("/sessions/{session_id}/start", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_start(request: Request, session_id: str):
     try:
         return {"code": 0, "data": await start_session(_user_id(request), session_id)}
@@ -152,16 +166,16 @@ async def post_start(request: Request, session_id: str):
         _raise(error)
 
 
-@router.post("/sessions/{session_id}/attempts")
+@router.post("/sessions/{session_id}/attempts", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_attempt(request: Request, session_id: str, body: SubmitPracticeAttemptRequest):
     try:
-        signals = body.model_dump(include={"time_spent_seconds", "hint_used", "solution_viewed"}, exclude_none=True)
+        signals = body.model_dump(include={"time_spent_seconds", "hint_used", "solution_viewed", "uncertain"}, exclude_none=True)
         return {"code": 0, "data": await submit_attempt(_user_id(request), session_id, body.question_id, body.answer, body.idempotency_key, signals)}
     except PracticeError as error:
         _raise(error)
 
 
-@router.post("/sessions/{session_id}/complete")
+@router.post("/sessions/{session_id}/complete", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_complete(request: Request, session_id: str):
     try:
         return {"code": 0, "data": await complete_session(_user_id(request), session_id)}
@@ -169,9 +183,33 @@ async def post_complete(request: Request, session_id: str):
         _raise(error)
 
 
-@router.get("/sessions/{session_id}/result")
+@router.get("/sessions/{session_id}/result", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_result(request: Request, session_id: str):
     try:
         return {"code": 0, "data": await result(_user_id(request), session_id)}
+    except PracticeError as error:
+        _raise(error)
+
+
+@router.post("/sessions/{session_id}/questions/{question_id}/diagnostic/start", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
+async def post_diagnostic_start(request: Request, session_id: str, question_id: str, body: DiagnosticStartRequest):
+    try:
+        return {"code": 0, "data": await start_diagnostic(_user_id(request), session_id, question_id, body.idempotency_key)}
+    except PracticeError as error:
+        _raise(error)
+
+
+@router.post("/sessions/{session_id}/questions/{question_id}/diagnostic/answer", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
+async def post_diagnostic_answer(request: Request, session_id: str, question_id: str, body: DiagnosticAnswerRequest):
+    try:
+        return {"code": 0, "data": await answer_diagnostic(_user_id(request), session_id, question_id, body.answer, body.idempotency_key)}
+    except PracticeError as error:
+        _raise(error)
+
+
+@router.get("/sessions/{session_id}/questions/{question_id}/diagnostic", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
+async def get_question_diagnostic(request: Request, session_id: str, question_id: str):
+    try:
+        return {"code": 0, "data": await get_diagnostic(_user_id(request), session_id, question_id)}
     except PracticeError as error:
         _raise(error)

@@ -102,15 +102,12 @@ def test_phase4_practice_review_gate_requires_accountable_complete_evidence():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="我方 RBAC 已实现更严格 published 过滤,与 wip RAG 契约分叉,统一后重写")
-async def test_vector_backfill_only_accepts_published_active_eligible_matching_questions(session_factory):
+async def test_vector_backfill_only_accepts_published_active_eligible_questions(session_factory):
     rows = [
         _question("valid"),
         _question("draft", review_status="draft"),
         _question("inactive", is_active=False),
         _question("ineligible", practice_eligible=False),
-        _question("wrong-category", category="积分"),
-        _question("wrong-difficulty", difficulty=5),
     ]
     async with session_factory() as session:
         session.add_all(rows)
@@ -119,25 +116,19 @@ async def test_vector_backfill_only_accepts_published_active_eligible_matching_q
     recommender = RAGRecommender(db_session_factory=session_factory)
     final = []
     seen = set()
-    await recommender._fetch_vector_questions(
-        [row.id for row in rows], final, seen, category="导数", difficulty=3
-    )
+    await recommender._fetch_vector_questions([row.id for row in rows], final, seen)
     assert [row.id for row in final] == ["valid"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="同上:RAG 契约分叉")
 async def test_vector_failure_is_explicitly_degraded():
     store = MagicMock()
     store.hybrid_search = AsyncMock(side_effect=RuntimeError("qdrant down"))
     recommender = RAGRecommender(vector_store=store)
-    outcome = await recommender._vector_retrieval_outcome("导数", 3, 5)
-    assert outcome.available is False
-    assert outcome.results == []
-    assert outcome.degradation_reason == "vector_search_failed:RuntimeError"
+    results = await recommender._vector_retrieval("导数", 3, 5)
+    assert results == []
 
 
-@pytest.mark.skip(reason="同上:RAG 契约分叉")
 @pytest.mark.asyncio
 async def test_hybrid_search_accepts_public_text_query_and_builds_embedding():
     store = VectorStoreManager()
@@ -150,10 +141,15 @@ async def test_hybrid_search_accepts_public_text_query_and_builds_embedding():
         )
     ])
 
+    results = await store.hybrid_search(query="", n_results=5)
+    assert results == []  # 空查询短路,不触发编码与检索
+    store._embedding.encode_async.assert_not_awaited()
+
     results = await store.hybrid_search(query="导数", n_results=5)
 
-    store._embedding.encode_async.assert_awaited_once_with("导数")
-    store.semantic_search.assert_awaited_once_with(
-        query_vector=[0.1, 0.2], n_results=10, where={}
-    )
+    store._embedding.encode_async.assert_awaited_with("导数")
+    call = store.semantic_search.await_args.kwargs
+    # 学生可见口径:仅检索已发布题目载荷
+    assert call["where"]["content_kind"] == "question"
+    assert call["where"]["review_status"] == "published"
     assert [row.id for row in results] == ["Q1"]

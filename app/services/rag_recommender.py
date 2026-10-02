@@ -327,7 +327,16 @@ class RAGRecommender:
 
     async def _fetch_vector_questions(self, vector_ids: List[str], final: List[Question], seen_ids: set):
         async with self._session_factory() as db:
-            result = await db.execute(select(Question).where(Question.id.in_(vector_ids), Question.review_status == "published"))
+            # 向量命中仅是召回;入库前按学生可见口径复核:已发布、在架、可练习。
+            # 分类/难度匹配由 hybrid_search 的 where 过滤在召回侧完成。
+            result = await db.execute(
+                select(Question).where(
+                    Question.id.in_(vector_ids),
+                    Question.review_status == "published",
+                    Question.is_active.is_(True),
+                    Question.practice_eligible.is_(True),
+                )
+            )
             for q in result.scalars().all():
                 if q.id not in seen_ids:
                     final.append(q)

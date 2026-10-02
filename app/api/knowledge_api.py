@@ -4,6 +4,14 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from app.api.student_contracts import (
+    CourseListResponse,
+    CourseTreeResponse,
+    KnowledgePointResponse,
+    KnowledgeSearchResponse,
+    MasteryResponse,
+    STUDENT_API_RESPONSES,
+)
 from app.data.database import get_db_session
 from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point, list_published_courses, search_published_points
 from app.services.learning_projection import read_learning_states, state_evidence
@@ -47,13 +55,13 @@ class LearningMapResponse(BaseModel):
     secondary_recommendations: list[LearningMapRecommendation]
 
 
-@router.get("/courses")
+@router.get("/courses", response_model=CourseListResponse, responses=STUDENT_API_RESPONSES)
 async def get_courses():
     async with get_db_session() as session:
         return {"courses": await list_published_courses(session)}
 
 
-@router.get("/courses/{course_id}/tree")
+@router.get("/courses/{course_id}/tree", response_model=CourseTreeResponse, responses=STUDENT_API_RESPONSES)
 async def get_course_tree(course_id: str, version: str | None = Query(default=None, max_length=40)):
     async with get_db_session() as session:
         tree = await get_published_course_tree(session, course_id, version)
@@ -62,7 +70,7 @@ async def get_course_tree(course_id: str, version: str | None = Query(default=No
     return tree
 
 
-@router.get("/courses/{course_id}/search")
+@router.get("/courses/{course_id}/search", response_model=KnowledgeSearchResponse, responses=STUDENT_API_RESPONSES)
 async def search_course_points(
     course_id: str,
     q: str = Query(..., min_length=1, max_length=100),
@@ -77,7 +85,7 @@ async def search_course_points(
     return {"course_id": course_id, "version": tree["version"], "query": q, "results": results}
 
 
-@router.get("/courses/{course_id}/learning-map", response_model=LearningMapResponse)
+@router.get("/courses/{course_id}/learning-map", response_model=LearningMapResponse, responses=STUDENT_API_RESPONSES)
 async def get_course_learning_map(course_id: str, request: Request):
     """Return the current authenticated user's projection; user_id is never client supplied."""
     user_id = getattr(request.state, "user_id", None)
@@ -90,7 +98,7 @@ async def get_course_learning_map(course_id: str, request: Request):
     return projection
 
 
-@router.get("/points/{point_id}")
+@router.get("/points/{point_id}", response_model=KnowledgePointResponse, responses=STUDENT_API_RESPONSES)
 async def get_point(point_id: str):
     async with get_db_session() as session:
         point = await get_published_point(session, point_id)
@@ -99,7 +107,7 @@ async def get_point(point_id: str):
     return point
 
 
-@router.get("/points/{point_id}/learning")
+@router.get("/points/{point_id}/learning", response_model=KnowledgePointResponse, responses=STUDENT_API_RESPONSES)
 async def get_learning_content(point_id: str):
     async with get_db_session() as session:
         content = await get_published_learning_content(session, point_id)
@@ -126,7 +134,7 @@ def _map_mastery_status(mastery: float, attempts: int) -> str:
     return "weak"
 
 
-@router.get("/mastery")
+@router.get("/mastery", response_model=MasteryResponse, responses=STUDENT_API_RESPONSES)
 async def get_mastery(request: Request, course_id: str = Query(...)):
     """按课程返回当前用户的掌握度（以 knowledge_point_code 为 key）。
 
