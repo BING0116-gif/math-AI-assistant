@@ -32,14 +32,32 @@ async def stream_agent_response(
         raise ValueError("user_id is required")
     logger.info(f"[SSE] 开始流式响应: session={session_id}, label={context_label}, user={user_id}")
     turn_started = time.time()
+    first_content_at = None
+    capability = "unknown"
     try:
         chunk_idx = 0
         started = time.perf_counter()
         async for chunk in agent.stream(message, session_id=session_id, user_id=user_id, tutor_mode=tutor_mode, tutor_context=tutor_context):
             if chunk:
+                if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                    payload = {key: value for key, value in chunk.items() if key != "__agent_event__"}
+                    try:
+                        from app.observability import SSE_EVENTS
+                        SSE_EVENTS.labels("agent_step").inc()
+                    except Exception:
+                        pass
+                    yield f"event: agent_step\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    continue
                 if not isinstance(chunk, str):
                     chunk = str(chunk)
                 chunk_idx += 1
+                if first_content_at is None:
+                    first_content_at = time.perf_counter()
+                try:
+                    from app.observability import SSE_EVENTS
+                    SSE_EVENTS.labels("content").inc()
+                except Exception:
+                    pass
                 try:
                     yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
                 except (TypeError, ValueError) as json_error:
@@ -104,7 +122,22 @@ async def stream_agent_response(
             logger.info(f"[SSE] follow_up事件已推送 | session={session_id}")
 
         logger.info(f"[SSE] 流式响应完成: session={session_id}, total_chunks={chunk_idx}")
+        metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
+        capability = str(metadata.get("capability") or "unknown")[:80]
+        try:
+            from app.observability import AGENT_RUNS, AGENT_LATENCY, AGENT_TTFT
+            AGENT_RUNS.labels(capability, "completed").inc()
+            AGENT_LATENCY.labels(capability).observe(time.perf_counter() - started)
+            if first_content_at is not None:
+                AGENT_TTFT.labels(capability).observe(first_content_at - started)
+        except Exception:
+            pass
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
+        try:
+            from app.observability import SSE_EVENTS
+            SSE_EVENTS.labels("done").inc()
+        except Exception:
+            pass
         if ai_run_id:
             from app.services.tutor_service import complete_ai_run
             metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
@@ -112,6 +145,11 @@ async def stream_agent_response(
             await complete_ai_run(ai_run_id, status="completed", metadata=metadata)
 
     except Exception as e:
+        try:
+            from app.observability import AGENT_RUNS
+            AGENT_RUNS.labels(capability, "failed").inc()
+        except Exception:
+            pass
         logger.error(f"[SSE] 流式{context_label}失败: {e}\n{traceback.format_exc()}")
         yield f"data: {json.dumps({'content': '服务器内部错误', 'type': 'error'})}\n\n"
         yield f"data: {json.dumps({'content': '', 'type': 'done'})}\n\n"
@@ -147,6 +185,10 @@ async def stream_recognize_response(
                 temp_file_path, session_id=session_id, user_id=user_id
             ):
                 if chunk:
+                    if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                        payload = {key: value for key, value in chunk.items() if key != "__agent_event__"}
+                        yield f"event: agent_step\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        continue
                     if not isinstance(chunk, str):
                         chunk = str(chunk)
                     yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
@@ -193,6 +235,10 @@ async def stream_multimodal_response(
                 started = time.perf_counter()
                 async for chunk in agent.stream_multimodal(temp_file_path, message, session_id=session_id, user_id=user_id, tutor_mode=tutor_mode, tutor_context=tutor_context):
                     if chunk:
+                        if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                            payload = {key: value for key, value in chunk.items() if key != "__agent_event__"}
+                            yield f"event: agent_step\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                            continue
                         if not isinstance(chunk, str):
                             chunk = str(chunk)
                         yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"
@@ -224,6 +270,10 @@ async def stream_multimodal_response(
                 message, session_id=session_id, user_id=user_id, tutor_mode=tutor_mode, tutor_context=tutor_context
             ):
                 if chunk:
+                    if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                        payload = {key: value for key, value in chunk.items() if key != "__agent_event__"}
+                        yield f"event: agent_step\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        continue
                     if not isinstance(chunk, str):
                         chunk = str(chunk)
                     yield f"data: {json.dumps({'content': chunk, 'type': 'content'})}\n\n"

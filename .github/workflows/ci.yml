@@ -102,6 +102,18 @@ jobs:
       - name: Validate Compose configuration
         run: docker compose config
 
+      - name: Validate Prometheus configuration and alert rules
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            prom/prometheus:v3.5.0 \
+            promtool check rules /workspace/ops/prometheus-agent-alerts.yml
+          docker run --rm \
+            -v "$PWD/ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            -v "$PWD/ops/prometheus-agent-alerts.yml:/etc/prometheus/agent-alerts.yml:ro" \
+            prom/prometheus:v3.5.0 \
+            promtool check config /etc/prometheus/prometheus.yml
+
       - name: Build and start empty stack
         run: docker compose up -d --build
 

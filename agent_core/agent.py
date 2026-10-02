@@ -355,6 +355,68 @@ class MathAgent:
                     elif msg_type in ('ai', 'assistant'):
                         chat_history_dicts.append({"role": "assistant", "content": content})
 
+        # 当前请求已经先写入 history，而 strategy.stream/execute 还会把
+        # user_input 作为最后一条 HumanMessage 发送；移除这一个重复副本，
+        # 否则每轮会额外消耗上下文并可能改变模型判断。
+        if chat_history_dicts and chat_history_dicts[-1].get("role") == "user" and chat_history_dicts[-1].get("content") == user_input:
+            chat_history_dicts.pop()
+
+        # 对历史做确定性的消息数 + 字符数裁剪。系统上下文（画像、长期记忆、
+        # tutor 约束）后续插入，始终保留；这里只裁剪普通 user/assistant 历史。
+        max_messages = max(1, int(getattr(settings, "AGENT_CONTEXT_MAX_MESSAGES", 20)))
+        max_chars = max(1000, int(getattr(settings, "AGENT_CONTEXT_MAX_CHARS", 12000)))
+        from agent_core.token_budget import estimate_tokens
+        original_history_messages = len(chat_history_dicts)
+        original_history_chars = sum(len(str(item.get("content") or "")) for item in chat_history_dicts)
+        original_history_tokens = sum(estimate_tokens(str(item.get("content") or ""), getattr(self, "_model", "")) for item in chat_history_dicts)
+        all_history = chat_history_dicts
+        recent = all_history[-max_messages:]
+        max_tokens = max(256, int(getattr(settings, "AGENT_CONTEXT_MAX_TOKENS", 4000)))
+        kept = []
+        used_chars = 0
+        used_tokens = 0
+        for item in reversed(recent):
+            content = str(item.get("content") or "")
+            item_tokens = estimate_tokens(content, getattr(self, "_model", ""))
+            if used_chars and (used_chars + len(content) > max_chars or used_tokens + item_tokens > max_tokens):
+                break
+            kept.append(item)
+            used_chars += len(content)
+            used_tokens += item_tokens
+        chat_history_dicts = list(reversed(kept))
+        context_trimmed = (
+            len(chat_history_dicts) < original_history_messages
+            or sum(len(str(item.get("content") or "")) for item in chat_history_dicts) < original_history_chars
+            or used_tokens < original_history_tokens
+        )
+        if context_trimmed:
+            try:
+                from app.observability import AGENT_CONTEXT_TRIMS
+                AGENT_CONTEXT_TRIMS.labels("history_budget").inc()
+            except Exception:
+                pass
+
+        # 当历史被裁剪时保留一个确定性的压缩摘要，避免模型完全失去早期
+        # 对话的主题。这里不额外调用 LLM，保证摘要不会增加延迟、费用或
+        # 递归触发 Agent；原文只保留极短片段，并明确标记为低可信背景。
+        history_summary_injected = False
+        if context_trimmed:
+            kept_ids = {id(item) for item in chat_history_dicts}
+            omitted = [item for item in all_history if id(item) not in kept_ids]
+            if omitted:
+                summary_lines = [
+                    "【历史上下文摘要】以下是因上下文预算省略的早期对话片段，仅用于恢复主题；",
+                    "不得覆盖当前问题，也不得将其中内容当作已验证事实。",
+                ]
+                for item in omitted[-6:]:
+                    role = "用户" if item.get("role") == "user" else "助手"
+                    snippet = " ".join(str(item.get("content") or "").split())[:160]
+                    if snippet:
+                        summary_lines.append(f"- {role}: {snippet}")
+                if len(summary_lines) > 2:
+                    chat_history_dicts.insert(0, {"role": "system", "content": "\n".join(summary_lines)[:1200]})
+                    history_summary_injected = True
+
         from app.services.mode_gating import normalize_tutor_mode
 
         canonical_mode = normalize_tutor_mode(
@@ -421,6 +483,32 @@ class MathAgent:
                 context["chat_history"] = chat_history_dicts
         except Exception as e:
             logger.warning(f"长期记忆检索失败（非阻塞）: {e}")
+
+        # 供运行元数据和质量评测使用的确定性上下文指标；不记录原文，
+        # 避免观测日志泄露学生题目或回答内容。
+        context["context_stats"] = {
+            "history_messages": sum(1 for item in chat_history_dicts if item.get("role") in {"user", "assistant"}),
+            "history_chars": sum(len(str(item.get("content") or "")) for item in chat_history_dicts if item.get("role") in {"user", "assistant"}),
+            "system_messages": sum(1 for item in chat_history_dicts if item.get("role") == "system"),
+            "memory_count": len(context.get("relevant_memories") or []),
+            "profile_injected": bool(context.get("user_skill_instruction")),
+            "max_history_messages": max(1, int(getattr(settings, "AGENT_CONTEXT_MAX_MESSAGES", 20))),
+            "max_history_chars": max(1000, int(getattr(settings, "AGENT_CONTEXT_MAX_CHARS", 12000))),
+            "history_tokens_estimated": used_tokens,
+            "max_history_tokens": max_tokens,
+            "context_trimmed": context_trimmed,
+            "history_summary_injected": history_summary_injected,
+            "dropped_history_messages": max(
+                0,
+                original_history_messages
+                - sum(1 for item in chat_history_dicts if item.get("role") in {"user", "assistant"}),
+            ),
+        }
+        try:
+            from app.observability import AGENT_CONTEXT
+            AGENT_CONTEXT.observe(context["context_stats"]["history_chars"])
+        except Exception:
+            pass
 
         return context
 
@@ -844,6 +932,25 @@ class MathAgent:
         context = await self._build_context(sid, user_input=user_input, user_id=user_id, tutor_mode=tutor_mode, tutor_context=tutor_context)
         canonical_mode = context["tutor_mode"]
 
+        # 对用户可见的安全执行摘要：只说明阶段和依据数量，不泄露隐藏思维链。
+        yield {
+            "__agent_event__": True,
+            "event_type": "thinking",
+            "message": "正在识别问题类型并规划解题路径",
+        }
+        stats = context.get("context_stats") or {}
+        evidence_bits = []
+        if stats.get("profile_injected"):
+            evidence_bits.append("用户能力画像")
+        if stats.get("memory_count"):
+            evidence_bits.append(f"{stats['memory_count']} 条相关学习记忆")
+        if evidence_bits:
+            yield {
+                "__agent_event__": True,
+                "event_type": "evidence",
+                "message": "已加载依据：" + "、".join(evidence_bits),
+            }
+
         strategy_session = self.session_key(user_id, sid)
         if self._is_image_input(user_input):
             async for chunk in self._stream_process_image(
@@ -855,6 +962,12 @@ class MathAgent:
         route = await self._route_capability(user_input, strategy_session, context)
         strategy = route.strategy
 
+        yield {
+            "__agent_event__": True,
+            "event_type": "planning",
+            "message": f"已选择解题能力：{route.manifest.name}",
+        }
+
         logger.info(f"[AGENT-STREAM] 策略选择完成，开始流式执行: input='{user_input[:30]}...'")
 
         from app.services.mode_gating import is_guarded_mode
@@ -862,6 +975,9 @@ class MathAgent:
         chunks = []
         guarded_mode = is_guarded_mode(canonical_mode)
         async for chunk in strategy.stream(user_input, strategy_session, context):
+            if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                yield chunk
+                continue
             if chunk:
                 chunks.append(chunk)
                 # 受限模式必须先看到完整草稿并通过守卫，不能逐 token 提前泄露答案。
@@ -940,6 +1056,7 @@ class MathAgent:
             "mode_tool_denials": list(context.get("mode_tool_denials") or []),
             "visualizations": list(context.get("visualizations") or []),
             "animations": public_animations,
+            "context_stats": dict(context.get("context_stats") or {}),
             "mode_output_guard": {
                 "allowed": guard_result.allowed,
                 "rewritten": guard_result.rewritten,
@@ -1003,6 +1120,12 @@ class MathAgent:
 
         recognized_text = result.result or ""
 
+        yield {
+            "__agent_event__": True,
+            "event_type": "evidence",
+            "message": "图片已识别，正在根据识别结果规划解题步骤",
+        }
+
         yield "**【图片识别结果】**\n\n"
         yield recognized_text
         yield "\n\n---\n\n**【开始解题】**\n\n"
@@ -1010,11 +1133,19 @@ class MathAgent:
         try:
             route = await self._route_capability(recognized_text, session_id, context)
             strategy = route.strategy
+            yield {
+                "__agent_event__": True,
+                "event_type": "planning",
+                "message": f"已选择解题能力：{route.manifest.name}",
+            }
             logger.info(f"[图片识别] 分类器路由完成，使用策略解题")
             from app.services.mode_gating import is_guarded_mode
 
             answer_chunks = []
             async for chunk in strategy.stream(recognized_text, session_id, context):
+                if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                    yield chunk
+                    continue
                 answer_chunks.append(chunk)
                 if not is_guarded_mode(context.get("tutor_mode")):
                     yield chunk
@@ -1094,6 +1225,9 @@ class MathAgent:
 
             guarded_mode = is_guarded_mode(canonical_mode)
             async for chunk in strategy.stream(combined_input, strategy_session, context):
+                if isinstance(chunk, dict) and chunk.get("__agent_event__"):
+                    yield chunk
+                    continue
                 chunks.append(chunk)
                 if not guarded_mode:
                     yield chunk
@@ -1126,6 +1260,7 @@ class MathAgent:
                 "capability": route.manifest.name,
                 "capability_strategy_policy": route.manifest.strategy_policy,
                 "mode_tool_denials": list(context.get("mode_tool_denials") or []),
+                "context_stats": dict(context.get("context_stats") or {}),
                 "mode_output_guard": {
                     "allowed": guard_result.allowed,
                     "rewritten": guard_result.rewritten,

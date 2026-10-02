@@ -12,6 +12,7 @@ const items = [
   { to: '/admin/review', label: '题库导入与审核' },
   { to: '/admin/papers', label: '组卷工作台' },
   { to: '/admin/readiness', label: '能力就绪度' },
+  { to: '/admin/agent-metrics', label: 'Agent 指标' },
 ]
 
 const activeLabel = computed(() => items.find((item) => route.path === item.to)?.label || '管理后台')
