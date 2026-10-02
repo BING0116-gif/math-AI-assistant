@@ -10,6 +10,11 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 from typing import Annotated, Any, Literal
 
 from app.config.settings import settings
+from app.api.student_contracts import (
+    ChatSessionEnvelope,
+    ChatSessionListEnvelope,
+    STUDENT_API_RESPONSES,
+)
 from app.middleware.security import (
     validate_input,
     is_safe_image_data,
@@ -116,7 +121,7 @@ def get_agent():
     return _get_agent()
 
 
-@router.post("/api/chat", responses={
+@router.post("/api/chat", responses={**STUDENT_API_RESPONSES,
     503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
 })
 async def chat(request: ChatRequest, http_request: Request):
@@ -156,7 +161,7 @@ async def chat(request: ChatRequest, http_request: Request):
     )
 
 
-@router.post("/api/chat/recover")
+@router.post("/api/chat/recover", responses=STUDENT_API_RESPONSES)
 async def recover_chat_stream(request: RecoverStreamRequest, http_request: Request):
     """Replay buffered events newer than ``Last-Event-ID`` for the same owner/session."""
     user_id = _user_id(http_request)
@@ -208,7 +213,7 @@ async def chat_react(request: ChatRequest, http_request: Request):
     )
 
 
-@router.post("/api/recognize", responses={
+@router.post("/api/recognize", responses={**STUDENT_API_RESPONSES,
     503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
 })
 async def recognize(request: RecognizeRequest, http_request: Request):
@@ -237,7 +242,7 @@ async def recognize(request: RecognizeRequest, http_request: Request):
     )
 
 
-@router.post("/api/chat/multimodal", responses={
+@router.post("/api/chat/multimodal", responses={**STUDENT_API_RESPONSES,
     503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
 })
 async def chat_multimodal(request: MultimodalChatRequest, http_request: Request):
@@ -270,7 +275,7 @@ async def chat_multimodal(request: MultimodalChatRequest, http_request: Request)
     )
 
 
-@router.post("/api/chat/clarification/answer", responses={
+@router.post("/api/chat/clarification/answer", responses={**STUDENT_API_RESPONSES,
     409: {"description": "澄清标识校验失败（串线/重复提交/记录不存在）"},
     503: {"description": "AI 功能不可用", "model": AIUnavailableResponse},
 })
@@ -346,13 +351,13 @@ async def answer_clarification(request: ClarificationAnswerRequest, http_request
     )
 
 
-@router.get("/api/chat/sessions")
+@router.get("/api/chat/sessions", response_model=ChatSessionListEnvelope, responses=STUDENT_API_RESPONSES)
 async def list_chat_sessions(http_request: Request):
     from app.services.memory_application import MemoryApplicationService
     return {"code": 0, "data": await MemoryApplicationService().list_chat_sessions(_user_id(http_request))}
 
 
-@router.get("/api/chat/sessions/{session_id}")
+@router.get("/api/chat/sessions/{session_id}", response_model=ChatSessionEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_chat_session(session_id: str, http_request: Request):
     from app.services.memory_application import MemoryApplicationService
     data = await MemoryApplicationService().get_chat_session(_user_id(http_request), session_id)
@@ -360,7 +365,7 @@ async def get_chat_session(session_id: str, http_request: Request):
     return {"code": 0, "data": data}
 
 
-@router.patch("/api/chat/sessions/{session_id}")
+@router.patch("/api/chat/sessions/{session_id}", response_model=ChatSessionEnvelope, responses=STUDENT_API_RESPONSES)
 async def update_chat_session(session_id: str, body: UpdateChatSessionRequest, http_request: Request):
     from app.services.memory_application import MemoryApplicationService
     try: data = await MemoryApplicationService().update_chat_session(_user_id(http_request), session_id, title=body.title, default_tutor_mode=body.default_tutor_mode, archive=body.archive)

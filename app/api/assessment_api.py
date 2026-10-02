@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
+from app.api.student_contracts import STUDENT_API_RESPONSES, StudentOperationEnvelope
 from app.services.assessment_service import (
     create_assessment, get_assessment, preview_assessment_blueprint, readiness, save_draft,
     start_assessment, submit_assessment,
@@ -60,13 +61,13 @@ def _raise(error: PracticeError):
     raise HTTPException(status_code=status, detail={"code":error.code,"message":error.message,**error.extra})
 
 
-@router.get("/readiness")
+@router.get("/readiness", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_readiness(request: Request, course_id: str | None = Query(default=None, max_length=36)):
     try: return {"code":0,"data":await readiness(_user(request),course_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions")
+@router.post("/sessions", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_session(request: Request, body: CreateAssessmentRequest):
     payload = body.model_dump(exclude_none=True)
     buckets = payload.pop("blueprint_buckets", None)
@@ -102,31 +103,31 @@ async def post_preview_blueprint(request: Request, body: PreviewBlueprintRequest
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@router.get("/sessions/{session_id}")
+@router.get("/sessions/{session_id}", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_session(request: Request, session_id: str):
     try: return {"code":0,"data":await get_assessment(_user(request),session_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions/{session_id}/start")
+@router.post("/sessions/{session_id}/start", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_start(request: Request, session_id: str):
     try: return {"code":0,"data":await start_assessment(_user(request),session_id)}
     except PracticeError as error: _raise(error)
 
 
-@router.put("/sessions/{session_id}/draft-answers/{question_id}")
+@router.put("/sessions/{session_id}/draft-answers/{question_id}", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def put_draft(request: Request, session_id: str, question_id: str, body: SaveDraftRequest):
     try: return {"code":0,"data":await save_draft(_user(request),session_id,question_id,body.answer,body.expected_version)}
     except PracticeError as error: _raise(error)
 
 
-@router.post("/sessions/{session_id}/submit")
+@router.post("/sessions/{session_id}/submit", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def post_submit(request: Request, session_id: str, body: SubmitAssessmentRequest):
     try: return {"code":0,"data":await submit_assessment(_user(request),session_id,body.idempotency_key)}
     except PracticeError as error: _raise(error)
 
 
-@router.get("/sessions/{session_id}/result")
+@router.get("/sessions/{session_id}/result", response_model=StudentOperationEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_result(request: Request, session_id: str):
     try:
         data=await get_assessment(_user(request),session_id,results=True)

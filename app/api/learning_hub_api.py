@@ -1,9 +1,10 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.api.student_contracts import STUDENT_API_RESPONSES
 from app.services.learning_activity import ActivityError, end_activity, heartbeat_activity, start_activity
 from app.services.learning_hub import LearningHubError, complete_review, defer_review, due_reviews, today_hub, unified_dashboard, unified_profile
 
@@ -58,6 +59,62 @@ class ActivityItem(BaseModel):
     active_seconds: int
     status: str
 
+
+class TodayTask(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    type: str
+    title: str
+    target_knowledge_point: dict[str, str] | None
+    reason: str
+    evidence: list[dict[str, Any]]
+    estimated_minutes: int
+    priority: int
+    available_question_count: int
+    start: dict[str, Any] | None
+    degradation: dict[str, str] | None
+
+
+class TodayHubResponse(BaseModel):
+    generated_at: datetime
+    algorithm_version: str
+    cold_start: bool
+    primary: TodayTask | None
+    alternatives: list[TodayTask]
+
+
+class LearningDashboardResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    generated_at: datetime
+    state_version: str
+    period: Literal["7d", "30d", "90d"]
+    status: str
+    status_message: str
+    progress: dict[str, int]
+    dimensions: dict[str, Any]
+    weakest: list[dict[str, Any]]
+    strongest: list[dict[str, Any]]
+    metrics: dict[str, dict[str, Any]]
+    trend: list[dict[str, Any]]
+    heatmap: list[dict[str, Any]]
+    chapter_mastery: list[dict[str, Any]]
+    goals: dict[str, Any]
+    data_quality: dict[str, Any]
+    today: TodayHubResponse
+
+
+class LearningProfileResponse(BaseModel):
+    generated_at: datetime
+    status: str
+    status_message: str
+    dimensions: dict[str, Any]
+    review_plan: list[dict[str, Any]]
+    forgetting_curve: dict[str, Any]
+    insights: list[dict[str, Any]]
+    data_quality: dict[str, Any]
+
 def _user(request: Request) -> str:
     value = getattr(request.state, "user_id", None)
     if not value:
@@ -68,11 +125,11 @@ def _raise(error: LearningHubError) -> None:
     status = 404 if error.code == "REVIEW_NOT_FOUND" else 409 if error.code in {"IDEMPOTENCY_CONFLICT", "STALE_ATTEMPT"} else 422
     raise HTTPException(status, detail={"code": error.code, "message": error.message})
 
-@router.get("/reviews/due", response_model=ReviewListResponse)
+@router.get("/reviews/due", response_model=ReviewListResponse, responses=STUDENT_API_RESPONSES)
 async def get_due(request: Request, limit: int = Query(20, ge=1, le=100), include_upcoming: bool = False):
     return await due_reviews(_user(request), limit=limit, include_upcoming=include_upcoming)
 
-@router.post("/reviews/{schedule_id}/actions", response_model=ReviewItem)
+@router.post("/reviews/{schedule_id}/actions", response_model=ReviewItem, responses=STUDENT_API_RESPONSES)
 async def post_action(request: Request, schedule_id: int, body: ReviewActionRequest):
     try:
         if body.action == "complete":
@@ -83,33 +140,33 @@ async def post_action(request: Request, schedule_id: int, body: ReviewActionRequ
     except LearningHubError as error:
         _raise(error)
 
-@router.get("/today")
+@router.get("/today", response_model=TodayHubResponse, responses=STUDENT_API_RESPONSES)
 async def get_today(request: Request, limit: int = Query(5, ge=1, le=10)):
     return await today_hub(_user(request), limit=limit)
 
-@router.get("/dashboard")
+@router.get("/dashboard", response_model=LearningDashboardResponse, responses=STUDENT_API_RESPONSES)
 async def get_dashboard(request: Request, period: Literal["7d", "30d", "90d"] = "7d"):
     return await unified_dashboard(_user(request), period=period)
 
-@router.get("/profile")
+@router.get("/profile", response_model=LearningProfileResponse, responses=STUDENT_API_RESPONSES)
 async def get_learning_profile(request: Request):
     return await unified_profile(_user(request))
 
-@router.post("/activities", response_model=ActivityItem)
+@router.post("/activities", response_model=ActivityItem, responses=STUDENT_API_RESPONSES)
 async def start_learning_activity(request: Request, body: ActivityStartRequest):
     try:
         return await start_activity(_user(request), body.client_session_id, body.context_type, body.context_id)
     except ActivityError as error:
         raise HTTPException(409 if error.code == "IDEMPOTENCY_CONFLICT" else 422, detail={"code": error.code, "message": error.message})
 
-@router.post("/activities/{activity_id}/heartbeat", response_model=ActivityItem)
+@router.post("/activities/{activity_id}/heartbeat", response_model=ActivityItem, responses=STUDENT_API_RESPONSES)
 async def heartbeat_learning_activity(request: Request, activity_id: str, body: ActivityHeartbeatRequest):
     try:
         return await heartbeat_activity(_user(request), activity_id, body.client_time)
     except ActivityError as error:
         raise HTTPException(404, detail={"code": error.code, "message": error.message})
 
-@router.post("/activities/{activity_id}/end", response_model=ActivityItem)
+@router.post("/activities/{activity_id}/end", response_model=ActivityItem, responses=STUDENT_API_RESPONSES)
 async def end_learning_activity(request: Request, activity_id: str):
     try:
         return await end_activity(_user(request), activity_id)
