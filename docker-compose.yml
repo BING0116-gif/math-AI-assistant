@@ -180,6 +180,7 @@ services:
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=15d"]
     volumes:
       - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus-agent-alerts.yml:/etc/prometheus/agent-alerts.yml:ro
       - prometheus_data:/prometheus
     depends_on:
       - web

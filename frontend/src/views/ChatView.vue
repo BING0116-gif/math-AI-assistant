@@ -161,6 +161,30 @@ function processTyping(msgId: string) {
 
 // SSE 事件处理（命名事件：follow_up / ask_student）
 function handleEvent(eventType: string, data: any, messageId?: string) {
+  if (eventType === 'agent_step' && messageId) {
+    const message = store.currentMessages.find(item => item.id === messageId)
+    if (message) {
+      const steps = [...(message.agentSteps || [])]
+      if ((data.event_type === 'tool_end' || data.event_type === 'tool_error') && data.tool) {
+        const active = [...steps].reverse().find(item => item.tool === data.tool && item.status === 'running')
+        if (active) active.status = data.event_type === 'tool_error' ? 'error' : 'done'
+      } else {
+        steps.push({
+          type: data.event_type || 'thinking',
+          tool: data.tool || '',
+          label: data.message || '正在处理',
+          status: data.event_type === 'tool_start'
+            ? 'running'
+            : (data.event_type === 'tool_error' ? 'error' : 'done'),
+        })
+      }
+      // Agent 步骤是高频瞬态事件，只更新内存；最终 done 事件统一持久化，
+      // 避免每个工具状态都触发一次 localStorage 同步写入。
+      store.updateMessage(store.currentChatId, messageId, { agentSteps: steps }, { persist: false })
+      nextTick(() => scrollToBottom())
+    }
+    return
+  }
   if (eventType === 'follow_up' && data.type === 'recommendation') {
     const content = data.content || ''
     const questions = parseFollowUpContent(content)
@@ -349,7 +373,7 @@ async function handleTextSend(text: string) {
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text' }
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text', agentSteps: [] }
   store.addMessage(chatId, placeholder)
 
   await streamAgentReply(
@@ -373,7 +397,7 @@ async function handleClarificationSubmit({ answer }: { answer: string; optionLab
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text' }
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text', agentSteps: [] }
   store.addMessage(chatId, placeholder)
 
   await streamAgentReply(
@@ -411,7 +435,7 @@ async function handleSendWithImage(text: string, imageData: string) {
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: '正在识别...', type: 'text' })
+  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: '正在识别...', type: 'text', agentSteps: [] })
 
   streaming.value = true
   streamingMessageId.value = msgId

@@ -4,6 +4,15 @@
     <div v-if="message.sender === 'ai'" class="msg-ai-wrap">
       <span class="ai-avatar" aria-hidden="true">∑</span>
       <div class="ai-body">
+        <details v-if="message.agentSteps?.length" class="agent-timeline" :open="isStreaming">
+          <summary>Agent 执行过程 · {{ message.agentSteps.length }} 步</summary>
+          <div v-for="(step, index) in message.agentSteps" :key="`${step.type}-${step.tool}-${index}`" class="agent-step" :class="`agent-step--${step.status}`">
+            <span class="agent-step__icon" :class="{ 'agent-step__icon--tool': step.type === 'tool_start' || step.type === 'tool_end' || step.type === 'tool_error', 'agent-step__icon--error': step.status === 'error' }" aria-hidden="true"></span>
+            <span class="agent-step__label">{{ step.label }}</span>
+            <span v-if="step.status === 'running'" class="agent-step__spinner" aria-label="进行中"></span>
+            <span v-else class="agent-step__status">{{ step.status === 'error' ? '失败' : '完成' }}</span>
+          </div>
+        </details>
         <div v-if="message.type === 'image'" class="msg-image-wrap">
           <img :src="message.content" class="msg-image" alt="图片消息" />
           <div v-if="message.text" class="msg-image-text">{{ message.text }}</div>
@@ -115,6 +124,31 @@ const renderedContent = computed(() => {
   gap: 13px;
   width: 100%;
 }
+.agent-timeline {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.agent-timeline summary { cursor: pointer; color: var(--ink-1); font-weight: 650; min-height: 24px; }
+.agent-timeline summary::marker { color: var(--brand); }
+.agent-step { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.agent-step__icon { width: 18px; height: 18px; position: relative; flex: 0 0 18px; border-radius: 50%; background: var(--brand-soft); }
+.agent-step__icon::after { content: ''; position: absolute; inset: 5px; border: 1.5px solid var(--brand-text); border-radius: 50%; }
+.agent-step__icon--tool::after { inset: 4px 5px; border-radius: 2px; transform: rotate(45deg); }
+.agent-step__label { flex: 1; min-width: 0; }
+.agent-step__status { color: var(--ink-3); font-size: 11px; }
+.agent-step--error .agent-step__status { color: var(--danger, #d14b4b); }
+.agent-step__icon--error { background: color-mix(in srgb, var(--danger, #d14b4b) 16%, transparent); }
+.agent-step__icon--error::after { border-color: var(--danger, #d14b4b); }
+.agent-step__spinner { width: 10px; height: 10px; border: 1.5px solid var(--border-strong); border-top-color: var(--brand); border-radius: 50%; animation: agentSpin .8s linear infinite; }
+@keyframes agentSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .agent-step__spinner { animation: none; } }
 .ai-avatar {
   width: 30px;
   height: 30px;

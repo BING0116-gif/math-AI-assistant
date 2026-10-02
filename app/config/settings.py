@@ -185,6 +185,11 @@ class Settings(BaseSettings):
     # ── 记忆系统配置 ──
     MEMORY_ENABLED: bool = Field(default=True, alias="MEMORY_ENABLED")
     MEMORY_SHORT_TERM_CAPACITY: int = Field(default=20, alias="MEMORY_SHORT_TERM_CAPACITY")
+    # Agent 输入上下文的硬上限（不含系统提示词和当前问题）。按字符估算，
+    # 防止长会话把模型上下文窗口耗尽；真正的 token usage 仍以供应商返回为准。
+    AGENT_CONTEXT_MAX_MESSAGES: int = Field(default=20, alias="AGENT_CONTEXT_MAX_MESSAGES")
+    AGENT_CONTEXT_MAX_CHARS: int = Field(default=12000, alias="AGENT_CONTEXT_MAX_CHARS")
+    AGENT_CONTEXT_MAX_TOKENS: int = Field(default=4000, alias="AGENT_CONTEXT_MAX_TOKENS")
     MEMORY_RETRIEVE_TOP_K: int = Field(default=7, alias="MEMORY_RETRIEVE_TOP_K")
     MEMORY_RETRIEVE_MIN_SCORE: float = Field(default=0.3, alias="MEMORY_RETRIEVE_MIN_SCORE")
     MEMORY_QDRANT_COLLECTION: str = Field(default="user_memories_bge_zh_v1", alias="MEMORY_QDRANT_COLLECTION")

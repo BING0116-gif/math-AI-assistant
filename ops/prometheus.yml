@@ -1,5 +1,9 @@
 global:
   scrape_interval: 15s
+
+rule_files:
+  - /etc/prometheus/agent-alerts.yml
+
 scrape_configs:
   - job_name: math-ai-assistant
     metrics_path: /metrics

@@ -203,6 +203,7 @@ class LangChainReActStrategy(AgentStrategy):
         converter.set_context(context)
 
         recorder.start_process(user_input)
+        tool_started_at: Dict[str, float] = {}
 
         chat_history = self._format_chat_history(context.get("chat_history", []))
 
@@ -238,7 +239,46 @@ class LangChainReActStrategy(AgentStrategy):
                     tool_name = event.get("name", "")
                     if tool_name:
                         _used_tools.add(tool_name)
+                        tool_started_at[tool_name] = time.perf_counter()
+                        try:
+                            from app.observability import AGENT_TOOL_CALLS
+                            AGENT_TOOL_CALLS.labels(tool_name[:80], "started").inc()
+                        except Exception:
+                            pass
+                        yield {"__agent_event__": True, "event_type": "tool_start", "tool": tool_name, "message": f"正在调用 {tool_name}"}
                         logger.debug(f"[STREAM] 工具调用: {tool_name}")
+
+                if event_name == "on_tool_end":
+                    tool_name = event.get("name", "")
+                    if tool_name:
+                        elapsed = time.perf_counter() - tool_started_at.pop(tool_name, time.perf_counter())
+                        try:
+                            from app.observability import AGENT_TOOL_CALLS, AGENT_TOOL_LATENCY
+                            AGENT_TOOL_CALLS.labels(tool_name[:80], "success").inc()
+                            AGENT_TOOL_LATENCY.labels(tool_name[:80]).observe(elapsed)
+                        except Exception:
+                            pass
+                        yield {"__agent_event__": True, "event_type": "tool_end", "tool": tool_name, "message": f"{tool_name} 已返回结果"}
+
+                # LangChain 在工具抛出异常时发送 on_tool_error，而不是 on_tool_end。
+                # 必须单独记账，否则成功率会被高估，且前端会一直显示工具运行中。
+                if event_name == "on_tool_error":
+                    tool_name = event.get("name", "")
+                    if tool_name:
+                        elapsed = time.perf_counter() - tool_started_at.pop(tool_name, time.perf_counter())
+                        try:
+                            from app.observability import AGENT_TOOL_CALLS, AGENT_TOOL_LATENCY
+                            AGENT_TOOL_CALLS.labels(tool_name[:80], "error").inc()
+                            AGENT_TOOL_LATENCY.labels(tool_name[:80]).observe(elapsed)
+                        except Exception:
+                            pass
+                        # 错误详情可能包含题目内容、凭据或内部路径，日志/事件只传递稳定状态。
+                        yield {
+                            "__agent_event__": True,
+                            "event_type": "tool_error",
+                            "tool": tool_name,
+                            "message": f"{tool_name} 调用失败，正在继续处理",
+                        }
 
                 # 只传播供应商/LangChain 已返回的 usage，不估算也不改变模型请求。
                 if event_name == "on_chat_model_end":
@@ -278,6 +318,12 @@ class LangChainReActStrategy(AgentStrategy):
             if not _token_usage["total_tokens"]:
                 _token_usage["total_tokens"] = _token_usage["prompt_tokens"] + _token_usage["completion_tokens"]
             self._last_token_usage = _token_usage if _token_usage["total_tokens"] else {}
+            try:
+                from app.observability import AGENT_TOKENS
+                AGENT_TOKENS.labels("input").inc(_token_usage["prompt_tokens"])
+                AGENT_TOKENS.labels("output").inc(_token_usage["completion_tokens"])
+            except Exception:
+                pass
             # 检测是否包含RAG标记（说明LLM确实展示了推荐结果）
             _has_rag = "RAG推荐结果" in _complete or "来源:" in _complete
             print(f"[OBSERVE] RAG内容检测: {'检测到RAG题目展示' if _has_rag else '未检测到RAG内容 — 可能被LLM改写或忽略!'}", flush=True)

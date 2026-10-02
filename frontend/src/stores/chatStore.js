@@ -84,7 +84,7 @@ export const useChatStore = defineStore('chat', () => {
     return newMessage
   }
 
-  function updateMessage(chatId, messageId, updates) {
+  function updateMessage(chatId, messageId, updates, options = {}) {
     const chat = chats.value.find(c => c.id === chatId)
     if (!chat) return
 
@@ -92,7 +92,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!message) return
 
     Object.assign(message, updates)
-    persistChats()
+    if (options.persist !== false) persistChats()
   }
 
   function deleteChat(chatId) {

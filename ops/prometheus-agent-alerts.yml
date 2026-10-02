@@ -1,0 +1,65 @@
+groups:
+  - name: math-ai-agent-runtime
+    interval: 30s
+    rules:
+      - alert: MathAIAgentFailureRateHigh
+        expr: |
+          sum(rate(mathai_agent_runs_total{status="failed"}[10m]))
+          /
+          clamp_min(sum(rate(mathai_agent_runs_total[10m])), 0.001) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+          service: math-ai-assistant
+        annotations:
+          summary: Agent 失败率持续偏高
+          description: 最近 10 分钟 Agent 失败率超过 10%，请检查模型、工具和依赖服务。
+
+      - alert: MathAIAgentToolErrorRateHigh
+        expr: |
+          sum(rate(mathai_agent_tool_calls_total{status="error"}[10m]))
+          /
+          clamp_min(sum(rate(mathai_agent_tool_calls_total{status=~"success|error"}[10m])), 0.001) > 0.15
+        for: 10m
+        labels:
+          severity: warning
+          service: math-ai-assistant
+        annotations:
+          summary: Agent 工具失败率持续偏高
+          description: 最近 10 分钟工具失败率超过 15%，请检查工具依赖和超时配置。
+
+      - alert: MathAIAgentTimeToFirstTokenHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(mathai_agent_time_to_first_token_seconds_bucket[10m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          service: math-ai-assistant
+        annotations:
+          summary: Agent 首 Token 延迟过高
+          description: 最近 10 分钟首 Token P95 超过 5 秒，请检查模型服务和上下文大小。
+
+      - alert: MathAIAgentContextTrimRateHigh
+        expr: |
+          sum(rate(mathai_agent_context_trims_total[10m]))
+          /
+          clamp_min(sum(rate(mathai_agent_runs_total[10m])), 0.001) > 0.50
+        for: 15m
+        labels:
+          severity: info
+          service: math-ai-assistant
+        annotations:
+          summary: Agent 上下文裁剪比例过高
+          description: 最近 15 分钟超过一半运行触发上下文裁剪，建议检查历史摘要和 Token 预算。
+
+      - alert: MathAIAgentMetricsMissing
+        expr: absent(mathai_agent_runs_total)
+        for: 10m
+        labels:
+          severity: critical
+          service: math-ai-assistant
+        annotations:
+          summary: Agent 指标缺失
+          description: Prometheus 连续 10 分钟未发现 Agent 运行指标，请检查应用或抓取配置。

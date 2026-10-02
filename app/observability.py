@@ -23,6 +23,27 @@ AI_CALLS = Counter("mathai_ai_calls_total", "AI calls", ["provider", "model", "s
 AI_LATENCY = Histogram("mathai_ai_call_duration_seconds", "AI call latency", ["provider", "model"])
 AI_TOKENS = Counter("mathai_ai_tokens_total", "AI tokens", ["provider", "model", "kind"])
 AI_COST = Counter("mathai_ai_estimated_cost_total", "Estimated AI cost", ["provider", "model", "currency"])
+AGENT_RUNS = Counter("mathai_agent_runs_total", "Agent runs", ["capability", "status"])
+AGENT_LATENCY = Histogram(
+    "mathai_agent_run_duration_seconds", "End-to-end Agent run latency",
+    ["capability"], buckets=[0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60],
+)
+AGENT_TTFT = Histogram(
+    "mathai_agent_time_to_first_token_seconds", "Agent time to first content token",
+    ["capability"], buckets=[0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+)
+AGENT_TOKENS = Counter("mathai_agent_tokens_total", "Tokens consumed by Agent runs", ["kind"])
+AGENT_TOOL_CALLS = Counter("mathai_agent_tool_calls_total", "Agent tool calls", ["tool", "status"])
+AGENT_TOOL_LATENCY = Histogram(
+    "mathai_agent_tool_duration_seconds", "Agent tool duration", ["tool"],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+)
+AGENT_CONTEXT = Histogram(
+    "mathai_agent_context_chars", "Bounded Agent history characters",
+    buckets=[500, 1000, 2000, 4000, 8000, 12000, 20000],
+)
+AGENT_CONTEXT_TRIMS = Counter("mathai_agent_context_trims_total", "Context trims", ["reason"])
+SSE_EVENTS = Counter("mathai_sse_events_total", "SSE events emitted", ["event_type"])
 CONTENT_EVENTS = Counter("mathai_content_events_total", "Content operations", ["operation", "status"])
 RECOVERY_RUNS = Counter("mathai_recovery_runs_total", "Recovery/repair runs", ["operation", "status"])
 
