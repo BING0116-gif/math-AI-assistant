@@ -51,3 +51,46 @@ def test_low_confidence_archive_threshold_is_doc_value():
     from app.services.memory_policy import CONFIDENCE_STRENGTH_ARCHIVE_THRESHOLD
 
     assert CONFIDENCE_STRENGTH_ARCHIVE_THRESHOLD == 0.15
+
+
+def test_conversation_kind_classifier_routes_style_and_progress():
+    """6.6:风格/偏好表述 → preference,课程/进度陈述 → fact,其余 context。"""
+    from app.services.memory_policy import infer_conversation_kind
+
+    assert infer_conversation_kind("请分步讲解，不要直接给答案") == "preference"
+    assert infer_conversation_kind("我喜欢多举例子、打个比方的讲法") == "preference"
+    assert infer_conversation_kind("我已经学完高数上册，正在备考线代") == "fact"
+    assert infer_conversation_kind("今天做错了一道极限题") == "context"
+
+
+@pytest.mark.asyncio
+async def test_create_conversation_memory_auto_classifies_kind(tmp_path, monkeypatch):
+    import app.data.database as database
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.data.models import Base, Memory, User
+    from app.services.memory_store import MemoryStore
+
+    db_file = tmp_path / "kind.db"
+    sync_engine = create_engine(f"sqlite:///{db_file}")
+    Base.metadata.create_all(sync_engine)
+    sync_engine.dispose()
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(database, "async_session_factory", factory)
+
+    async with factory() as db:
+        db.add(User(id="kind-user", username="ku", email="ku@e.test", password_hash="x"))
+        await db.commit()
+
+    store = MemoryStore()
+    pref_id = await store.create_conversation_memory(user_id="kind-user", content="请以后分步讲解，不要直接给答案")
+    fact_id = await store.create_conversation_memory(user_id="kind-user", content="我已经学完高数上册")
+    ctx_id = await store.create_conversation_memory(user_id="kind-user", content="今天讨论了一道极限题")
+
+    async with factory() as db:
+        rows = {row.id: row for row in (await db.execute(select(Memory).where(Memory.user_id == "kind-user"))).scalars()}
+    assert rows[pref_id].memory_kind == "preference"
+    assert rows[fact_id].memory_kind == "fact"
+    assert rows[ctx_id].memory_kind == "context"
+    await engine.dispose()

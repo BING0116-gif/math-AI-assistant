@@ -71,6 +71,29 @@ def infer_memory_kind(memory_type: str, explicit_kind: Optional[str] = None) -> 
         return explicit_kind
     return KIND_BY_MEMORY_TYPE.get(memory_type, MEMORY_KIND_CONTEXT)
 
+
+# 6.6 对话记忆 kind 细分:风格/偏好表述 → preference(影响"怎么讲"),
+# 课程/进度陈述 → fact(影响"讲什么、从哪讲起"),其余 → context。
+_STYLE_PREFERENCE_KEYWORDS = (
+    "分步讲解", "先讲思路", "不要直接给答案", "多举例子", "打个比方",
+    "慢一点", "快一点", "简短一点", "详细一点", "节奏", "符号习惯",
+    "讲解风格", "喜欢怎么讲", "希望你怎么讲",
+)
+_PROGRESS_KEYWORDS = (
+    "已完成", "已学完", "学过了", "没学过", "还没学", "正在学", "正在备考",
+    "复习到", "学完", "上册", "下册", "课程进度",
+)
+
+
+def infer_conversation_kind(content: str) -> str:
+    """对话记忆的确定性 kind 分类(6.6);仅风格/偏好与进度陈述离义,其余保守 context。"""
+    text = (content or "")[:200]
+    if any(keyword in text for keyword in _STYLE_PREFERENCE_KEYWORDS):
+        return MEMORY_KIND_PREFERENCE
+    if any(keyword in text for keyword in _PROGRESS_KEYWORDS):
+        return MEMORY_KIND_FACT
+    return MEMORY_KIND_CONTEXT
+
 _SUMMARY_RULES = {
     MEMORY_TYPE_ERROR: ("错题", 150),
     MEMORY_TYPE_CONVERSATION: ("对话", 120),

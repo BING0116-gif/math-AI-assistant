@@ -34,6 +34,7 @@ from app.services.memory_policy import (
     STATUS_DELETED,
     STATUS_PENDING,
     build_embedding_summary,
+    infer_conversation_kind,
     infer_memory_kind,
 )
 
@@ -432,7 +433,8 @@ class MemoryStore:
                         "memory_strength": init_strength,
                         "created_at": now,
                         "last_accessed": now,
-                        "memory_kind": infer_memory_kind(MEMORY_TYPE_CONVERSATION, kind),
+                        # 6.6:对话记忆 kind 细分——风格→preference、进度→fact,其余 context
+                        "memory_kind": infer_memory_kind(MEMORY_TYPE_CONVERSATION, kind) if kind is not None else infer_conversation_kind(content),
                         "confidence": CONFIDENCE_AUTO_EXTRACTED,
                     }
                 )
