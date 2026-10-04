@@ -32,12 +32,14 @@ class ModelRouter:
     """按任务档位选"够用的最便宜模型";故障粘性与能力校验优先。"""
 
     def __init__(self, *, enabled: bool | None = None, route_table: dict[str, str] | None = None):
-        self._enabled = enabled if enabled is not None else bool(_setting("MODEL_ROUTING_ENABLED", False))
+        # enabled=None(生产默认)→ 由 flag 注册表(12.2)按基准设置+灰度分桶判定;
+        # 显式 True/False(测试/特殊部署)优先于注册表。
+        self._enabled = enabled
         self._route_table = dict(route_table) if route_table is not None else dict(_setting("MATHAI_MODEL_ROUTING", {}) or {})
 
     @property
     def enabled(self) -> bool:
-        return self._enabled
+        return self._enabled is True
 
     @staticmethod
     def _capability_ok(model: str, required_capabilities: frozenset[str]) -> bool:
@@ -52,10 +54,26 @@ class ModelRouter:
         *,
         primary_model: str,
         required_capabilities: frozenset[str] = frozenset({"tool_call"}),
+        bucket_key: str | None = None,
     ) -> str:
-        """返回本次 run 应使用的模型;非常规选择记 mathai_model_route_total。"""
+        """返回本次 run 应使用的模型;非常规选择记 mathai_model_route_total。
+
+        bucket_key(通常为 user:session 复合键)驱动 12.2/8.4 的灰度分桶;
+        不提供时退化为基准 settings 开关。
+        """
         if not primary_model:
             return primary_model
+
+        # 0) 路由开关:显式构造参数优先;生产默认走 flag 注册表(基准设置×灰度分桶)
+        if self._enabled is not None:
+            routing_on = self._enabled
+        else:
+            try:
+                from app.services.feature_flags import is_enabled as flag_enabled
+
+                routing_on = flag_enabled("model_routing", bucket_key)
+            except Exception:
+                routing_on = False
 
         # 1) 故障粘性优先(4.4 骨架收编,5.1:故障状态覆盖路由表)
         try:
@@ -68,7 +86,7 @@ class ModelRouter:
             return sticky
 
         # 2) 规则路由开关
-        if not self._enabled:
+        if not routing_on:
             return primary_model
         target = self._route_table.get(str(task_type))
         if not target or target == primary_model:

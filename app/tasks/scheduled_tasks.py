@@ -341,8 +341,31 @@ class MemoryScheduledTasks:
             replace_existing=True,
         )
 
+        # 阶段六 8.4:灰度护栏自动回缩,每 10 分钟评估一次
+        self._scheduler.add_job(
+            self._run_async(self.evaluate_flag_guardrails()),
+            "interval",
+            minutes=10,
+            id="evaluate_flag_guardrails",
+            name="灰度护栏评估",
+            replace_existing=True,
+        )
+
         self._scheduler.start()
         logger.info("[定时任务] 调度器已启动，包含 SQL outbox worker")
+
+    async def evaluate_flag_guardrails(self) -> Dict[str, Any]:
+        """灰度护栏评估(8.4):近期失败+超时率越线则自动回缩放量。"""
+        try:
+            from app.services.feature_flags import evaluate_flag_guardrails as _evaluate
+
+            report = await _evaluate()
+            if report.get("rolled_back"):
+                logger.warning(f"[定时任务] 灰度护栏回缩: {report['rolled_back']}")
+            return report
+        except Exception as exc:
+            logger.warning(f"[定时任务] 灰度护栏评估失败(非阻塞): {exc}")
+            return {}
 
     def stop_scheduler(self):
         """停止 APScheduler 定时任务。"""

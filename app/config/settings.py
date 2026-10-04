@@ -157,6 +157,8 @@ class Settings(BaseSettings):
     # 阶段五 7.1 学习路径(纯规则,零 LLM):薄弱判定阈值与每周容量。
     LEARNING_PATH_MASTERY_THRESHOLD: float = Field(default=0.6, ge=0.05, le=0.95, alias="LEARNING_PATH_MASTERY_THRESHOLD")
     LEARNING_PATH_WEEK_CAPACITY: int = Field(default=5, ge=1, le=20, alias="LEARNING_PATH_WEEK_CAPACITY")
+    # 阶段六 8.4/12.2 灰度放量表:{"model_routing": 10} = 该 flag 对 10% 用户桶生效
+    FEATURE_FLAG_ROLLOUT: dict[str, int] = Field(default_factory=dict, alias="FEATURE_FLAG_ROLLOUT")
 
     @field_validator("CRITIC_MODE")
     @classmethod

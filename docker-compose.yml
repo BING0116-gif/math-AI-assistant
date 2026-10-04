@@ -188,12 +188,35 @@ services:
     networks:
       - mathai-network
 
+  # 阶段六 8.1:仅内网,内置 alerting;面板与告警同源,不引入 Alertmanager/OTel
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - mathai-network
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
   embedding_cache:
   prometheus_data:
+  grafana_data:
 
 networks:
   mathai-network:

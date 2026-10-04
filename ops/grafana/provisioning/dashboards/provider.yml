@@ -1,0 +1,13 @@
+apiVersion: 1
+# 阶段六 8.1:看板 as code,进 git;本地文件提供器扫描 /var/lib/grafana/dashboards
+providers:
+  - name: mathai-dashboards
+    orgId: 1
+    folder: MathAI
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

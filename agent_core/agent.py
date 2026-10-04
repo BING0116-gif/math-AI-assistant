@@ -1396,6 +1396,7 @@ class MathAgent:
             resolved_model = get_model_router().resolve_model(
                 intent.task_type.value,
                 primary_model=self._model,
+                bucket_key=session_id,
             )
             if resolved_model and resolved_model != self._model:
                 _optimized_llm = self._dynamic_llm_factory.get_llm_for_model(intent.task_type, resolved_model)
