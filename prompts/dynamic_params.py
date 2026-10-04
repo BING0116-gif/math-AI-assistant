@@ -412,6 +412,16 @@ class DynamicLLMFactory:
 
         return llm
 
+    def get_llm_for_model(self, task_type: TaskType, model: str) -> ChatOpenAI:
+        """取按路由选定的模型实例（任务档位参数不变）；缓存键含模型（路线图 5.1）。"""
+        cache_key = f"{task_type.value}:{model}"
+        if cache_key in self._llm_cache:
+            return self._llm_cache[cache_key]
+        llm = ChatOpenAI(**{**self._base_config, **get_params_for_task(task_type).to_dict(), "model": model})
+        self._llm_cache[cache_key] = llm
+        logger.info(f"创建并缓存路由模型LLM实例: {cache_key}")
+        return llm
+
     def get_default_llm(self) -> ChatOpenAI:
         """获取默认配置的LLM（用于未知任务类型）。"""
         return self.get_llm(TaskType.DEFAULT)

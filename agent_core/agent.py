@@ -1051,7 +1051,7 @@ class MathAgent:
             "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
             "tool_names": sorted(getattr(strategy, "_last_used_tools", set()) or []),
             "token_usage": getattr(strategy, "_last_token_usage", None) or None,
-            "estimated_cost": None,
+            "estimated_cost": self._estimate_run_cost(strategy),
             "tutor_mode": canonical_mode,
             "capability": route.manifest.name,
             "capability_strategy_policy": route.manifest.strategy_policy,
@@ -1258,7 +1258,7 @@ class MathAgent:
                 "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
                 "tool_names": sorted(set(getattr(strategy, "_last_used_tools", set()) or []) | {"vision_tool"}),
                 "token_usage": token_usage if token_usage["total_tokens"] else None,
-                "estimated_cost": None,
+                "estimated_cost": self._estimate_run_cost(strategy),
                 "tutor_mode": canonical_mode,
                 "capability": route.manifest.name,
                 "capability_strategy_policy": route.manifest.strategy_policy,
@@ -1333,6 +1333,21 @@ class MathAgent:
 
     # ── 策略选择 ────────────────────────────────────────────────────────
 
+    def _estimate_run_cost(self, strategy: Any) -> float | None:
+        """按 MODEL_REGISTRY 计价表估算本次 run 成本(元);未登记价格返回 None(5.3)。"""
+        try:
+            from app.services.model_router import get_model_router
+
+            usage = getattr(strategy, "_last_token_usage", None) or {}
+            model = str(getattr(getattr(strategy, "_llm", None), "model_name", "") or self._model)
+            return get_model_router().estimate_cost(
+                model,
+                int(usage.get("prompt_tokens", 0) or 0),
+                int(usage.get("completion_tokens", 0) or 0),
+            )
+        except Exception:
+            return None
+
     async def _select_strategy(
         self,
         user_input: str,
@@ -1349,7 +1364,22 @@ class MathAgent:
         intent = self._classify_intent(user_input)
 
         if self._enable_dynamic_params and self._dynamic_llm_factory:
-            _optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
+            # 阶段三 5.1 规则路由:故障粘性优先,其次按档位查表(默认关闭=现状);
+            # 能力校验 fail-closed 在 router 内执行。
+            from app.services.model_router import get_model_router
+
+            resolved_model = get_model_router().resolve_model(
+                intent.task_type.value,
+                primary_model=self._model,
+            )
+            if resolved_model and resolved_model != self._model:
+                _optimized_llm = self._dynamic_llm_factory.get_llm_for_model(intent.task_type, resolved_model)
+                logger.info(
+                    f"路由决策: type={intent.task_type.value} model={resolved_model} "
+                    f"(confidence={intent.confidence:.2f})"
+                )
+            else:
+                _optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
             logger.info(
                 f"已应用动态参数: type={intent.task_type.value}, "
                 f"confidence={intent.confidence:.2f}"

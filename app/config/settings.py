@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Any, List
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 
@@ -23,6 +23,41 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
         "json_output": True,
         "vision": True,
     },
+}
+
+# 阶段三 5.2 模型注册表：路由/能力校验/成本核算三个消费者的唯一事实源。
+# 价格单位为 元/百万 token;初始值含占位成分（deepseek-chat 为公开牌价，
+# 其余待 3-E 首轮校准）,价格变更必须走 PR 并更新 effective_from。
+MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "deepseek-chat": {
+        "provider": "deepseek", "tier": "standard",
+        "price_in_per_m": 2.0, "price_out_per_m": 8.0,
+        "p95_latency_s": 6.0, "effective_from": "2026-10-04",
+    },
+    "deepseek-v4-flash": {
+        "provider": "deepseek", "tier": "light",
+        "price_in_per_m": 1.0, "price_out_per_m": 4.0,
+        "p95_latency_s": 2.0, "effective_from": "2026-10-04",
+    },
+    "qwen-vl-plus": {
+        "provider": "dashscope", "tier": "vision",
+        "price_in_per_m": 8.0, "price_out_per_m": 8.0,
+        "p95_latency_s": 8.0, "effective_from": "2026-10-04",
+    },
+    "qwen-vl-max": {
+        "provider": "dashscope", "tier": "vision",
+        "price_in_per_m": 20.0, "price_out_per_m": 20.0,
+        "p95_latency_s": 10.0, "effective_from": "2026-10-04",
+    },
+}
+
+# 阶段三 5.1 规则路由表 v1（键 = TaskType.value,零额外模型调用）。
+# T4 multimodal 不入文本路由表:视觉档由能力表强制。
+MODEL_ROUTE_TABLE: dict[str, str] = {
+    "knowledge": "deepseek-v4-flash",
+    "quick": "deepseek-v4-flash",
+    "concept": "deepseek-chat",
+    "solution": "deepseek-chat",
 }
 
 
@@ -112,6 +147,9 @@ class Settings(BaseSettings):
     LLM_FAILOVER_WINDOW_SECONDS: float = Field(default=60.0, gt=0, le=600, alias="LLM_FAILOVER_WINDOW_SECONDS")
     LLM_FAILOVER_FAILURES: int = Field(default=3, ge=1, le=20, alias="LLM_FAILOVER_FAILURES")
     LLM_FAILOVER_PROBE_SECONDS: float = Field(default=300.0, gt=0, le=3600, alias="LLM_FAILOVER_PROBE_SECONDS")
+    # 阶段三 5.1 规则路由:默认关闭=现状;开启后按档位查表(零额外模型调用)。
+    MODEL_ROUTING_ENABLED: bool = Field(default=False, alias="MODEL_ROUTING_ENABLED")
+    MATHAI_MODEL_ROUTING: dict[str, str] = Field(default_factory=lambda: dict(MODEL_ROUTE_TABLE), alias="MATHAI_MODEL_ROUTING")
 
     @field_validator("CRITIC_MODE")
     @classmethod

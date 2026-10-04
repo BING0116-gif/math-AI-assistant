@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.data.database import get_db_session
 from app.data.models import AIInteractionRun, ChatSession, KnowledgeGraphVersion, KnowledgePoint, PracticeSession, Question, QuestionKnowledgePoint
 from app.services.mode_gating import CANONICAL_TUTOR_MODES, LEGACY_MODE_ALIASES, normalize_tutor_mode
-from app.observability import AGENT_ANSWER_MODIFIED, AGENT_CRITIC_VERDICTS, AGENT_FOLLOWUP, AGENT_REVIEW_SAMPLED
+from app.observability import AGENT_ANSWER_MODIFIED, AGENT_CRITIC_VERDICTS, AGENT_FOLLOWUP, AGENT_REVIEW_SAMPLED, AI_COST
 
 TUTOR_MODES = set(CANONICAL_TUTOR_MODES) | set(LEGACY_MODE_ALIASES)
 TUTOR_PROMPT_VERSION = "tutor-mode-v2-gated"
@@ -187,3 +187,12 @@ async def complete_ai_run(run_id: str, *, status: str, metadata: dict[str, Any] 
             AGENT_ANSWER_MODIFIED.labels(source="user").inc()
         if followup_changed and run.followup_count:
             AGENT_FOLLOWUP.labels(gap="followup").inc(run.followup_count)
+        if run.estimated_cost is not None:
+            # 5.3 成本观测统一口径:provider 从 MODEL_REGISTRY 反查,未登记用 unknown
+            try:
+                from app.config.settings import MODEL_REGISTRY
+
+                provider = str((MODEL_REGISTRY.get(str(run.model or "")) or {}).get("provider") or "unknown")
+                AI_COST.labels(provider[:80], str(run.model or "unknown")[:80], "CNY").inc(float(run.estimated_cost))
+            except Exception:
+                pass
