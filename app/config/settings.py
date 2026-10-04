@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     MEMORY_CONFLICT_ENABLED: bool = Field(default=False, alias="MEMORY_CONFLICT_ENABLED")
     MEMORY_CONFLICT_MERGE_SIMILARITY: float = Field(default=0.92, ge=0, le=1, alias="MEMORY_CONFLICT_MERGE_SIMILARITY")
     MEMORY_CONFLICT_DETECT_SIMILARITY: float = Field(default=0.85, ge=0, le=1, alias="MEMORY_CONFLICT_DETECT_SIMILARITY")
+    # 阶段五 7.1 学习路径(纯规则,零 LLM):薄弱判定阈值与每周容量。
+    LEARNING_PATH_MASTERY_THRESHOLD: float = Field(default=0.6, ge=0.05, le=0.95, alias="LEARNING_PATH_MASTERY_THRESHOLD")
+    LEARNING_PATH_WEEK_CAPACITY: int = Field(default=5, ge=1, le=20, alias="LEARNING_PATH_WEEK_CAPACITY")
 
     @field_validator("CRITIC_MODE")
     @classmethod

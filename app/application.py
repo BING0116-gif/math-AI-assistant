@@ -34,6 +34,7 @@ from app.api.memory_internal_api import router as memory_internal_router
 from app.api.profile_api import router as profile_router
 from app.api.recommendation_api import router as recommendation_router
 from app.api.learning_hub_api import router as learning_hub_router
+from app.api.learning_path_api import router as learning_path_router
 from app.api.legacy_import_api import router as legacy_import_router
 from app.api.readiness_api import router as readiness_router
 from app.api.admin_overview_api import router as admin_overview_router
@@ -93,6 +94,7 @@ def _register_routers(target_app: FastAPI) -> None:
         assessment_router,
         exam_router,
         learning_hub_router,
+        learning_path_router,
         legacy_import_router,
         readiness_router,
         admin_overview_router,
