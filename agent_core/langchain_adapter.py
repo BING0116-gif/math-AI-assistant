@@ -66,6 +66,16 @@ class LangChainToolConverter:
         """Only retry read/compute tools; never replay known write tools."""
         return ToolCapability.ERROR_BOOK_MANAGEMENT not in custom_tool.capabilities
 
+    @staticmethod
+    def _record_tool_status(tool_name: str, status: str) -> None:
+        """Best-effort terminal status for mathai_agent_tool_calls_total."""
+        try:
+            from app.observability import AGENT_TOOL_CALLS
+
+            AGENT_TOOL_CALLS.labels(tool_name[:80], status).inc()
+        except Exception:
+            pass
+
     def convert(self, custom_tool: BaseTool) -> StructuredTool:
         if custom_tool.name in self._conversion_cache:
             return self._conversion_cache[custom_tool.name]
@@ -141,8 +151,14 @@ class LangChainToolConverter:
                         f"[{custom_tool.name}] 执行成功 "
                         f"({elapsed_ms:.1f}ms)"
                     )
+                    self._record_tool_status(custom_tool.name, "success")
                     return str(result.result) if result.result else "执行成功"
                 else:
+                    # 终态指标单一漏斗：guard 归一化的 timeout/unavailable 在此可见；
+                    # 策略层只记 started，避免把失败结果计成 success。
+                    error_code = str((result.metadata or {}).get("error_code") or "TOOL_ERROR")
+                    status = {"TOOL_TIMEOUT": "timeout", "TOOL_UNAVAILABLE": "unavailable"}.get(error_code, "error")
+                    self._record_tool_status(custom_tool.name, status)
                     logger.warning(
                         f"[{custom_tool.name}] 执行失败: {result.error}"
                     )

@@ -21,8 +21,25 @@ def test_agent_alert_rules_are_deployable_shape():
         "MathAIAgentTimeToFirstTokenHigh",
         "MathAIAgentContextTrimRateHigh",
         "MathAIAgentMetricsMissing",
+        # 阶段二可靠性告警（路线图 4.7）
+        "MathAIAgentToolTimeoutRateHigh",
+        "MathAIToolCircuitOpen",
+        "MathAIAgentTimeoutRateHigh",
+        "MathAIDegradationRateHigh",
+        "MathAIModelFailoverFrequent",
+        "MathAISSEHeartbeatMissing",
     }
     for alert in alerts.values():
         assert alert["expr"]
         assert alert["for"]
         assert alert["labels"]["service"] == "math-ai-assistant"
+
+    # 可运维性 DoD：可靠性 P1 告警必须在 runbook 有对应处置段。
+    runbook = (root / "ops" / "agent-observability-runbook.md").read_text(encoding="utf-8")
+    for alert_name in (
+        "MathAIAgentToolTimeoutRateHigh",
+        "MathAIToolCircuitOpen",
+        "MathAIAgentTimeoutRateHigh",
+        "MathAIDegradationRateHigh",
+    ):
+        assert alert_name in runbook, f"runbook 缺少 {alert_name} 处置段"

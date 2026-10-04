@@ -334,8 +334,9 @@ class LangChainReActStrategy(AgentStrategy):
                     if tool_name:
                         elapsed = time.perf_counter() - tool_started_at.pop(tool_name, time.perf_counter())
                         try:
-                            from app.observability import AGENT_TOOL_CALLS, AGENT_TOOL_LATENCY
-                            AGENT_TOOL_CALLS.labels(tool_name[:80], "success").inc()
+                            # 终态 success/error/timeout/unavailable 由适配器单一漏斗记录
+                            # （guard 失败以结果字符串返回，on_tool_end 不代表成功）。
+                            from app.observability import AGENT_TOOL_LATENCY
                             AGENT_TOOL_LATENCY.labels(tool_name[:80]).observe(elapsed)
                         except Exception:
                             pass

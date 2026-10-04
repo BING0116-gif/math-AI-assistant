@@ -63,3 +63,82 @@ groups:
         annotations:
           summary: Agent 指标缺失
           description: Prometheus 连续 10 分钟未发现 Agent 运行指标，请检查应用或抓取配置。
+
+      # ── 阶段二可靠性告警（路线图 4.7）──────────────────────────────
+      - alert: MathAIAgentToolTimeoutRateHigh
+        expr: |
+          sum(rate(mathai_agent_tool_calls_total{status="timeout"}[10m]))
+          /
+          clamp_min(sum(rate(mathai_agent_tool_calls_total{status=~"success|error|timeout|unavailable"}[10m])), 0.001) > 0.10
+        for: 10m
+        labels:
+          severity: critical
+          service: math-ai-assistant
+        annotations:
+          summary: 工具超时率持续偏高
+          description: 最近 10 分钟工具超时率超过 10%。请检查对应工具的下游依赖与 AGENT_TOOL_* 超时配置。
+
+      - alert: MathAIToolCircuitOpen
+        expr: |
+          mathai_tool_circuit_state{state="open"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          service: math-ai-assistant
+        annotations:
+          summary: 工具熔断持续打开
+          description: 熔断器 {{ $labels.tool }} 已连续 OPEN 超过 5 分钟。请按 runbook 检查该工具依赖，必要时 CIRCUIT_ENABLED=false 逃生。
+
+      - alert: MathAIAgentTimeoutRateHigh
+        expr: |
+          sum(rate(mathai_agent_runs_total{status="timeout"}[10m]))
+          /
+          clamp_min(sum(rate(mathai_agent_runs_total[10m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          service: math-ai-assistant
+        annotations:
+          summary: Agent 运行超时率偏高
+          description: 最近 10 分钟 run 超时率超过 5%。请校准 AGENT_TOTAL_TIMEOUT_SECONDS 并检查模型延迟。
+
+      - alert: MathAIDegradationRateHigh
+        expr: |
+          sum(rate(mathai_agent_runs_total{status="failed_l4"}[30m]))
+          /
+          clamp_min(sum(rate(mathai_agent_runs_total[30m])), 0.001) > 0.01
+          or
+          sum(rate(mathai_agent_runs_total{status="degraded"}[10m]))
+          /
+          clamp_min(sum(rate(mathai_agent_runs_total[10m])), 0.001) > 0.08
+        for: 10m
+        labels:
+          severity: critical
+          service: math-ai-assistant
+        annotations:
+          summary: 降级率偏高
+          description: L4 模板兜底率超过 1%（30m）或降级完成率超过 8%（10m）。请检查主模型与候选模型可用性。
+
+      - alert: MathAIModelFailoverFrequent
+        expr: |
+          sum(rate(mathai_model_route_total{reason="degrade"}[30m])) > 0.0056
+        for: 10m
+        labels:
+          severity: warning
+          service: math-ai-assistant
+        annotations:
+          summary: 模型降级切换频繁
+          description: 最近 30 分钟 degrade 切换超过约 10 次（>0.0056/s）。主模型可能持续不稳定，请检查供应商状态。
+
+      - alert: MathAISSEHeartbeatMissing
+        expr: |
+          sum(rate(mathai_sse_events_total{event_type="heartbeat"}[5m])) == 0
+          and
+          sum(rate(mathai_agent_runs_total[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: math-ai-assistant
+        annotations:
+          summary: SSE 心跳缺失
+          description: 有 Agent 流量但 5 分钟内没有心跳帧。请检查 SSE_HEARTBEAT_ENABLED 与中间代理空闲超时配置。

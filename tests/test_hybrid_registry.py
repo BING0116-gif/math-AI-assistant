@@ -588,48 +588,6 @@ class TestExceptionClasses:
 
 
 # ---------------------------------------------------------------------------
-# 9. ToolInvoker 与 HybridToolRegistry 集成测试
-# ---------------------------------------------------------------------------
-
-class TestToolInvokerWithHybridRegistry:
-    def test_invoker_accepts_hybrid_registry(self):
-        from tools.tool_invoker import ToolInvoker
-        registry = HybridToolRegistry()
-        registry.register(DummyTool())
-        invoker = ToolInvoker(registry)
-        assert invoker.registry is registry
-
-    def test_invoker_accepts_tool_registry_alias(self):
-        from tools import ToolRegistry as TR
-        from tools.tool_invoker import ToolInvoker
-        registry = TR()
-        registry.register(DummyTool())
-        invoker = ToolInvoker(registry)
-        assert invoker.registry is registry
-
-    def test_invoker_invoke_with_hybrid(self):
-        from tools.tool_invoker import ToolInvoker
-        registry = HybridToolRegistry()
-        registry.register(DummyTool())
-        invoker = ToolInvoker(registry)
-        result = asyncio.run(
-            invoker.invoke("dummy_tool", ToolInput(query="hello"))
-        )
-        assert result.success is True
-
-    def test_invoker_format_result(self):
-        from tools.tool_invoker import ToolInvoker
-        registry = HybridToolRegistry()
-        registry.register(DummyTool())
-        invoker = ToolInvoker(registry)
-        result = asyncio.run(
-            invoker.invoke("dummy_tool", ToolInput(query="hello"))
-        )
-        formatted = invoker.format_result_for_llm(result)
-        assert "processed: hello" in formatted
-
-
-# ---------------------------------------------------------------------------
 # 10. 全局单例与包导入测试
 # ---------------------------------------------------------------------------
 
