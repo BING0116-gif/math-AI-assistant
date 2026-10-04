@@ -81,7 +81,11 @@ class Settings(BaseSettings):
     QUALITY_METRICS_ENABLED: bool = Field(default=True, alias="QUALITY_METRICS_ENABLED")
     CRITIC_MODE: str = Field(default="off", alias="CRITIC_MODE")
     CRITIC_SAMPLE_RATE: float = Field(default=0.1, ge=0, le=1, alias="CRITIC_SAMPLE_RATE")
+    # deterministic-mock = 离线确定性检查(零 Token);配置真实模型名后走 LLM 后验检查
     CRITIC_MODEL: str = Field(default="deterministic-mock", alias="CRITIC_MODEL")
+    CRITIC_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, le=120, alias="CRITIC_TIMEOUT_SECONDS")
+    # Critic 当日 Token 消耗上限:触顶自动降级为 off 并告警日志(路线图 3.5.4)
+    CRITIC_MAX_DAILY_TOKENS: int = Field(default=200000, ge=0, alias="CRITIC_MAX_DAILY_TOKENS")
     AGENT_TOOL_GUARD_ENABLED: bool = Field(default=True, alias="AGENT_TOOL_GUARD_ENABLED")
     AGENT_TOOL_DEFAULT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, alias="AGENT_TOOL_DEFAULT_TIMEOUT_SECONDS")
     AGENT_TOOL_RETRY_MAX: int = Field(default=1, ge=0, le=3, alias="AGENT_TOOL_RETRY_MAX")
