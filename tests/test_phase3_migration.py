@@ -34,6 +34,6 @@ def test_existing_assessment_draft_survives_phase3_rename(tmp_path, monkeypatch)
             for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
     assert row == ("user-old", "session-old", 7, '"A"', 3)
-    assert revision == "fb2c3d4e5f60"
+    assert revision == "b7c8d9e0f1a3"
     # Legacy exam paper tables are dropped by the newest migration.
     assert "exam_papers" not in tables and "exam_submissions" not in tables

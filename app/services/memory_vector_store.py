@@ -45,6 +45,9 @@ class MemoryVectorStore:
             "memory_strength": memory.memory_strength,
             "source_id": memory.source_id or "",
             "tags": list(tags or []),
+            # 阶段四 6.8:kind/confidence 同步入 payload;旧点缺列读取时按 context/0.6 兼容
+            "memory_kind": getattr(memory, "memory_kind", None) or "context",
+            "confidence": float(getattr(memory, "confidence", 0.6) or 0.6),
         }
         await asyncio.to_thread(
             self._client.upsert,

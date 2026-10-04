@@ -13,6 +13,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.config.settings import settings
 from app.data.database import get_db_session
 from app.services.memory_policy import (
+    CONFIDENCE_AUTO_EXTRACTED,
+    CONFIDENCE_STRENGTH_ARCHIVE_THRESHOLD,
+    CONFIDENCE_USER_CONFIRMED,
+    CONFIDENCE_USER_CORRECTED,
     DECAY_LAMBDA,
     MEMORY_INIT_STRENGTH,
     MEMORY_TTL,
@@ -25,6 +29,7 @@ from app.services.memory_policy import (
     STATUS_DELETED,
     STATUS_PENDING,
     build_embedding_summary,
+    infer_memory_kind,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,6 +129,7 @@ class MemoryStore:
         user_answer: str = "",
         correct_answer: str = "",
         error_type: str = "",
+        kind: Optional[str] = None,
     ) -> Optional[int]:
         """创建错题记忆。
 
@@ -158,12 +164,12 @@ class MemoryStore:
                         (user_id, memory_type, high_category, category, content,
                          embedding_summary, importance, difficulty, status,
                          expire_at, memory_strength, source_id, created_at,
-                         last_accessed, access_count)
+                         last_accessed, access_count, memory_kind, confidence)
                         VALUES
                         (:user_id, :memory_type, :high_category, :category, :content,
                          :embedding_summary, :importance, :difficulty, :status,
                          :expire_at, :memory_strength, :source_id, :created_at,
-                         :last_accessed, :access_count)
+                         :last_accessed, :access_count, :memory_kind, :confidence)
                     """),
                     {
                         "user_id": user_id,
@@ -181,6 +187,8 @@ class MemoryStore:
                         "created_at": now,
                         "last_accessed": now,
                         "access_count": 0,
+                        "memory_kind": infer_memory_kind(MEMORY_TYPE_ERROR, kind),
+                        "confidence": CONFIDENCE_AUTO_EXTRACTED,
                     }
                 )
                 memory_id = result.lastrowid or 0
@@ -232,6 +240,7 @@ class MemoryStore:
         category: str = "",
         importance: float = 0.6,
         tags: Optional[List[str]] = None,
+        kind: Optional[str] = None,
     ) -> Optional[int]:
         """创建对话记忆。"""
         now = int(time.time())
@@ -252,11 +261,13 @@ class MemoryStore:
                         INSERT INTO memories
                         (user_id, memory_type, high_category, category, content,
                          embedding_summary, importance, status,
-                         expire_at, memory_strength, created_at, last_accessed)
+                         expire_at, memory_strength, created_at, last_accessed,
+                         memory_kind, confidence)
                         VALUES
                         (:user_id, :memory_type, :high_category, :category, :content,
                          :embedding_summary, :importance, :status,
-                         :expire_at, :memory_strength, :created_at, :last_accessed)
+                         :expire_at, :memory_strength, :created_at, :last_accessed,
+                         :memory_kind, :confidence)
                     """),
                     {
                         "user_id": user_id,
@@ -271,6 +282,8 @@ class MemoryStore:
                         "memory_strength": init_strength,
                         "created_at": now,
                         "last_accessed": now,
+                        "memory_kind": infer_memory_kind(MEMORY_TYPE_CONVERSATION, kind),
+                        "confidence": CONFIDENCE_AUTO_EXTRACTED,
                     }
                 )
                 memory_id = result.lastrowid or 0
@@ -311,6 +324,7 @@ class MemoryStore:
         description: str,
         high_category: str = "",
         category: str = "",
+        kind: Optional[str] = None,
     ) -> Optional[int]:
         """创建里程碑记忆。"""
         now = int(time.time())
@@ -328,11 +342,13 @@ class MemoryStore:
                         INSERT INTO memories
                         (user_id, memory_type, high_category, category, content,
                          embedding_summary, importance, status,
-                         expire_at, memory_strength, created_at, last_accessed)
+                         expire_at, memory_strength, created_at, last_accessed,
+                         memory_kind, confidence)
                         VALUES
                         (:user_id, :memory_type, :high_category, :category, :content,
                          :embedding_summary, :importance, :status,
-                         :expire_at, :memory_strength, :created_at, :last_accessed)
+                         :expire_at, :memory_strength, :created_at, :last_accessed,
+                         :memory_kind, :confidence)
                     """),
                     {
                         "user_id": user_id,
@@ -347,6 +363,8 @@ class MemoryStore:
                         "memory_strength": init_strength,
                         "created_at": now,
                         "last_accessed": now,
+                        "memory_kind": infer_memory_kind(MEMORY_TYPE_MILESTONE, kind),
+                        "confidence": CONFIDENCE_AUTO_EXTRACTED,
                     }
                 )
                 memory_id = result.lastrowid or 0
@@ -381,6 +399,7 @@ class MemoryStore:
         full_profile_json: str,
         high_category: str = "",
         category: str = "",
+        kind: Optional[str] = None,
     ) -> Optional[int]:
         """创建画像记忆。"""
         now = int(time.time())
@@ -398,11 +417,13 @@ class MemoryStore:
                         INSERT INTO memories
                         (user_id, memory_type, high_category, category, content,
                          embedding_summary, importance, status,
-                         expire_at, memory_strength, created_at, last_accessed)
+                         expire_at, memory_strength, created_at, last_accessed,
+                         memory_kind, confidence)
                         VALUES
                         (:user_id, :memory_type, :high_category, :category, :content,
                          :embedding_summary, :importance, :status,
-                         :expire_at, :memory_strength, :created_at, :last_accessed)
+                         :expire_at, :memory_strength, :created_at, :last_accessed,
+                         :memory_kind, :confidence)
                     """),
                     {
                         "user_id": user_id,
@@ -417,6 +438,8 @@ class MemoryStore:
                         "memory_strength": init_strength,
                         "created_at": now,
                         "last_accessed": now,
+                        "memory_kind": infer_memory_kind(MEMORY_TYPE_PROFILE, kind),
+                        "confidence": CONFIDENCE_AUTO_EXTRACTED,
                     }
                 )
                 memory_id = result.lastrowid or 0
@@ -863,6 +886,151 @@ class MemoryStore:
         except Exception as e:
             logger.error(f"[记忆存储] 批量归档低强度记忆失败: {e}")
             return 0
+
+    async def batch_archive_low_confidence(self, threshold: float = CONFIDENCE_STRENGTH_ARCHIVE_THRESHOLD) -> int:
+        """置信度联动归档（6.3）:confidence × memory_strength < 阈值 → archive。
+
+        旧数据无 confidence 列时由 server_default 0.6 参与计算,行为向后兼容。
+        """
+        try:
+            async with get_db_session() as db:
+                from sqlalchemy import select, text as sa_text
+                from app.data.models import Memory
+
+                ids = list((await db.execute(select(Memory.id).where(
+                    Memory.status == STATUS_ACTIVE,
+                    Memory.confidence * Memory.memory_strength < threshold,
+                ))).scalars())
+
+                result = await db.execute(
+                    sa_text("""
+                        UPDATE memories
+                        SET status = :status
+                        WHERE status = 'active'
+                          AND confidence * memory_strength < :threshold
+                    """),
+                    {"status": STATUS_ARCHIVED, "threshold": threshold},
+                )
+                count = result.rowcount
+                from app.services.outbox import enqueue_outbox
+                for memory_id in ids:
+                    await enqueue_outbox(
+                        db, event_type="memory.vector.delete", aggregate_type="memory",
+                        aggregate_id=str(memory_id),
+                        idempotency_key=f"memory-vector-low-confidence:{memory_id}",
+                    )
+                if count > 0:
+                    logger.info(f"[记忆存储] 批量归档低置信记忆: {count} 条")
+                return count
+        except Exception as e:
+            logger.error(f"[记忆存储] 批量归档低置信记忆失败: {e}")
+            return 0
+
+    async def confirm_memory(self, user_id: str, memory_id: int) -> bool:
+        """用户显式确认（6.5）:置信度 → 0.9 并记录确认时间;owner 校验,幂等。"""
+        try:
+            async with get_db_session() as db:
+                from sqlalchemy import text as sa_text
+
+                result = await db.execute(
+                    sa_text("""
+                        UPDATE memories
+                        SET confidence = :confidence, last_confirmed_at = :now
+                        WHERE id = :id AND user_id = :user_id AND deleted_at IS NULL
+                    """),
+                    {
+                        "confidence": CONFIDENCE_USER_CONFIRMED,
+                        "now": int(time.time()),
+                        "id": memory_id,
+                        "user_id": user_id,
+                    },
+                )
+                return (result.rowcount or 0) > 0
+        except Exception as e:
+            logger.error(f"[记忆存储] 确认记忆失败: {e}")
+            return False
+
+    async def correct_memory(self, user_id: str, memory_id: int, corrected_content: str) -> Optional[int]:
+        """用户纠正（6.5）:生成新记忆(confidence=0.95),旧记忆 superseded_by 指向新记忆
+        并归档下线(SQL+Qdrant 同步);重复纠正幂等返回同一新记忆 id。"""
+        if not corrected_content.strip():
+            return None
+        try:
+            async with get_db_session() as db:
+                from sqlalchemy import select, text as sa_text
+                from app.data.models import Memory
+                from app.services.outbox import enqueue_outbox
+
+                old = (await db.execute(select(Memory).where(
+                    Memory.id == memory_id,
+                    Memory.user_id == user_id,
+                    Memory.deleted_at.is_(None),
+                ))).scalar_one_or_none()
+                if old is None:
+                    return None
+                if old.superseded_by is not None:
+                    return old.superseded_by  # 幂等:已纠正过,返回既有新记忆
+
+                now = int(time.time())
+                new_kind = old.memory_kind or infer_memory_kind(old.memory_type)
+                expire_at = now + MEMORY_TTL.get(old.memory_type, MEMORY_TTL[MEMORY_TYPE_CONVERSATION])
+                result = await db.execute(
+                    sa_text("""
+                        INSERT INTO memories
+                        (user_id, memory_type, high_category, category, content,
+                         embedding_summary, importance, status,
+                         expire_at, memory_strength, created_at, last_accessed,
+                         memory_kind, confidence, conflict_status)
+                        VALUES
+                        (:user_id, :memory_type, :high_category, :category, :content,
+                         :embedding_summary, :importance, :status,
+                         :expire_at, :memory_strength, :created_at, :last_accessed,
+                         :memory_kind, :confidence, :conflict_status)
+                    """),
+                    {
+                        "user_id": user_id,
+                        "memory_type": old.memory_type,
+                        "high_category": old.high_category,
+                        "category": old.category,
+                        "content": corrected_content,
+                        "embedding_summary": build_embedding_summary(corrected_content, old.memory_type),
+                        "importance": old.importance,
+                        "status": STATUS_ACTIVE,
+                        "expire_at": expire_at,
+                        "memory_strength": old.memory_strength,
+                        "created_at": now,
+                        "last_accessed": now,
+                        "memory_kind": new_kind,
+                        "confidence": CONFIDENCE_USER_CORRECTED,
+                        "conflict_status": "corrected",
+                    },
+                )
+                new_id = result.lastrowid or 0
+
+                # 旧记忆下线:superseded 链可追溯 + 向量同步删除
+                await db.execute(
+                    sa_text("""
+                        UPDATE memories
+                        SET superseded_by = :new_id, conflict_status = 'superseded', status = :archived
+                        WHERE id = :old_id
+                    """),
+                    {"new_id": new_id, "archived": STATUS_ARCHIVED, "old_id": memory_id},
+                )
+                await enqueue_outbox(
+                    db, event_type="memory.vector.upsert", aggregate_type="memory",
+                    aggregate_id=str(new_id), user_id=user_id,
+                    idempotency_key=f"memory-vector-upsert:{new_id}:active:{expire_at}",
+                )
+                await enqueue_outbox(
+                    db, event_type="memory.vector.delete", aggregate_type="memory",
+                    aggregate_id=str(memory_id), user_id=user_id,
+                    idempotency_key=f"memory-vector-superseded:{memory_id}:{new_id}",
+                )
+                logger.info(f"[记忆存储] 记忆已纠正: old={memory_id} -> new={new_id}, user={user_id}")
+                return new_id
+        except Exception as e:
+            logger.error(f"[记忆存储] 纠正记忆失败: {e}")
+            return None
 
     # ========================================================================
     # Qdrant 向量检索
