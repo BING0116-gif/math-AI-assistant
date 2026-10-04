@@ -7,18 +7,23 @@
 
 import json
 import logging
+import math
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.config.settings import settings
 from app.data.database import get_db_session
 from app.services.memory_policy import (
     CONFIDENCE_AUTO_EXTRACTED,
+    CONFIDENCE_REOBSERVED_BONUS,
     CONFIDENCE_STRENGTH_ARCHIVE_THRESHOLD,
     CONFIDENCE_USER_CONFIRMED,
     CONFIDENCE_USER_CORRECTED,
     DECAY_LAMBDA,
     MEMORY_INIT_STRENGTH,
+    MEMORY_KIND_FACT,
+    MEMORY_KIND_MISCONCEPTION,
+    MEMORY_KIND_PREFERENCE,
     MEMORY_TTL,
     MEMORY_TYPE_CONVERSATION,
     MEMORY_TYPE_ERROR,
@@ -103,6 +108,142 @@ class MemoryStore:
         """生成文本向量。"""
         from app.services.embedding_service import get_embedding_service
         return get_embedding_service().encode(text)
+
+    # ── 阶段四 6.4:冲突检测与仲裁 ──────────────────────────────────────
+
+    @staticmethod
+    def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(y * y for y in b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    @staticmethod
+    def decide_conflict(*, kind: str, similarity: float, old_confidence: float, new_confidence: float) -> Tuple[str, str]:
+        """6.4 仲裁纯函数 → (action, conflict_status)。
+
+        分支:语义相同合并;0.85–0.92 按 kind 仲裁(preference 新胜旧 /
+        fact 高置信胜·接近进复核 / misconception 双保留);低于检测线互不影响。
+        """
+        try:
+            from app.config.settings import settings
+            merge_line = settings.MEMORY_CONFLICT_MERGE_SIMILARITY
+            detect_line = settings.MEMORY_CONFLICT_DETECT_SIMILARITY
+        except Exception:
+            merge_line, detect_line = 0.92, 0.85
+        if similarity >= merge_line:
+            return "merge", "merged"
+        if similarity < detect_line:
+            return "keep_both", "none"
+        if kind == MEMORY_KIND_PREFERENCE:
+            # 偏好天然时效性:新胜旧
+            return "supersede_old", "superseded"
+        if kind == MEMORY_KIND_FACT:
+            if abs(old_confidence - new_confidence) < 0.1:
+                return "keep_review", "review"  # 冲突不可自动裁定:双保留进人工复核
+            return ("keep_old", "none") if old_confidence > new_confidence else ("supersede_old", "superseded")
+        # misconception:错误理解本会演变,双保留,按 superseded_by 时间链可追溯
+        return "keep_both", "none"
+
+    async def arbitrate_memory_write(
+        self,
+        *,
+        user_id: str,
+        memory_id: int,
+        memory_type: str,
+        kind: Optional[str] = None,
+        content: str,
+    ) -> str:
+        """写入后仲裁(6.4):对同 user、同 kind、active 近邻执行合并/让位/复核。
+
+        返回裁决 action;MEMORY_CONFLICT_ENABLED 关闭时恒为 "disabled"(现状)。
+        """
+        try:
+            from app.config.settings import settings
+            if not settings.MEMORY_CONFLICT_ENABLED:
+                return "disabled"
+        except Exception:
+            return "disabled"
+
+        resolved_kind = infer_memory_kind(memory_type, kind)
+        try:
+            new_embedding = self._generate_embedding(content)
+            async with get_db_session() as db:
+                from sqlalchemy import select, text as sa_text
+                from app.data.models import Memory
+                from app.services.outbox import enqueue_outbox
+
+                rows = list((await db.execute(select(Memory).where(
+                    Memory.user_id == user_id,
+                    Memory.memory_kind == resolved_kind,
+                    Memory.status == STATUS_ACTIVE,
+                    Memory.deleted_at.is_(None),
+                    Memory.id != memory_id,
+                ).order_by(Memory.created_at.desc()).limit(50))).scalars())
+                if not rows:
+                    return "keep_both"
+
+                best_row, best_similarity = None, -1.0
+                for row in rows:
+                    similarity = self._cosine_similarity(
+                        new_embedding,
+                        self._generate_embedding(row.embedding_summary or row.content),
+                    )
+                    if similarity > best_similarity:
+                        best_row, best_similarity = row, similarity
+                if best_row is None:
+                    return "keep_both"
+
+                action, conflict_status = self.decide_conflict(
+                    kind=resolved_kind,
+                    similarity=best_similarity,
+                    old_confidence=float(best_row.confidence or 0.6),
+                    new_confidence=CONFIDENCE_AUTO_EXTRACTED,
+                )
+
+                if action == "merge":
+                    # 语义相同:合并到旧记忆(access_count+1、置信上调封顶 0.95),新行下线
+                    await db.execute(sa_text("""
+                        UPDATE memories
+                        SET access_count = access_count + 1,
+                            confidence = MIN(0.95, confidence + :bonus)
+                        WHERE id = :id
+                    """), {"bonus": CONFIDENCE_REOBSERVED_BONUS, "id": best_row.id})
+                    await db.execute(sa_text("""
+                        UPDATE memories
+                        SET status = :archived, conflict_status = 'merged', superseded_by = :old_id
+                        WHERE id = :new_id
+                    """), {"archived": STATUS_ARCHIVED, "old_id": best_row.id, "new_id": memory_id})
+                    await enqueue_outbox(
+                        db, event_type="memory.vector.delete", aggregate_type="memory",
+                        aggregate_id=str(memory_id), user_id=user_id,
+                        idempotency_key=f"memory-vector-merged:{memory_id}:{best_row.id}",
+                    )
+                elif action == "supersede_old":
+                    # 新胜旧:旧记忆 superseded_by 指向新记忆并下线
+                    await db.execute(sa_text("""
+                        UPDATE memories
+                        SET status = :archived, conflict_status = 'superseded', superseded_by = :new_id
+                        WHERE id = :old_id
+                    """), {"archived": STATUS_ARCHIVED, "new_id": memory_id, "old_id": best_row.id})
+                    await enqueue_outbox(
+                        db, event_type="memory.vector.delete", aggregate_type="memory",
+                        aggregate_id=str(best_row.id), user_id=user_id,
+                        idempotency_key=f"memory-vector-conflict-superseded:{best_row.id}:{memory_id}",
+                    )
+                elif action == "keep_review":
+                    # 双保留进人工复核队列,注入侧由检索排序兜底
+                    await db.execute(sa_text(
+                        "UPDATE memories SET conflict_status = 'review' WHERE id IN (:a, :b)"
+                    ), {"a": best_row.id, "b": memory_id})
+                return action
+        except Exception as e:
+            logger.error(f"[记忆存储] 写入仲裁失败(按双保留处理): {e}")
+            return "keep_both"
 
     async def _generate_embedding_summary(
         self, content: str, memory_type: str, metadata: Optional[Dict[str, Any]] = None
@@ -222,6 +363,15 @@ class MemoryStore:
                     {"status": STATUS_ACTIVE, "id": memory_id},
                 )
 
+                # 阶段四 6.4:写入后同 kind 近邻仲裁(开关关闭时为 no-op)
+                await self.arbitrate_memory_write(
+                    user_id=user_id,
+                    memory_id=memory_id,
+                    memory_type=MEMORY_TYPE_ERROR,
+                    kind=kind,
+                    content=content,
+                )
+
             logger.info(
                 f"[记忆存储] 错题记忆已创建: id={memory_id}, user={user_id}, "
                 f"category={category}"
@@ -309,6 +459,15 @@ class MemoryStore:
                 await db.execute(
                     sa_text("UPDATE memories SET status = :status WHERE id = :id"),
                     {"status": STATUS_ACTIVE, "id": memory_id},
+                )
+
+                # 阶段四 6.4:写入后同 kind 近邻仲裁(开关关闭时为 no-op)
+                await self.arbitrate_memory_write(
+                    user_id=user_id,
+                    memory_id=memory_id,
+                    memory_type=MEMORY_TYPE_CONVERSATION,
+                    kind=kind,
+                    content=content,
                 )
 
             return memory_id

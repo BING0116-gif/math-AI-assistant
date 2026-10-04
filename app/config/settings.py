@@ -150,6 +150,10 @@ class Settings(BaseSettings):
     # 阶段三 5.1 规则路由:默认关闭=现状;开启后按档位查表(零额外模型调用)。
     MODEL_ROUTING_ENABLED: bool = Field(default=False, alias="MODEL_ROUTING_ENABLED")
     MATHAI_MODEL_ROUTING: dict[str, str] = Field(default_factory=lambda: dict(MODEL_ROUTE_TABLE), alias="MATHAI_MODEL_ROUTING")
+    # 阶段四 6.4 冲突检测与仲裁:默认关闭=现状;开启后写入路径做同 kind 近邻仲裁。
+    MEMORY_CONFLICT_ENABLED: bool = Field(default=False, alias="MEMORY_CONFLICT_ENABLED")
+    MEMORY_CONFLICT_MERGE_SIMILARITY: float = Field(default=0.92, ge=0, le=1, alias="MEMORY_CONFLICT_MERGE_SIMILARITY")
+    MEMORY_CONFLICT_DETECT_SIMILARITY: float = Field(default=0.85, ge=0, le=1, alias="MEMORY_CONFLICT_DETECT_SIMILARITY")
 
     @field_validator("CRITIC_MODE")
     @classmethod
