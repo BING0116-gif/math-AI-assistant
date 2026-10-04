@@ -28,6 +28,7 @@ from app.api.error_api import router as error_router
 from app.api.events_api import router as events_router
 from app.api.knowledge_api import router as knowledge_router
 from app.api.memory_api import router as memory_router
+from app.api.memory_student_api import router as memory_student_router
 from app.api.memory_dashboard import router as dashboard_router
 from app.api.memory_internal_api import router as memory_internal_router
 from app.api.profile_api import router as profile_router
@@ -71,6 +72,7 @@ def _register_routers(target_app: FastAPI) -> None:
         auth_router,
         animation_router,
         memory_router,
+        memory_student_router,
         profile_router,
         data_router,
         recommendation_router,

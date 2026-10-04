@@ -915,6 +915,79 @@ class MemoryStore:
             logger.error(f"[记忆存储] 软删除记忆失败: {e}")
             return False
 
+    async def list_user_memories(
+        self,
+        user_id: str,
+        *,
+        status: str = "active",
+        include_deleted: bool = False,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """用户可控记忆列表(6.5):只返回本人记忆的展示字段。"""
+        try:
+            async with get_db_session() as db:
+                from sqlalchemy import select
+                from app.data.models import Memory
+
+                query = select(Memory).where(Memory.user_id == user_id)
+                if not include_deleted:
+                    query = query.where(Memory.deleted_at.is_(None))
+                if status and not include_deleted:
+                    query = query.where(Memory.status == status)
+                rows = list((await db.execute(
+                    query.order_by(Memory.created_at.desc()).offset(max(0, offset)).limit(max(1, min(200, limit)))
+                )).scalars())
+                return [
+                    {
+                        "id": row.id,
+                        "memory_type": row.memory_type,
+                        "memory_kind": row.memory_kind or "context",
+                        "category": row.category or "",
+                        "content": row.content,
+                        "status": row.status,
+                        "confidence": float(row.confidence or 0.6),
+                        "memory_strength": float(row.memory_strength or 0),
+                        "conflict_status": row.conflict_status or "none",
+                        "superseded_by": row.superseded_by,
+                        "created_at": row.created_at,
+                        "last_confirmed_at": row.last_confirmed_at,
+                        "expire_at": row.expire_at,
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[记忆存储] 用户记忆列表查询失败: {e}")
+            return []
+
+    async def delete_memory_owned(self, user_id: str, memory_id: int) -> bool:
+        """用户删除本人记忆(6.5):软删 + 向量下线;owner 校验,幂等。"""
+        try:
+            async with get_db_session() as db:
+                from sqlalchemy import text as sa_text
+                from app.services.outbox import enqueue_outbox
+
+                now = int(time.time())
+                result = await db.execute(
+                    sa_text("""
+                        UPDATE memories
+                        SET status = :status, deleted_at = :now
+                        WHERE id = :id AND user_id = :user_id AND deleted_at IS NULL
+                    """),
+                    {"status": STATUS_DELETED, "now": now, "id": memory_id, "user_id": user_id},
+                )
+                if result.rowcount <= 0:
+                    return False
+                await enqueue_outbox(
+                    db, event_type="memory.vector.delete", aggregate_type="memory",
+                    aggregate_id=str(memory_id), user_id=user_id,
+                    idempotency_key=f"memory-vector-user-delete:{memory_id}",
+                )
+                return True
+        except Exception as e:
+            logger.error(f"[记忆存储] 用户删除记忆失败: {e}")
+            return False
+
     async def delete_user_vectors(self, user_id: str) -> bool:
         """Permanently remove all memory vectors belonging to one user."""
         if not self._QDRANT_AVAILABLE:
