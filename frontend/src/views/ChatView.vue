@@ -10,7 +10,7 @@ import ModeGuardNotice from '@/components/chat/ModeGuardNotice.vue'
 import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
-import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream } from '@/api/chat'
+import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream, cancelChatStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID } from '@/utils/helpers'
 import { DEFAULT_TUTOR_MODE, TUTOR_MODES, normalizeTutorMode } from '@/utils/tutorModes'
@@ -27,6 +27,7 @@ const streaming = ref(false)
 const streamingMessageId = ref<string | null>(null)
 const streamingCharCount = ref(0)
 const abortController = ref<AbortController | null>(null)
+const activeStreamId = ref<string | null>(null)
 const reasonInput = ref<HTMLTextAreaElement | null>(null)
 const followUpQuestions = ref<any[]>([])
 const askCard = ref<any>(null)
@@ -304,6 +305,7 @@ async function streamAgentReply(
       if (state.disconnected) return
       streaming.value = false
       streamingMessageId.value = null
+      activeStreamId.value = null
       store.updateMessage(chatId, msgId, {
         content: rawContentBuffer || '抱歉，未获取到有效回复。',
         timestamp: new Date().toISOString(),
@@ -315,6 +317,7 @@ async function streamAgentReply(
     let lastEventId = -1
     let currentResponse = response
     let recoveryDeadline: number | null = null
+    let userCancelled = false
     while (true) {
       let streamError: any = null
       const result = await parseSSEStream(
@@ -324,12 +327,28 @@ async function streamAgentReply(
         (error: any) => { streamError = error },
         (eventType: string, data: any) => {
           if (eventType === 'stream' && data.stream_id) streamId = data.stream_id
+          if (eventType === 'cancelled') userCancelled = true
+          if (eventType === 'reset') {
+            // 服务端淘汰过旧事件后要求整段重拉：清空本地缓冲，由重放内容重建消息
+            typingBuffer = ''
+            rawContentBuffer = ''
+            store.updateMessage(chatId, msgId, { content: '', agentSteps: [] })
+          }
           handleEvent(eventType, data, msgId)
         },
       )
       streamId = result?.streamId || streamId
+      activeStreamId.value = streamId
       lastEventId = Number.isFinite(result?.lastEventId) ? result.lastEventId : lastEventId
-      if (result?.completed) return
+      if (result?.completed) {
+        if (userCancelled) {
+          store.updateMessage(chatId, msgId, {
+            content: (rawContentBuffer || '') + '\n\n*(已手动停止)*',
+            timestamp: new Date().toISOString(),
+          })
+        }
+        return
+      }
       if (!streamId || abortController.value?.signal.aborted) {
         throw streamError || new Error('流式响应中断，续传失败')
       }
@@ -351,6 +370,7 @@ async function streamAgentReply(
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
       streamingMessageId.value = null
+      activeStreamId.value = null
       store.updateMessage(chatId, msgId, {
         content: '发生错误: ' + err.message,
         timestamp: new Date().toISOString(),
@@ -496,6 +516,7 @@ async function handleSendWithImage(text: string, imageData: string) {
     if (err.name !== 'AbortError' && err.code !== 'ERR_CANCELED') {
       streaming.value = false
       streamingMessageId.value = null
+      activeStreamId.value = null
       store.updateMessage(chatId, msgId, {
         content: '发生错误: ' + err.message,
         timestamp: new Date().toISOString(),
@@ -504,7 +525,18 @@ async function handleSendWithImage(text: string, imageData: string) {
   }
 }
 
-function stopGeneration() {
+async function stopGeneration() {
+  // 4.5：优先走服务端优雅取消（已产出内容保留，cancelled+done 收尾），
+  // 服务端取消不可用时退回本地中断。
+  const sid = activeStreamId.value
+  if (sid) {
+    try {
+      await cancelChatStream(sid)
+      return
+    } catch {
+      // 落入本地中断兜底
+    }
+  }
   if (abortController.value) {
     abortController.value.abort()
     streaming.value = false

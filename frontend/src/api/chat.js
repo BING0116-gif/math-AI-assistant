@@ -28,6 +28,14 @@ export function sendChatMessage(message, sessionId, signal, options = {}) {
   })
 }
 
+export function cancelChatStream(streamId) {
+  // 用户主动停止生成（幂等）：服务端优雅收尾，已产出内容保留
+  return fetch(`/api/chat/stream/${encodeURIComponent(streamId)}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders(),
+  })
+}
+
 export function recoverChatStream(sessionId, streamId, lastEventId, signal) {
   return fetch('/api/chat/recover', {
     method: 'POST',
