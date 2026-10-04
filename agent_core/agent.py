@@ -68,6 +68,33 @@ class StrategyConfig:
     stream: bool = True
 
 
+def build_memory_context_lines(memories: Optional[List[Dict[str, Any]]]) -> List[str]:
+    """记忆注入行构造(阶段四 6.4 注入侧防护)。
+
+    - 总纲:仅用于个性化表达,不可当作题目事实;
+    - misconception 必须带纠正框架——历史错误绝不可被采纳为正确知识(防污染);
+    - context 带时间标注(往期会话,可能已过时);
+    - 其余(preference/fact)原样列出。
+    """
+    lines = ["【相关长期记忆】以下仅用于个性化表达，不可当作题目事实；如与当前输入冲突，以当前输入为准。"]
+    now = int(time.time())
+    for item in memories or []:
+        kind = str((item or {}).get("memory_kind") or "context")
+        content = str((item or {}).get("content") or "")[:300]
+        if kind == "misconception":
+            lines.append(f"- 【该生曾犯的错：仅供纠错参考，绝不代表正确答案，不可采纳】{content}")
+        elif kind == "context":
+            created = int((item or {}).get("created_at") or 0)
+            if created > 0:
+                days = max(0, (now - created) // 86400)
+                lines.append(f"- 【来自 {days} 天前的会话，可能已过时】{content}")
+            else:
+                lines.append(f"- 【来自往期会话，可能已过时】{content}")
+        else:
+            lines.append(f"- {content}")
+    return lines
+
+
 @dataclass
 class DynamicParamsConfig:
     """动态参数配置。"""
@@ -473,10 +500,8 @@ class MathAgent:
             )
             context["relevant_memories"] = memories
             if memories:
-                memory_lines = [
-                    "【相关长期记忆】以下仅用于个性化表达，不可当作题目事实；如与当前输入冲突，以当前输入为准。"
-                ]
-                memory_lines.extend(f"- {item['content'][:300]}" for item in memories)
+                # 阶段四 6.4:kind 分框注入——misconception 带纠正框架、context 带时间标注
+                memory_lines = build_memory_context_lines(memories)
                 chat_history_dicts.insert(1 if chat_history_dicts else 0, {
                     "role": "system", "content": "\n".join(memory_lines)[:1800],
                 })
