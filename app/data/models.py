@@ -702,6 +702,15 @@ class AIInteractionRun(Base):
     latency_ms = Column(Integer, nullable=True)
     token_usage = Column(JSON, nullable=True)
     estimated_cost = Column(Float, nullable=True)
+    # Quality-loop fields are nullable/backward-compatible; they contain only
+    # low-cardinality verdicts and redacted issue metadata, never raw prompts.
+    critic_verdict = Column(String(10), nullable=True)
+    critic_issues = Column(JSON, nullable=True)
+    quality_sampled = Column(Boolean, nullable=False, default=False, server_default="false")
+    review_verdict = Column(String(10), nullable=True)
+    reviewer_id = Column(String(36), nullable=True)
+    followup_count = Column(Integer, nullable=False, default=0, server_default="0")
+    modified_by_user = Column(Boolean, nullable=False, default=False, server_default="false")
     status = Column(String(20), nullable=False, default="started", index=True)
     error_code = Column(String(100), nullable=True)
     output_text = Column(Text, nullable=True)

@@ -382,7 +382,7 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "f9a0b1c2d3e4"  # student papers & diagnostics on top of notes chain
+        assert script.get_current_head() == "fb2c3d4e5f60"  # quality-loop fields on top of student papers & diagnostics
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3

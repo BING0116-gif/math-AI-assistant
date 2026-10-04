@@ -6,7 +6,7 @@ const routes = [
     path: '/',
     name: 'Home',
     component: () => import('@/views/HomeView.vue'),
-    meta: { title: '数学AI助手', transition: 'slide-fade' },
+    meta: { title: '数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
     path: '/login',
@@ -111,6 +111,12 @@ const routes = [
     name: 'AdminAgentMetrics',
     component: () => import('@/views/AdminAgentMetricsView.vue'),
     meta: { title: 'Agent 指标 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
+  },
+  {
+    path: '/admin/quality',
+    name: 'AdminQuality',
+    component: () => import('@/views/AdminQualityView.vue'),
+    meta: { title: '回答质量抽检 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
   },
 ]
 

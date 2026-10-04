@@ -76,6 +76,29 @@ class Settings(BaseSettings):
     JSON_LOGS: bool = Field(default=True, alias="JSON_LOGS")
     METRICS_ENABLED: bool = Field(default=True, alias="METRICS_ENABLED")
     METRICS_BEARER_TOKEN: str = Field(default="", alias="METRICS_BEARER_TOKEN")
+    # 阶段一质量闭环指标开关；关闭时后续质量埋点调用方应跳过上报。
+    # 指标定义仍保留在 Prometheus registry 中，便于灰度期间保持契约稳定。
+    QUALITY_METRICS_ENABLED: bool = Field(default=True, alias="QUALITY_METRICS_ENABLED")
+    CRITIC_MODE: str = Field(default="off", alias="CRITIC_MODE")
+    CRITIC_SAMPLE_RATE: float = Field(default=0.1, ge=0, le=1, alias="CRITIC_SAMPLE_RATE")
+    CRITIC_MODEL: str = Field(default="deterministic-mock", alias="CRITIC_MODEL")
+    AGENT_TOOL_GUARD_ENABLED: bool = Field(default=True, alias="AGENT_TOOL_GUARD_ENABLED")
+    AGENT_TOOL_DEFAULT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, alias="AGENT_TOOL_DEFAULT_TIMEOUT_SECONDS")
+    AGENT_TOOL_RETRY_MAX: int = Field(default=1, ge=0, le=3, alias="AGENT_TOOL_RETRY_MAX")
+    TOOL_RETRY_BACKOFF_BASE_SECONDS: float = Field(default=0.5, ge=0, le=30, alias="TOOL_RETRY_BACKOFF_BASE_SECONDS")
+    CIRCUIT_ENABLED: bool = Field(default=True, alias="CIRCUIT_ENABLED")
+    CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, ge=1, le=100, alias="CIRCUIT_FAILURE_THRESHOLD")
+    CIRCUIT_WINDOW_SECONDS: float = Field(default=30.0, gt=0, alias="CIRCUIT_WINDOW_SECONDS")
+    CIRCUIT_COOLDOWN_SECONDS: float = Field(default=60.0, gt=0, alias="CIRCUIT_COOLDOWN_SECONDS")
+    SSE_HEARTBEAT_ENABLED: bool = Field(default=True, alias="SSE_HEARTBEAT_ENABLED")
+    SSE_HEARTBEAT_SECONDS: float = Field(default=15.0, gt=0, le=120, alias="SSE_HEARTBEAT_SECONDS")
+
+    @field_validator("CRITIC_MODE")
+    @classmethod
+    def validate_critic_mode(cls, value):
+        if value not in {"off", "sample", "all"}:
+            raise ValueError("CRITIC_MODE must be off, sample, or all")
+        return value
 
     # 开发/测试期临时旁路：允许 mock AI 生成的题正式发布。
     # 默认 False（与 §18 硬性规则一致，保护生产题库不被 mock 数据污染）；

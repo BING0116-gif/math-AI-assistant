@@ -17,6 +17,50 @@ from typing import AsyncGenerator
 logger = logging.getLogger(__name__)
 
 
+async def with_sse_heartbeat(source, interval_seconds: float | None = None):
+    """Keep an SSE connection alive while a producer is waiting on I/O.
+
+    Heartbeats are SSE comments, so clients ignore them and replay buffers do
+    not treat them as business events or advance Last-Event-ID.
+    """
+    try:
+        from app.config.settings import settings
+
+        if not settings.SSE_HEARTBEAT_ENABLED:
+            async for item in source:
+                yield item
+            return
+        interval = interval_seconds or settings.SSE_HEARTBEAT_SECONDS
+    except Exception:
+        interval = interval_seconds or 15.0
+
+    iterator = source.__aiter__()
+    pending = asyncio.create_task(iterator.__anext__())
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if not done:
+                try:
+                    from app.observability import SSE_EVENTS
+                    SSE_EVENTS.labels("heartbeat").inc()
+                except Exception:
+                    pass
+                yield ": ping\n\n"
+                continue
+            try:
+                yield pending.result()
+            except StopAsyncIteration:
+                return
+            pending = asyncio.create_task(iterator.__anext__())
+    finally:
+        if not pending.done():
+            pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        close = getattr(source, "aclose", None)
+        if close is not None:
+            await close()
+
+
 async def stream_agent_response(
     agent,
     message: str,
@@ -34,6 +78,7 @@ async def stream_agent_response(
     turn_started = time.time()
     first_content_at = None
     capability = "unknown"
+    answer_parts: list[str] = []
     try:
         chunk_idx = 0
         started = time.perf_counter()
@@ -51,6 +96,7 @@ async def stream_agent_response(
                 if not isinstance(chunk, str):
                     chunk = str(chunk)
                 chunk_idx += 1
+                answer_parts.append(chunk)
                 if first_content_at is None:
                     first_content_at = time.perf_counter()
                 try:
@@ -142,6 +188,18 @@ async def stream_agent_response(
             from app.services.tutor_service import complete_ai_run
             metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
             metadata["latency_ms"] = int((time.perf_counter() - started) * 1000)
+            try:
+                from app.services.answer_critic import AnswerCritic
+                critic = await AnswerCritic().review(
+                    run_id=ai_run_id,
+                    question=message,
+                    final_answer="".join(answer_parts),
+                    requirements=(tutor_context or {}).get("requirements", []),
+                )
+                if critic is not None:
+                    metadata.update({"critic_verdict": critic.verdict, "critic_issues": [issue.model_dump() for issue in critic.issues], "quality_sampled": True, "critic_model": critic.model})
+            except Exception:
+                pass
             await complete_ai_run(ai_run_id, status="completed", metadata=metadata)
 
     except Exception as e:

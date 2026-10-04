@@ -37,6 +37,7 @@ from app.api.legacy_import_api import router as legacy_import_router
 from app.api.readiness_api import router as readiness_router
 from app.api.admin_overview_api import router as admin_overview_router
 from app.api.admin_agent_metrics_api import router as admin_agent_metrics_router
+from app.api.quality_admin_api import router as quality_admin_router
 from app.api.notes_api import router as notes_router
 from app.api.student_paper_api import router as student_paper_router
 from app.config.settings import settings
@@ -94,6 +95,7 @@ def _register_routers(target_app: FastAPI) -> None:
         readiness_router,
         admin_overview_router,
         admin_agent_metrics_router,
+        quality_admin_router,
         notes_router,
         student_paper_router,
     )
