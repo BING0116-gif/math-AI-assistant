@@ -5,6 +5,7 @@ import { currentChartTheme, graphic, init, type ECharts } from '@/utils/charts'
 import AppShell from '@/components/shell/AppShell.vue'
 import { getLearningDashboard, getLearningProfile } from '@/api/learning'
 import { getProfileWhy } from '@/api/profileEvidence'
+import MemoryPanel from '@/components/profile/MemoryPanel.vue'
 import { useRouter } from 'vue-router'
 import { apiErrorMessage } from '@/utils/apiError'
 import { formatStableDateTime } from '@/utils/dateTime'
@@ -649,6 +650,9 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+
+          <!-- 我的记忆(阶段四 6.5):查看/确认/纠正/删除/导出 -->
+          <MemoryPanel />
         </template>
       </div>
     </div>
