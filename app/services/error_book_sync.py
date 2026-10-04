@@ -103,6 +103,8 @@ class ErrorBookSkillSyncService:
         self, user_id: str, error_entries: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         tracker = self._get_behavior_tracker()
+        from agent_core.memory_persistence import MemoryPersistenceFacade
+
         facade = MemoryPersistenceFacade()
 
         synced = 0
