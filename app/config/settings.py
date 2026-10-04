@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     CIRCUIT_COOLDOWN_SECONDS: float = Field(default=60.0, gt=0, alias="CIRCUIT_COOLDOWN_SECONDS")
     SSE_HEARTBEAT_ENABLED: bool = Field(default=True, alias="SSE_HEARTBEAT_ENABLED")
     SSE_HEARTBEAT_SECONDS: float = Field(default=15.0, gt=0, le=120, alias="SSE_HEARTBEAT_SECONDS")
+    # 阶段二 4.6.3 replay buffer 容量治理：超限淘汰最老事件，恢复遇 seq_hole 发 reset。
+    SSE_BUFFER_MAX_EVENTS: int = Field(default=2000, ge=100, alias="SSE_BUFFER_MAX_EVENTS")
+    SSE_BUFFER_MAX_BYTES: int = Field(default=2 * 1024 * 1024, ge=65536, alias="SSE_BUFFER_MAX_BYTES")
+    SSE_STREAM_TTL_SECONDS: float = Field(default=300.0, gt=0, le=3600, alias="SSE_STREAM_TTL_SECONDS")
     # 阶段二 Agent 级预算（路线图 4.3）：总超时/迭代上限/Run 级 Token 预算。
     # Token 预算设为 0 表示关闭预算护栏。
     AGENT_TOTAL_TIMEOUT_SECONDS: float = Field(default=90.0, gt=0, le=600, alias="AGENT_TOTAL_TIMEOUT_SECONDS")
