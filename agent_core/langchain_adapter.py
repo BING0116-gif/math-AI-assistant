@@ -21,6 +21,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
+from tools.execution_guard import ToolExecutionGuard, default_guard_policy
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ class LangChainToolConverter:
             f"langchain_tool_context_{id(self)}",
             default=None,
         )
+        self._execution_guard = ToolExecutionGuard(default_guard_policy())
 
     def set_context(self, context: Dict[str, Any]) -> None:
         """设置当前请求的上下文，工具执行时可读取其中的 user_id 等信息。"""
@@ -58,6 +60,11 @@ class LangChainToolConverter:
     def _get_context(self) -> Dict[str, Any]:
         """返回当前异步任务绑定的请求上下文。"""
         return self._context.get() or {}
+
+    @staticmethod
+    def _tool_is_retryable(custom_tool: BaseTool) -> bool:
+        """Only retry read/compute tools; never replay known write tools."""
+        return ToolCapability.ERROR_BOOK_MANAGEMENT not in custom_tool.capabilities
 
     def convert(self, custom_tool: BaseTool) -> StructuredTool:
         if custom_tool.name in self._conversion_cache:
@@ -113,7 +120,19 @@ class LangChainToolConverter:
                     },
                 )
 
-                result: ToolOutput = await custom_tool.execute(input_data)
+                try:
+                    from app.config.settings import settings
+                    guard_enabled = settings.AGENT_TOOL_GUARD_ENABLED
+                except Exception:
+                    guard_enabled = True
+                if guard_enabled:
+                    result = await self._execution_guard.run(
+                        custom_tool.name,
+                        lambda: custom_tool.execute(input_data),
+                        retryable=self._tool_is_retryable(custom_tool),
+                    )
+                else:
+                    result = await custom_tool.execute(input_data)
 
                 elapsed_ms = (time.time() - start_time) * 1000
 

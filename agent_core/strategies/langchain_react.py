@@ -37,6 +37,13 @@ from app.services.mode_gating import filter_tools_for_mode, normalize_tutor_mode
 logger = logging.getLogger(__name__)
 
 
+async def _iterate_with_timeout(events, timeout_seconds: float):
+    """Apply one wall-clock budget to an async event stream."""
+    async with asyncio.timeout(timeout_seconds):
+        async for event in events:
+            yield event
+
+
 class MaxIterationsMiddleware(AgentMiddleware):
     """
     限制Agent最大迭代次数的中间件。
@@ -124,7 +131,13 @@ class LangChainReActStrategy(AgentStrategy):
 
         logger.info(f"已转换 {len(self._tools)} 个工具为LangChain格式")
 
-        middleware: List[AgentMiddleware] = []
+        # Keep the execution budget in the compiled agent as well as around the
+        # outer stream.  The middleware prevents an agent from repeatedly
+        # calling tools, while the outer timeout covers a single hung tool/LLM
+        # call that never returns another event.
+        middleware: List[AgentMiddleware] = [
+            MaxIterationsMiddleware(max_iterations=self._max_iterations),
+        ]
 
         # [已移除] SummarizationMiddleware 会对工具返回内容进行摘要压缩，
         # 导致推荐题目等结构化数据在传回LLM时丢失细节或被改写。
@@ -227,10 +240,13 @@ class LangChainReActStrategy(AgentStrategy):
             _used_tools = set()  # 追踪本次执行中使用的工具名称
             _token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-            async for event in agent.astream_events(
-                {"messages": messages},
-                config={'callbacks': [recorder]},
-                version="v2",
+            async for event in _iterate_with_timeout(
+                agent.astream_events(
+                    {"messages": messages},
+                    config={'callbacks': [recorder]},
+                    version="v2",
+                ),
+                self._timeout_seconds,
             ):
                 event_name = event.get("event", "")
 
