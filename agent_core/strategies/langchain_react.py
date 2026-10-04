@@ -37,11 +37,29 @@ from app.services.mode_gating import filter_tools_for_mode, normalize_tutor_mode
 logger = logging.getLogger(__name__)
 
 
+def _budget_setting(name: str, fallback):
+    """Read an agent-budget setting; strategies must also work without app settings."""
+    try:
+        from app.config.settings import settings
+        return getattr(settings, name)
+    except Exception:
+        return fallback
+
+
 async def _iterate_with_timeout(events, timeout_seconds: float):
-    """Apply one wall-clock budget to an async event stream."""
-    async with asyncio.timeout(timeout_seconds):
-        async for event in events:
-            yield event
+    """Apply one wall-clock budget to an async event stream.
+
+    消费方提前 break 时也要确定性关闭内层事件流（超时/预算触顶后不留挂起的
+    LLM 连接），所以 finally 里级联 aclose，而不是依赖 GC 的异步收尾。
+    """
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            async for event in events:
+                yield event
+    finally:
+        close = getattr(events, "aclose", None)
+        if close is not None:
+            await close()
 
 
 class MaxIterationsMiddleware(AgentMiddleware):
@@ -82,20 +100,24 @@ class LangChainReActStrategy(AgentStrategy):
         llm: Any,
         registry: ToolRegistry,
         system_prompt: str,
-        max_iterations: int = 5,
-        timeout_seconds: float = 120.0,
+        max_iterations: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
         verbose: bool = False,
         system_prompt_builder: Optional[Callable[[List[BaseTool]], str]] = None,
+        max_total_tokens: Optional[int] = None,
     ):
         self._llm = llm
         self._registry = registry
         self._system_prompt = system_prompt
-        self._max_iterations = max_iterations
-        self._timeout_seconds = timeout_seconds
+        # 预算缺省从 settings 读取（路线图 4.3），显式传参优先（测试/特殊部署）。
+        self._max_iterations = max_iterations if max_iterations is not None else _budget_setting("AGENT_MAX_TOOL_ROUNDS", 5)
+        self._timeout_seconds = timeout_seconds if timeout_seconds is not None else _budget_setting("AGENT_TOTAL_TIMEOUT_SECONDS", 120.0)
+        self._token_budget = max_total_tokens if max_total_tokens is not None else _budget_setting("AGENT_MAX_TOTAL_TOKENS", 60000)
         self._verbose = verbose
         self._system_prompt_builder = system_prompt_builder
         self._last_used_tools: set = set()  # 最近一次 stream 执行中使用的工具集
         self._last_token_usage: Dict[str, int] = {}
+        self._last_run_status: str = "completed"
 
         self._recorders: Dict[str, ThoughtRecordingCallbackHandler] = {}
 
@@ -232,6 +254,7 @@ class LangChainReActStrategy(AgentStrategy):
         )
         self._last_used_tools = set()
         self._last_token_usage = {}
+        self._last_run_status = "completed"
 
         try:
             token_count = 0
@@ -240,14 +263,16 @@ class LangChainReActStrategy(AgentStrategy):
             _used_tools = set()  # 追踪本次执行中使用的工具名称
             _token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-            async for event in _iterate_with_timeout(
+            event_stream = _iterate_with_timeout(
                 agent.astream_events(
                     {"messages": messages},
                     config={'callbacks': [recorder]},
                     version="v2",
                 ),
                 self._timeout_seconds,
-            ):
+            )
+            budget_exceeded = False
+            async for event in event_stream:
                 event_name = event.get("event", "")
 
                 # 追踪工具调用（用于去重检测）
@@ -305,6 +330,10 @@ class LangChainReActStrategy(AgentStrategy):
                     _token_usage["prompt_tokens"] += int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
                     _token_usage["completion_tokens"] += int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
                     _token_usage["total_tokens"] += int(usage.get("total_tokens", 0) or 0)
+                    # Run 级 Token 预算（路线图 4.3.3）：触顶即优雅收尾，不抛 500。
+                    if self._token_budget and _token_usage["total_tokens"] >= self._token_budget:
+                        budget_exceeded = True
+                        break
 
                 if event_name != "on_chat_model_stream":
                     continue
@@ -322,6 +351,10 @@ class LangChainReActStrategy(AgentStrategy):
                 _full_output.append(content)
                 logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
                 yield content
+
+            # 确定性关闭底层事件流：预算触顶 break 时也要收掉 astream_events 生成器，
+            # 不留挂起的 LLM 连接；正常结束/异常路径下这是无害的幂等操作。
+            await event_stream.aclose()
 
             # 可观测性：记录LLM完整输出和工具使用情况
             _complete = "".join(_full_output)
@@ -349,6 +382,17 @@ class LangChainReActStrategy(AgentStrategy):
                 f"tokens={token_count}, yields={yield_count}"
             )
 
+            # 预算触顶：已流出的内容保留，追加诚实收尾文案；半截结果不进记忆提炼。
+            if budget_exceeded:
+                self._last_run_status = "budget_exceeded"
+                logger.warning(
+                    f"[STREAM] Run 级 Token 预算触顶 "
+                    f"({_token_usage['total_tokens']} >= {self._token_budget})，优雅收尾"
+                )
+                yield "\n\n**【⚠️ 已达单次回答长度上限】** 已保留目前进展。你可以让我“继续”，或把问题拆成更小的步骤再问。"
+                recorder.finish_process("[预算触顶终止]")
+                return
+
             # [P0-01] 自动记忆提取与持久化（流式模式）
             await self._auto_persist_memory(
                 context=context,
@@ -359,6 +403,7 @@ class LangChainReActStrategy(AgentStrategy):
             )
 
         except asyncio.TimeoutError:
+            self._last_run_status = "timeout"
             logger.error(f"[STREAM] Agent执行超时 ({self._timeout_seconds}s)")
             yield "\n\n**【⏰ 执行超时】** 请简化问题后重试"
             recorder.finish_process("[超时终止]")

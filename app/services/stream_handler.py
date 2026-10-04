@@ -170,9 +170,12 @@ async def stream_agent_response(
         logger.info(f"[SSE] 流式响应完成: session={session_id}, total_chunks={chunk_idx}")
         metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
         capability = str(metadata.get("capability") or "unknown")[:80]
+        run_status = str(getattr(agent, "_last_run_status", "") or "completed")
+        if run_status not in {"completed", "timeout", "budget_exceeded"}:
+            run_status = "completed"
         try:
             from app.observability import AGENT_RUNS, AGENT_LATENCY, AGENT_TTFT
-            AGENT_RUNS.labels(capability, "completed").inc()
+            AGENT_RUNS.labels(capability, run_status).inc()
             AGENT_LATENCY.labels(capability).observe(time.perf_counter() - started)
             if first_content_at is not None:
                 AGENT_TTFT.labels(capability).observe(first_content_at - started)
@@ -200,7 +203,7 @@ async def stream_agent_response(
                     metadata.update({"critic_verdict": critic.verdict, "critic_issues": [issue.model_dump() for issue in critic.issues], "quality_sampled": True, "critic_model": critic.model})
             except Exception:
                 pass
-            await complete_ai_run(ai_run_id, status="completed", metadata=metadata)
+            await complete_ai_run(ai_run_id, status=run_status, metadata=metadata)
 
     except Exception as e:
         try:
@@ -318,7 +321,10 @@ async def stream_multimodal_response(
                 if ai_run_id:
                     from app.services.tutor_service import complete_ai_run
                     metadata = dict(getattr(agent, "_last_run_metadata", {}) or {}); metadata["latency_ms"] = int((time.perf_counter() - started) * 1000)
-                    await complete_ai_run(ai_run_id, status="completed", metadata=metadata)
+                    run_status = str(getattr(agent, "_last_run_status", "") or "completed")
+                    if run_status not in {"completed", "timeout", "budget_exceeded"}:
+                        run_status = "completed"
+                    await complete_ai_run(ai_run_id, status=run_status, metadata=metadata)
             finally:
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
@@ -354,7 +360,10 @@ async def stream_multimodal_response(
                 from app.services.tutor_service import complete_ai_run
                 metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
                 metadata["latency_ms"] = int((time.perf_counter() - started) * 1000)
-                await complete_ai_run(ai_run_id, status="completed", metadata=metadata)
+                run_status = str(getattr(agent, "_last_run_status", "") or "completed")
+                if run_status not in {"completed", "timeout", "budget_exceeded"}:
+                    run_status = "completed"
+                await complete_ai_run(ai_run_id, status=run_status, metadata=metadata)
 
     except Exception as e:
         logger.error(f"多模态流式处理失败: {e}\n{traceback.format_exc()}")

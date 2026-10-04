@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     CIRCUIT_COOLDOWN_SECONDS: float = Field(default=60.0, gt=0, alias="CIRCUIT_COOLDOWN_SECONDS")
     SSE_HEARTBEAT_ENABLED: bool = Field(default=True, alias="SSE_HEARTBEAT_ENABLED")
     SSE_HEARTBEAT_SECONDS: float = Field(default=15.0, gt=0, le=120, alias="SSE_HEARTBEAT_SECONDS")
+    # 阶段二 Agent 级预算（路线图 4.3）：总超时/迭代上限/Run 级 Token 预算。
+    # Token 预算设为 0 表示关闭预算护栏。
+    AGENT_TOTAL_TIMEOUT_SECONDS: float = Field(default=90.0, gt=0, le=600, alias="AGENT_TOTAL_TIMEOUT_SECONDS")
+    AGENT_MAX_TOOL_ROUNDS: int = Field(default=5, ge=1, le=20, alias="AGENT_MAX_TOOL_ROUNDS")
+    AGENT_MAX_TOTAL_TOKENS: int = Field(default=60000, ge=0, alias="AGENT_MAX_TOTAL_TOKENS")
 
     @field_validator("CRITIC_MODE")
     @classmethod

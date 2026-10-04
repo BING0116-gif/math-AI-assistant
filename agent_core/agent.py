@@ -1037,6 +1037,8 @@ class MathAgent:
 
         # [P0-03] 存储跟进推荐文本，供 SSE follow_up 事件使用
         self._follow_up_text = follow_up_text
+        # 透传策略级 run 终态(completed/timeout/budget_exceeded)，供 SSE 层记指标与落库
+        self._last_run_status = str(getattr(strategy, "_last_run_status", "") or "completed")
 
         history.add_ai_message(full_response)
         public_animations = list(context.get("animations") or [])
@@ -1250,6 +1252,7 @@ class MathAgent:
                 key: int(strategy_usage.get(key, 0) or 0) + int(vision_usage.get(key, 0) or 0)
                 for key in ("prompt_tokens", "completion_tokens", "total_tokens")
             }
+            self._last_run_status = str(getattr(strategy, "_last_run_status", "") or "completed")
             self._last_run_metadata = {
                 "model": self._model,
                 "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
