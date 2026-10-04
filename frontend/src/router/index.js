@@ -65,6 +65,12 @@ const routes = [
     meta: { title: '记忆画像 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
+    path: '/learning/path',
+    name: 'LearningPath',
+    component: () => import('@/views/LearningPathView.vue'),
+    meta: { title: '我的学习路径 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
+  },
+  {
     path: '/paper/test',
     redirect: '/apply/practice',
   },

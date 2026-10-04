@@ -653,6 +653,17 @@ onBeforeUnmount(() => {
 
           <!-- 我的记忆(阶段四 6.5):查看/确认/纠正/删除/导出 -->
           <MemoryPanel />
+
+          <!-- 学习路径入口(阶段五 7.1) -->
+          <div class="card path-entry-card">
+            <div class="card-head">
+              <span class="t-3">我的学习路径</span>
+              <button class="more" type="button" @click="router.push('/learning/path')">
+                查看路径<ArrowUpRight class="ic-14" :stroke-width="1.75" />
+              </button>
+            </div>
+            <p class="caption">基于你的掌握度与知识点依赖关系,每周生成确定性的薄弱点攻克计划。</p>
+          </div>
         </template>
       </div>
     </div>

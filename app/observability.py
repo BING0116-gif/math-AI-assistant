@@ -89,6 +89,11 @@ TOOL_RETRIES = Counter(
     "Bounded tool retry attempts",
     ["tool", "outcome"],
 )
+LEARNING_PATH_STEPS = Counter(
+    "mathai_learning_path_step_total",
+    "Learning path step interactions",
+    ["step_type"],
+)
 
 _SENSITIVE = re.compile(r"(authorization|password|secret|api[_-]?key|token|prompt|answer|content)", re.I)
 

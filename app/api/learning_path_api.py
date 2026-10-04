@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.student_contracts import STUDENT_API_RESPONSES, StudentEnvelope
+from app.observability import LEARNING_PATH_STEPS
 from app.services.learning_path import build_learning_path
 
 router = APIRouter(prefix="/api/learning/path", tags=["学习路径"])
@@ -56,6 +57,23 @@ class LearningPathData(BaseModel):
     weak_count: int
     user_scope: str = "owner"
     weeks: list[PathWeekOut] = Field(default_factory=list)
+
+
+class PathStepTrackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step_type: str = Field(pattern="^(explain|practice|variant|review)$")
+    knowledge_point_code: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/track", responses=STUDENT_API_RESPONSES)
+async def track_path_step(body: PathStepTrackRequest, http_request: Request):
+    """5-E 有效性埋点:路径步骤点击/完成,只记低基数类型不记用户。"""
+    value = getattr(http_request.state, "user_id", None)
+    if not value:
+        raise HTTPException(status_code=401, detail={"code": "UNAUTHENTICATED", "message": "请先登录"})
+    LEARNING_PATH_STEPS.labels(body.step_type[:40]).inc()
+    return {"code": 0, "data": {"tracked": True}}
 
 
 @router.get("", response_model=StudentEnvelope[LearningPathData], responses=STUDENT_API_RESPONSES)
