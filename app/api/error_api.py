@@ -261,11 +261,24 @@ async def create_error_variant_session(
         data = await create_variant_session(
             user_id, validated_id, body.idempotency_key, body.variation_dimension,
         )
+        # 7.3 有效性指标:相似题(变式)会话产出,只记结果类型不记用户
+        try:
+            from app.observability import VARIANT_SESSIONS
+
+            VARIANT_SESSIONS.labels("created").inc()
+        except Exception:
+            pass
         return {"code": 0, "data": data}
     except VariantGenerationError as exc:
         status = 404 if exc.code == "ERROR_ITEM_NOT_FOUND" else 409 if exc.code in {
             "IDEMPOTENCY_CONFLICT", "VARIANT_DUPLICATE_EXHAUSTED",
         } else 422
+        try:
+            from app.observability import VARIANT_SESSIONS
+
+            VARIANT_SESSIONS.labels("rejected").inc()
+        except Exception:
+            pass
         raise HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message})
     except SecurityValidationError as exc:
         raise HTTPException(status_code=400, detail={"code": "VALIDATION_FAILED", "message": str(exc)})

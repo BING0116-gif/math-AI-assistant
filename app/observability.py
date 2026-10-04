@@ -94,6 +94,11 @@ LEARNING_PATH_STEPS = Counter(
     "Learning path step interactions",
     ["step_type"],
 )
+VARIANT_SESSIONS = Counter(
+    "mathai_variant_session_total",
+    "Similar-question (variant) session outcomes",
+    ["status"],
+)
 
 _SENSITIVE = re.compile(r"(authorization|password|secret|api[_-]?key|token|prompt|answer|content)", re.I)
 
