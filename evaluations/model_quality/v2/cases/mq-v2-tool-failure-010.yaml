@@ -1,0 +1,19 @@
+id: mq-v2-tool-failure-010
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: "相似题生成接口返回 500 时，助手应该怎样回答？"
+requirements: ["说明生成失败", "不伪造相似题", "提供替代行动"]
+oracle:
+  answer_match: {mode: behavioral, expected: "生成失败"}
+  key_steps:
+    - {text: "生成失败", weight: 1}
+    - {text: "稍后再试", weight: 1}
+  forbidden_claims: ["为你生成了以下相似题"]
+tool_failure_plan:
+  tool: generate_similar_questions
+  failure: http_5xx
+  inject: {status_code: 500}
+critic_expectation: {verdict: warn, must_check: [answered_question]}
+user_fixture: eval_standard_user
+ai_offline_case: true

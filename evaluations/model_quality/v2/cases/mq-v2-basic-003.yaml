@@ -1,0 +1,15 @@
+id: mq-v2-basic-003
+category: basic
+modality: text
+tutor_mode: solve
+question: "计算积分 ∫0^1 2x dx。"
+requirements: ["给出积分结果", "展示原函数"]
+oracle:
+  answer_match: {mode: numeric, expected: "1", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "原函数为 x^2", weight: 1}
+    - {text: "积分结果为 1", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

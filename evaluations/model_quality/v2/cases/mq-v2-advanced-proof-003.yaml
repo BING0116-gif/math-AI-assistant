@@ -1,0 +1,16 @@
+id: mq-v2-advanced-proof-003
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: "说明微分中值定理的适用条件和结论。"
+requirements: ["说明连续可导条件", "给出中间点结论"]
+oracle:
+  answer_match: {mode: expression, expected: "f'(c)"}
+  key_steps:
+    - {text: "闭区间连续", weight: 1}
+    - {text: "开区间可导", weight: 1}
+    - {text: "存在 c 使 f'(c)", weight: 2}
+  forbidden_claims: ["不需要连续条件"]
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

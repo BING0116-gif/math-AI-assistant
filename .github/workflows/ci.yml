@@ -47,6 +47,12 @@ jobs:
       - name: Validate model quality goldens without AI
         run: python -m scripts.model_quality_eval validate --dataset evaluations/model_quality/v1
 
+      - name: Validate v2 quality matrix without AI
+        run: |
+          python -m scripts.model_quality_eval validate-v2 --dataset evaluations/model_quality/v2
+          python -m scripts.model_quality_eval audit-v2 --dataset evaluations/model_quality/v2
+          python -m scripts.model_quality_eval validate-gates --gates evaluations/model_quality/v2/gates.yaml
+
       - name: Run tests with coverage
         run: |
           pytest tests/ \

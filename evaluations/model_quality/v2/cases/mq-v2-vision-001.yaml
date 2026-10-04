@@ -1,0 +1,23 @@
+id: mq-v2-vision-001
+category: vision
+modality: image
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+tutor_mode: solve
+question: "识别图片中的极限题并给出结果。"
+requirements:
+  - "识别题目"
+  - "给出结果"
+oracle:
+  answer_match:
+    mode: exact
+    expected: "1"
+  key_steps:
+    - {text: "识别极限题", weight: 1}
+    - {text: "结果为 1", weight: 1}
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check: [answered_question, numeric_consistency]
+user_fixture: eval_standard_user
+ai_offline_case: true

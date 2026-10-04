@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-009
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "检索关于特征值的题目时，如何处理互相矛盾的资料？"
+requirements: ["指出证据冲突", "避免直接采信矛盾结论"]
+oracle:
+  answer_match: {mode: behavioral, expected: "证据冲突"}
+  key_steps:
+    - {text: "证据冲突", weight: 1}
+    - {text: "需要核对", weight: 1}
+  forbidden_claims: ["所有资料都一致"]
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-eigen-009-a, qid-eigen-009-b]
+  citation_required: true
+critic_expectation: {verdict: warn, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true

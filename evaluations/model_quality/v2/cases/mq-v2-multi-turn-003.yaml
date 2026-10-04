@@ -1,0 +1,19 @@
+id: mq-v2-multi-turn-003
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "用上一轮的极限结论判断该数列是否收敛。"
+context_fixture:
+  conversation:
+    - {role: user, content: "上一轮已得到 a_n 趋近于 0。"}
+    - {role: assistant, content: "已记录该极限结论。"}
+requirements: ["引用上一轮结论", "给出收敛判断"]
+oracle:
+  answer_match: {mode: behavioral, expected: "收敛"}
+  key_steps:
+    - {text: "趋近于 0", weight: 1}
+    - {text: "收敛", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -1,0 +1,15 @@
+id: mq-v2-basic-010
+category: basic
+modality: text
+tutor_mode: solve
+question: "求 f(x,y)=x^2y 在 (1,2) 处对 x 的偏导数。"
+requirements: ["给出偏导数值", "说明对 y 视为常数"]
+oracle:
+  answer_match: {mode: numeric, expected: "4", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "偏导数为 2xy", weight: 1}
+    - {text: "结果为 4", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

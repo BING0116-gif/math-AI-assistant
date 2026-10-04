@@ -1,0 +1,15 @@
+id: mq-v2-basic-004
+category: basic
+modality: text
+tutor_mode: solve
+question: "求函数 ln(x) 在 x=1 处的导数。"
+requirements: ["给出导数值", "说明定义域"]
+oracle:
+  answer_match: {mode: numeric, expected: "1", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "导数值为 1", weight: 1}
+    - {text: "x 大于 0", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, units_domain]}
+user_fixture: eval_standard_user
+ai_offline_case: true

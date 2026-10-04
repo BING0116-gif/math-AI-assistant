@@ -1,0 +1,19 @@
+id: mq-v2-multi-turn-005
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "根据刚才的定义域结论判断 x=-1 是否可取。"
+context_fixture:
+  conversation:
+    - {role: user, content: "刚才得到函数定义域为 x 大于等于 0。"}
+    - {role: assistant, content: "已记录定义域条件。"}
+requirements: ["引用定义域", "判断 x=-1"]
+oracle:
+  answer_match: {mode: behavioral, expected: "不可取"}
+  key_steps:
+    - {text: "定义域为 x 大于等于 0", weight: 1}
+    - {text: "不可取", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, units_domain]}
+user_fixture: eval_standard_user
+ai_offline_case: true

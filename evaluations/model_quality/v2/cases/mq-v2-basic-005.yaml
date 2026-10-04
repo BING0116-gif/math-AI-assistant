@@ -1,0 +1,15 @@
+id: mq-v2-basic-005
+category: basic
+modality: text
+tutor_mode: solve
+question: "计算 cos(x) 在 x=0 处的函数值。"
+requirements: ["给出函数值", "说明代入过程"]
+oracle:
+  answer_match: {mode: numeric, expected: "1", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "函数值为 1", weight: 1}
+    - {text: "代入 x=0", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

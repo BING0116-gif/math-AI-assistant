@@ -1,0 +1,15 @@
+id: mq-v2-advanced-proof-007
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: "证明有限维向量空间的任意一组基含有相同数量的向量。"
+requirements: ["说明线性无关性", "给出维数相同结论"]
+oracle:
+  answer_match: {mode: expression, expected: "维数"}
+  key_steps:
+    - {text: "线性无关", weight: 1}
+    - {text: "维数", weight: 2}
+  forbidden_claims: ["任意两组基数量可以不同"]
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

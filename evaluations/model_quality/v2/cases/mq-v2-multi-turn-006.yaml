@@ -1,0 +1,19 @@
+id: mq-v2-multi-turn-006
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "依据上一轮的不等式结果给出变量范围。"
+context_fixture:
+  conversation:
+    - {role: user, content: "上一轮得到 x 大于 1。"}
+    - {role: assistant, content: "已保留不等式结论。"}
+requirements: ["沿用 x 大于 1", "给出变量范围"]
+oracle:
+  answer_match: {mode: behavioral, expected: "x 大于 1"}
+  key_steps:
+    - {text: "x 大于 1", weight: 1}
+    - {text: "变量范围", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

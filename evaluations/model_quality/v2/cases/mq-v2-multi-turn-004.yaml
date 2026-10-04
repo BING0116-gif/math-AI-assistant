@@ -1,0 +1,19 @@
+id: mq-v2-multi-turn-004
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "把刚才的积分结果换算成小数。"
+context_fixture:
+  conversation:
+    - {role: user, content: "刚才算得积分结果为 1/2。"}
+    - {role: assistant, content: "请说明需要的表示形式。"}
+requirements: ["沿用 1/2", "给出小数表示"]
+oracle:
+  answer_match: {mode: numeric, expected: "0.5", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "沿用 1/2", weight: 1}
+    - {text: "小数表示为 0.5", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

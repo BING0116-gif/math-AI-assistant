@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-007
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "检索一道矩阵秩问题并返回真实题目编号。"
+requirements: ["检索矩阵秩问题", "返回题目编号"]
+oracle:
+  answer_match: {mode: behavioral, expected: "题目编号"}
+  key_steps:
+    - {text: "检索矩阵秩问题", weight: 1}
+    - {text: "返回题目编号", weight: 1}
+  forbidden_claims: []
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-rank-007]
+  citation_required: true
+critic_expectation: {verdict: pass, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true

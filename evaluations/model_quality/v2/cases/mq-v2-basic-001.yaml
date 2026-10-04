@@ -1,0 +1,23 @@
+id: mq-v2-basic-001
+category: basic
+modality: text
+tutor_mode: solve
+question: "计算极限 lim(x→0) sin(x)/x。"
+requirements:
+  - "给出极限值"
+  - "说明等价无穷小"
+oracle:
+  answer_match:
+    mode: numeric
+    expected: "1"
+    tolerance: 1.0e-9
+  key_steps:
+    - {text: "极限值为 1", weight: 1}
+    - {text: "等价无穷小", weight: 1}
+  allowed_expressions: ["sin(x)/x"]
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check: [answered_question, derivation_closed]
+user_fixture: eval_standard_user
+ai_offline_case: true

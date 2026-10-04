@@ -1,0 +1,15 @@
+id: mq-v2-advanced-proof-006
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: "证明可导函数必连续。"
+requirements: ["使用可导定义", "给出连续结论"]
+oracle:
+  answer_match: {mode: expression, expected: "连续"}
+  key_steps:
+    - {text: "可导定义", weight: 1}
+    - {text: "连续", weight: 2}
+  forbidden_claims: ["连续函数必可导"]
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

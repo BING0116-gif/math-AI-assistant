@@ -1,0 +1,15 @@
+id: mq-v2-basic-009
+category: basic
+modality: text
+tutor_mode: solve
+question: "判断级数 sum(1/n^2) 是否收敛，并给出依据。"
+requirements: ["给出收敛判断", "说明 p 级数依据"]
+oracle:
+  answer_match: {mode: behavioral, expected: "收敛"}
+  key_steps:
+    - {text: "收敛", weight: 1}
+    - {text: "p 级数", weight: 1}
+  forbidden_claims: ["发散"]
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

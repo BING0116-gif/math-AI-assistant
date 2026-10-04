@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-003
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "从微分知识点中找一道基础练习并引用来源。"
+requirements: ["找出基础练习", "引用来源"]
+oracle:
+  answer_match: {mode: behavioral, expected: "练习"}
+  key_steps:
+    - {text: "找出基础练习", weight: 1}
+    - {text: "引用来源", weight: 1}
+  forbidden_claims: []
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-diff-003]
+  citation_required: true
+critic_expectation: {verdict: pass, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -1,0 +1,15 @@
+id: mq-v2-basic-002
+category: basic
+modality: text
+tutor_mode: solve
+question: "计算函数 x^2 在 x=1 处的导数。"
+requirements: ["给出导数值", "说明求导规则"]
+oracle:
+  answer_match: {mode: numeric, expected: "2", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "导数值为 2", weight: 1}
+    - {text: "幂函数求导", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

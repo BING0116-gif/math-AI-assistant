@@ -15,7 +15,8 @@ import yaml
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from model_quality_eval.dataset import DatasetValidationError, load_dataset
+from model_quality_eval.dataset import DatasetValidationError, load_dataset, load_v2_case, load_v2_dataset
+from model_quality_eval.gates import load_gates
 from model_quality_eval.reporting import (
     apply_human_reviews,
     build_human_review_template,
@@ -60,6 +61,73 @@ def command_validate(args) -> int:
     return 0
 
 
+def command_validate_gates(args) -> int:
+    gates = load_gates(args.gates)
+    print(json.dumps({
+        "status": "valid",
+        "schema_version": gates.schema_version,
+        "blocking": gates.blocking.model_dump(mode="json"),
+        "observatory": gates.observatory.model_dump(mode="json"),
+    }, ensure_ascii=False))
+    return 0
+
+
+def command_validate_case(args) -> int:
+    if args.schema_version != "2.0":
+        raise ValueError("validate-case currently supports schema version 2.0 only")
+    case = load_v2_case(args.case)
+    print(json.dumps({
+        "status": "valid",
+        "schema_version": args.schema_version,
+        "case_id": case.id,
+        "category": case.category,
+    }, ensure_ascii=False))
+    return 0
+
+
+def command_validate_v2(args) -> int:
+    bundle = load_v2_dataset(args.dataset)
+    print(json.dumps({
+        "status": "valid",
+        "dataset_version": bundle.manifest.dataset_version,
+        "dataset_hash": bundle.computed_hash,
+        "case_count": len(bundle.cases),
+        "categories": {name: count for name, count in sorted(bundle.manifest.category_quotas.items()) if count},
+    }, ensure_ascii=False))
+    return 0
+
+
+def command_audit_v2(args) -> int:
+    """Audit the v2 matrix without calling a model or application services."""
+    bundle = load_v2_dataset(args.dataset)
+    offline_cases = [case for case in bundle.cases if case.ai_offline_case]
+    missing_offline = [case.id for case in bundle.cases if not case.ai_offline_case]
+    category_counts = {}
+    for case in bundle.cases:
+        category_counts[case.category] = category_counts.get(case.category, 0) + 1
+    contract_complete = all(
+        case.oracle.answer_match.mode
+        and (case.category != "retrieval" or case.retrieval_expectation is not None)
+        and (case.category != "tool_failure" or case.tool_failure_plan is not None)
+        for case in bundle.cases
+    )
+    if missing_offline or not contract_complete:
+        raise DatasetValidationError(
+            "v2 offline audit failed: every case must be ai_offline_case and have a complete oracle contract"
+        )
+    print(json.dumps({
+        "status": "offline_safe",
+        "dataset_version": bundle.manifest.dataset_version,
+        "dataset_hash": bundle.computed_hash,
+        "case_count": len(bundle.cases),
+        "offline_case_count": len(offline_cases),
+        "categories": {name: count for name, count in sorted(category_counts.items())},
+        "live_calls": 0,
+        "model_quality_claim": False,
+    }, ensure_ascii=False))
+    return 0
+
+
 def command_run(args) -> int:
     bundle = load_dataset(args.dataset)
     selected = _selection(bundle, args)
@@ -99,11 +167,13 @@ def command_run(args) -> int:
 
 def command_compare(args) -> int:
     baseline, candidate = load_report(args.baseline), load_report(args.candidate)
+    gates = load_gates(args.gates) if args.gates else None
     comparison = compare_reports(
         baseline,
         candidate,
         allow_cost_regression=args.allow_cost_regression,
         cost_exception_note=args.cost_exception_note,
+        gates=gates,
     )
     output = Path(args.output)
     write_json(output / "comparison.json", comparison)
@@ -170,6 +240,23 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--dataset", required=True)
     validate.set_defaults(handler=command_validate)
 
+    validate_gates = subcommands.add_parser("validate-gates")
+    validate_gates.add_argument("--gates", required=True)
+    validate_gates.set_defaults(handler=command_validate_gates)
+
+    validate_case = subcommands.add_parser("validate-case")
+    validate_case.add_argument("--schema-version", required=True)
+    validate_case.add_argument("--case", required=True)
+    validate_case.set_defaults(handler=command_validate_case)
+
+    validate_v2 = subcommands.add_parser("validate-v2")
+    validate_v2.add_argument("--dataset", required=True)
+    validate_v2.set_defaults(handler=command_validate_v2)
+
+    audit_v2 = subcommands.add_parser("audit-v2")
+    audit_v2.add_argument("--dataset", required=True)
+    audit_v2.set_defaults(handler=command_audit_v2)
+
     run = subcommands.add_parser("run")
     run.add_argument("--dataset", required=True)
     run.add_argument("--mode", choices=("mocked", "live"), required=True)
@@ -192,6 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--output", required=True)
     compare.add_argument("--allow-cost-regression", action="store_true")
     compare.add_argument("--cost-exception-note")
+    compare.add_argument("--gates", help="versioned YAML quality-gate configuration")
     compare.set_defaults(handler=command_compare)
 
     review = subcommands.add_parser("review")

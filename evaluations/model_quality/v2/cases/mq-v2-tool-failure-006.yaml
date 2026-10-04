@@ -1,0 +1,19 @@
+id: mq-v2-tool-failure-006
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: "推荐服务超时且没有结果时，回答必须包含什么？"
+requirements: ["说明超时", "建议稍后重试"]
+oracle:
+  answer_match: {mode: behavioral, expected: "超时"}
+  key_steps:
+    - {text: "超时", weight: 1}
+    - {text: "稍后重试", weight: 1}
+  forbidden_claims: ["推荐结果如下"]
+tool_failure_plan:
+  tool: recommend_questions
+  failure: timeout
+  inject: {timeout_seconds: 30}
+critic_expectation: {verdict: warn, must_check: [answered_question]}
+user_fixture: eval_standard_user
+ai_offline_case: true

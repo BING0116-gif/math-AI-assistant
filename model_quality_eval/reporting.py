@@ -12,6 +12,8 @@ from typing import Any
 
 from .schema import CaseResult, RunReport
 from .scoring import REASONING_DEFECT_DIMENSIONS, WEIGHTS
+from .gates import QualityGates, evaluate_gates
+from .v2_scoring import V2CaseScore, summarise_v2_scores
 
 
 def _average(values: list[float]) -> float | None:
@@ -104,6 +106,11 @@ def summarise_results(results: list[CaseResult]) -> dict[str, Any]:
             "by_model": defect_models,
         },
     }
+
+
+def summarise_v2_results(results: list[V2CaseScore]) -> dict[str, Any]:
+    """Expose the v2 category/quality summary through the reporting layer."""
+    return summarise_v2_scores(results)
 
 
 def build_run_report(
@@ -262,6 +269,7 @@ def compare_reports(
     *,
     allow_cost_regression: bool = False,
     cost_exception_note: str | None = None,
+    gates: QualityGates | None = None,
 ) -> dict[str, Any]:
     if baseline.get("dataset_hash") != candidate.get("dataset_hash"):
         raise ValueError("baseline and candidate dataset hashes differ")
@@ -305,6 +313,9 @@ def compare_reports(
         failures.append("cost regression exception requires a substantive human review note")
     if candidate.get("status") in {"incomplete", "needs_human_review"}:
         failures.append("candidate telemetry or human review is incomplete")
+    gate_result = evaluate_gates(baseline, candidate, gates) if gates else None
+    if gate_result:
+        failures.extend(f"quality gate: {item}" for item in gate_result["failures"])
     return {
         "comparison_schema_version": "1.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -326,6 +337,7 @@ def compare_reports(
         "average_cost_delta": (
             round(candidate_cost - base_cost, 8) if candidate_cost is not None and base_cost is not None else None
         ),
+        "quality_gates": gate_result,
         "cost_exception": (
             {"allowed": True, "note": cost_exception_note}
             if allow_cost_regression

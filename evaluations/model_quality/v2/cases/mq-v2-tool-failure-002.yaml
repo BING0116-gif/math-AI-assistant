@@ -1,0 +1,19 @@
+id: mq-v2-tool-failure-002
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: "题目检索服务返回 500 时应该如何回答？"
+requirements: ["说明服务异常", "提供替代行动"]
+oracle:
+  answer_match: {mode: behavioral, expected: "服务异常"}
+  key_steps:
+    - {text: "服务异常", weight: 1}
+    - {text: "稍后再试", weight: 1}
+  forbidden_claims: ["已经找到题目"]
+tool_failure_plan:
+  tool: search_questions
+  failure: http_5xx
+  inject: {status_code: 500}
+critic_expectation: {verdict: warn, must_check: [answered_question]}
+user_fixture: eval_standard_user
+ai_offline_case: true

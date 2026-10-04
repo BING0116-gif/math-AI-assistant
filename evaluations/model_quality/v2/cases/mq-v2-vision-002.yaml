@@ -1,0 +1,17 @@
+id: mq-v2-vision-002
+category: vision
+modality: image
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+tutor_mode: solve
+question: "识别图片中的函数表达式并说明定义域。"
+requirements: ["识别函数表达式", "说明定义域"]
+oracle:
+  answer_match: {mode: behavioral, expected: "定义域"}
+  key_steps:
+    - {text: "识别函数表达式", weight: 1}
+    - {text: "说明定义域", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: warn, must_check: [answered_question, units_domain]}
+user_fixture: eval_standard_user
+ai_offline_case: true

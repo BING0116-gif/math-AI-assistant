@@ -1,0 +1,17 @@
+id: mq-v2-vision-005
+category: vision
+modality: image
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+tutor_mode: solve
+question: "识别图片中的不等式并给出解集。"
+requirements: ["识别不等式", "给出解集"]
+oracle:
+  answer_match: {mode: behavioral, expected: "解集"}
+  key_steps:
+    - {text: "识别不等式", weight: 1}
+    - {text: "给出解集", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: warn, must_check: [answered_question, numeric_consistency]}
+user_fixture: eval_standard_user
+ai_offline_case: true

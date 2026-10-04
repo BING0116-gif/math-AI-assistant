@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-010
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "推荐一道概率题，并确保每个结论都能追溯到检索证据。"
+requirements: ["给出推荐", "引用可追溯证据"]
+oracle:
+  answer_match: {mode: behavioral, expected: "推荐"}
+  key_steps:
+    - {text: "给出推荐", weight: 1}
+    - {text: "引用证据", weight: 1}
+  forbidden_claims: ["来源不明的概率题"]
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-probability-010]
+  citation_required: true
+critic_expectation: {verdict: pass, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true
