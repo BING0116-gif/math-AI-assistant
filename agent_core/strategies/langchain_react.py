@@ -30,6 +30,8 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from agent_core.strategies.base import AgentStrategy
 from agent_core.callbacks import ThoughtRecordingCallbackHandler
 from agent_core.langchain_adapter import get_tool_converter
+from agent_core.degradation import degradation_text
+from agent_core.model_failover import get_model_failover_coordinator
 from tools.base_tool import BaseTool
 from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from app.services.mode_gating import filter_tools_for_mode, normalize_tutor_mode
@@ -190,6 +192,36 @@ class LangChainReActStrategy(AgentStrategy):
 
         return agent
 
+    def _rebind_llm(self, model: str) -> None:
+        """L3 故障转移：换用候选模型并清空已编译 agent 缓存。
+
+        候选与主模型共用 LLM_API_BASE / LLM_API_KEY（跨供应商映射待阶段三
+        模型注册表）；工具转换与 LLM 无关，无需重建。
+        """
+        from langchain_openai import ChatOpenAI
+
+        try:
+            from app.config.settings import settings
+
+            api_key = settings.LLM_API_KEY or None
+            base_url = settings.LLM_API_BASE or None
+        except Exception:
+            api_key, base_url = None, None
+        temperature = getattr(self._llm, "temperature", None)
+        previous = str(getattr(self._llm, "model_name", "?") or "?")
+        self._llm = ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            streaming=True,
+            temperature=temperature if temperature is not None else 0.7,
+        )
+        self._agents_by_mode.clear()
+        self._prompts_by_mode.clear()
+        self._agent = None
+        self._tools = []
+        logger.warning(f"[FAILOVER] LangChainReActStrategy 已切换模型: {previous} -> {model}")
+
     def _get_recorder(self, session_id: str) -> ThoughtRecordingCallbackHandler:
         if session_id not in self._recorders:
             self._recorders[session_id] = ThoughtRecordingCallbackHandler(
@@ -255,6 +287,14 @@ class LangChainReActStrategy(AgentStrategy):
         self._last_used_tools = set()
         self._last_token_usage = {}
         self._last_run_status = "completed"
+
+        # L3 故障转移：若上一窗口的连续失败已触发粘性切换，则本次 run 直接用候选模型。
+        failover = get_model_failover_coordinator()
+        primary_model = str(getattr(self._llm, "model_name", "") or "")
+        active_model = failover.current_model(primary_model) if primary_model else primary_model
+        if active_model != primary_model:
+            self._rebind_llm(active_model)
+            self._last_run_status = "degraded"
 
         try:
             token_count = 0
@@ -356,6 +396,10 @@ class LangChainReActStrategy(AgentStrategy):
             # 不留挂起的 LLM 连接；正常结束/异常路径下这是无害的幂等操作。
             await event_stream.aclose()
 
+            # LLM 正常产出 → 清空失败窗口（粘性切换仍由探测计时器回切）。
+            if primary_model:
+                failover.record_success()
+
             # 可观测性：记录LLM完整输出和工具使用情况
             _complete = "".join(_full_output)
             import hashlib as _hl
@@ -405,13 +449,19 @@ class LangChainReActStrategy(AgentStrategy):
         except asyncio.TimeoutError:
             self._last_run_status = "timeout"
             logger.error(f"[STREAM] Agent执行超时 ({self._timeout_seconds}s)")
-            yield "\n\n**【⏰ 执行超时】** 请简化问题后重试"
+            yield degradation_text("timeout")
             recorder.finish_process("[超时终止]")
 
         except Exception as e:
+            # L3 记账：窗口内连续失败达阈值则粘性切换，保护后续 run；
+            # 本次 run 走 L4 模板兜底——诚实告知失败，绝不假装成功，
+            # 也不把异常类型/栈信息透给用户（安全约束 10.5）。
             logger.error(f"[STREAM] Agent执行失败: {type(e).__name__}: {e}", exc_info=True)
-            yield f"\n\n**【[ERR] 执行错误】** {type(e).__name__}: {str(e)}"
-            recorder.finish_process(f"[错误] {e}")
+            if primary_model:
+                failover.record_failure(primary_model)
+            self._last_run_status = "failed_l4"
+            yield degradation_text("model_failure")
+            recorder.finish_process("[L4 降级]")
 
     def _format_chat_history(
         self,

@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     AGENT_TOTAL_TIMEOUT_SECONDS: float = Field(default=90.0, gt=0, le=600, alias="AGENT_TOTAL_TIMEOUT_SECONDS")
     AGENT_MAX_TOOL_ROUNDS: int = Field(default=5, ge=1, le=20, alias="AGENT_MAX_TOOL_ROUNDS")
     AGENT_MAX_TOTAL_TOKENS: int = Field(default=60000, ge=0, alias="AGENT_MAX_TOTAL_TOKENS")
+    # 阶段二 4.4 分级降级：故障驱动的备用模型切换（L3）。候选与主模型共用
+    # LLM_API_BASE / LLM_API_KEY；跨供应商映射待阶段三模型注册表。
+    LLM_FAILOVER_ENABLED: bool = Field(default=False, alias="LLM_FAILOVER_ENABLED")
+    LLM_FALLBACK_MODELS: list[str] = Field(default_factory=list, alias="LLM_FALLBACK_MODELS")
+    LLM_FAILOVER_WINDOW_SECONDS: float = Field(default=60.0, gt=0, le=600, alias="LLM_FAILOVER_WINDOW_SECONDS")
+    LLM_FAILOVER_FAILURES: int = Field(default=3, ge=1, le=20, alias="LLM_FAILOVER_FAILURES")
+    LLM_FAILOVER_PROBE_SECONDS: float = Field(default=300.0, gt=0, le=3600, alias="LLM_FAILOVER_PROBE_SECONDS")
 
     @field_validator("CRITIC_MODE")
     @classmethod

@@ -171,7 +171,7 @@ async def stream_agent_response(
         metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
         capability = str(metadata.get("capability") or "unknown")[:80]
         run_status = str(getattr(agent, "_last_run_status", "") or "completed")
-        if run_status not in {"completed", "timeout", "budget_exceeded"}:
+        if run_status not in {"completed", "timeout", "budget_exceeded", "degraded", "failed_l4"}:
             run_status = "completed"
         try:
             from app.observability import AGENT_RUNS, AGENT_LATENCY, AGENT_TTFT
@@ -322,7 +322,7 @@ async def stream_multimodal_response(
                     from app.services.tutor_service import complete_ai_run
                     metadata = dict(getattr(agent, "_last_run_metadata", {}) or {}); metadata["latency_ms"] = int((time.perf_counter() - started) * 1000)
                     run_status = str(getattr(agent, "_last_run_status", "") or "completed")
-                    if run_status not in {"completed", "timeout", "budget_exceeded"}:
+                    if run_status not in {"completed", "timeout", "budget_exceeded", "degraded", "failed_l4"}:
                         run_status = "completed"
                     await complete_ai_run(ai_run_id, status=run_status, metadata=metadata)
             finally:
@@ -361,7 +361,7 @@ async def stream_multimodal_response(
                 metadata = dict(getattr(agent, "_last_run_metadata", {}) or {})
                 metadata["latency_ms"] = int((time.perf_counter() - started) * 1000)
                 run_status = str(getattr(agent, "_last_run_status", "") or "completed")
-                if run_status not in {"completed", "timeout", "budget_exceeded"}:
+                if run_status not in {"completed", "timeout", "budget_exceeded", "degraded", "failed_l4"}:
                     run_status = "completed"
                 await complete_ai_run(ai_run_id, status=run_status, metadata=metadata)
 
