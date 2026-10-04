@@ -441,7 +441,7 @@ class MemoryRetrievalEngine:
         weights: Optional[Dict[str, float]] = None,
     ):
         self.short_term = short_term_memory
-        self.long_term = long_term
+        self.long_term = long_term_memory
         self.weights = weights or {
             "short_term": 0.4,
             "long_term": 0.6,

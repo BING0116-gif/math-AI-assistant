@@ -16,12 +16,15 @@
 """
 
 import logging
-from typing import Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
 from fastapi import HTTPException
 
 from app.config.settings import settings
 from app.services.ai_capability import is_ai_available, raise_ai_unavailable
+
+if TYPE_CHECKING:
+    from app.services.llm_service import LLMResponse
 
 logger = logging.getLogger(__name__)
 
