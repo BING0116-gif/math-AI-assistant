@@ -55,12 +55,17 @@ async function redirectAfterAuth() {
   // 登录成功后直接回跳，避免用户还要再点一次入口。
   const redirect = route.query.redirect
   if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
-    if (redirect.startsWith('/admin') && authStore.role !== 'admin') {
-      ElMessage.warning('当前账号不是管理员，无法进入该页面，请使用管理员账号登录')
-      router.replace({ path: '/', query: {} })
+    if (authStore.role === 'admin') {
+      if (redirect.startsWith('/admin')) {
+        router.replace(redirect)
+        return
+      }
+    } else if (!redirect.startsWith('/admin')) {
+      router.replace(redirect)
       return
     }
-    router.replace(redirect)
+    ElMessage.warning(authStore.role === 'admin' ? '已切换到管理员工作台' : '当前账号不是管理员，已进入学生端')
+    router.replace(authStore.role === 'admin' ? '/admin' : '/')
     return
   }
   // 清理一次性的 login/redirect 查询参数，保持地址栏干净

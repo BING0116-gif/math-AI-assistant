@@ -20,6 +20,11 @@ const activeLabel = computed(() => items.find((item) => route.path === item.to)?
 function isActive(to) {
   return to === '/admin' ? route.path === to : route.path === to || route.path.startsWith(`${to}/`)
 }
+
+async function switchAccount() {
+  await authStore.logout()
+  await router.replace('/login')
+}
 </script>
 
 <template>
@@ -44,6 +49,7 @@ function isActive(to) {
       </nav>
       <div class="admin-shell__foot">
         <span class="admin-shell__identity">{{ authStore.username || '管理员' }}</span>
+        <button type="button" class="admin-shell__switch" @click="switchAccount">切换账号</button>
         <button type="button" class="admin-shell__student-link" @click="router.push('/')">返回学生端</button>
       </div>
     </aside>
@@ -73,6 +79,7 @@ function isActive(to) {
 .admin-shell__link.is-active { font-weight: 600; box-shadow: inset 3px 0 var(--accent); }
 .admin-shell__foot { margin-top: auto; display: grid; gap: 8px; padding: 16px 10px 0; border-top: 1px solid var(--border); }
 .admin-shell__identity { color: var(--ink-2); font-size: 13px; }
+.admin-shell__switch { width: fit-content; padding: 0; border: 0; color: var(--accent-text); background: none; cursor: pointer; font: inherit; font-size: 13px; }
 .admin-shell__student-link { width: fit-content; padding: 0; border: 0; color: var(--accent-text); background: none; cursor: pointer; font: inherit; font-size: 13px; }
 .admin-shell__main { flex: 1; min-width: 0; }
 .admin-shell__topbar { padding: 22px clamp(20px, 4vw, 48px) 18px; border-bottom: 1px solid var(--border); background: var(--surface); }
