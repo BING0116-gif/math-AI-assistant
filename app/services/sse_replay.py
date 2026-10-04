@@ -35,15 +35,26 @@ class SSEReplayBuffer:
             self._streams[stream_id] = _Stream(user_id=user_id, session_id=session_id)
             return stream_id
 
-    async def start(self, source, user_id: str, session_id: str) -> str:
-        """Run the producer independently from any one HTTP connection."""
-        stream_id = await self.create(user_id, session_id)
-        stream = self._streams[stream_id]
+    async def start(self, source, user_id: str, session_id: str, stream_id: str | None = None) -> str:
+        """Run the producer independently from any one HTTP connection.
+
+        允许传入预创建的 stream_id（取消端点需要在响应返回前就拿到同一 id）。
+        """
+        stream_id = stream_id or await self.create(user_id, session_id)
+        stream = self._streams.get(stream_id)
+        if stream is None or stream.user_id != user_id or stream.session_id != session_id:
+            raise LookupError("SSE stream not found")
         stream.task = asyncio.create_task(
             self._produce(source, stream_id, user_id, session_id),
             name=f"sse-producer:{stream_id}",
         )
         return stream_id
+
+    def owns_stream(self, stream_id: str, user_id: str) -> bool:
+        """Ownership check for the cancel endpoint (no session context available)."""
+        self._prune()
+        stream = self._streams.get(stream_id)
+        return stream is not None and stream.user_id == user_id
 
     async def append(self, stream_id: str, user_id: str, session_id: str, payload: str) -> tuple[int, str]:
         async with self._lock:
