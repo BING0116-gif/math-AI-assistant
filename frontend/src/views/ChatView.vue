@@ -328,6 +328,10 @@ async function streamAgentReply(
         (eventType: string, data: any) => {
           if (eventType === 'stream' && data.stream_id) streamId = data.stream_id
           if (eventType === 'cancelled') userCancelled = true
+          if (eventType === 'critic' && data?.verdict) {
+            // 5-C 可信度徽标:Critic 后验结果挂到消息上
+            store.updateMessage(chatId, msgId, { critic: { verdict: data.verdict, issues: data.issues || [] } })
+          }
           if (eventType === 'reset') {
             // 服务端淘汰过旧事件后要求整段重拉：清空本地缓冲，由重放内容重建消息
             typingBuffer = ''

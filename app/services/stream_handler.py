@@ -227,6 +227,15 @@ async def stream_agent_response(
                 )
                 if critic is not None:
                     metadata.update({"critic_verdict": critic.verdict, "critic_issues": [issue.model_dump() for issue in critic.issues], "quality_sampled": True, "critic_model": critic.model})
+                    # 5-C 可信度徽标:低基数 verdict + issue codes 下发,不含答案原文
+                    yield (
+                        "event: critic\ndata: "
+                        + json.dumps(
+                            {"verdict": critic.verdict, "issues": [issue.code for issue in critic.issues][:5]},
+                            ensure_ascii=False,
+                        )
+                        + "\n\n"
+                    )
             except Exception:
                 pass
             await complete_ai_run(ai_run_id, status=run_status, metadata=metadata)
