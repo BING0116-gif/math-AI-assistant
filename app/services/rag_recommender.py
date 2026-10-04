@@ -127,9 +127,26 @@ class RAGRecommender:
             vector_task = self._vector_retrieval(target_category, recommended_difficulty, request.count * 2) if (self.enable_rag and self.enable_vector_search and self._vector_store) else asyncio.sleep(0)
             kg_task = self._kg_analysis(target_category, user_skills)
 
-            sql_results, vector_results, kg_suggestions = await asyncio.gather(
-                sql_task, vector_task, kg_task,
+            # Track A 9.3:单路超时+异常隔离,任一路失败不影响其余两路融合
+            gathered = await asyncio.gather(
+                asyncio.wait_for(sql_task, timeout=20),
+                asyncio.wait_for(vector_task, timeout=30),
+                asyncio.wait_for(kg_task, timeout=10),
+                return_exceptions=True,
             )
+            degraded_paths = []
+            resolved = []
+            for name, value in zip(("sql", "vector", "kg"), gathered):
+                if isinstance(value, BaseException):
+                    degraded_paths.append(f"{name}:{type(value).__name__}")
+                    resolved.append([])
+                else:
+                    resolved.append(value)
+            if degraded_paths:
+                logger.warning(f"  [第3步-三路检索] 部分路径降级({', '.join(degraded_paths)}),融合继续")
+            sql_results, vector_results, kg_suggestions = resolved
+            if not isinstance(sql_results, list):
+                sql_results = []
             if not isinstance(vector_results, list):
                 vector_results = []
             if not isinstance(kg_suggestions, list):
