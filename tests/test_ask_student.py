@@ -316,8 +316,8 @@ def api_client():
          patch("app.middleware.auth_middleware.get_user_by_id", AsyncMock(return_value=mock_user)):
         from main import app
         from fastapi.testclient import TestClient
-        with TestClient(app) as _:
-            pass  # 不触发 lifespan，仅构造客户端
+        # 不进入 lifespan:with 语句会真实执行 lifespan(init_db+迁移)，
+        # 对 runner/本机默认库跑迁移是本 fixture 明确不想要的副作用。
         client = TestClient(app)
         yield client
 

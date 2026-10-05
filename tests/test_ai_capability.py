@@ -62,11 +62,19 @@ def _run_subprocess(mode: str) -> dict:
     )
 
     if result.returncode != 0:
+        # 解析探针结果字典(含 lifespan_error 等失败原因),供断言消息完整展示
+        data: dict = {}
+        idx = result.stdout.find("{")
+        if idx >= 0:
+            try:
+                data = json.loads(result.stdout[idx:])
+            except json.JSONDecodeError:
+                data = {}
         return {
             "success": False,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
             "returncode": result.returncode,
+            "stderr_tail": result.stderr[-800:],
+            **data,
         }
 
     # stdout 包含日志行 + JSON 块（多行缩进 JSON）
