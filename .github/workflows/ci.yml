@@ -144,9 +144,9 @@ jobs:
           docker compose exec -T web python -m scripts.verification.verify_database_backend postgresql
           docker compose exec -T db psql -U mathai -d math_ai -c '\d memories'
           docker compose exec -T db psql -U mathai -d math_ai -c '\d user_profiles'
-          # 断言容器内没有回落到 SQLite(data/math_ai.db 在仓库中被有意跟踪,
-          # 随 checkout 存在于 runner,故必须检查容器侧而非 runner 侧)
-          docker compose exec -T web test ! -f /app/data/math_ai.db
+          # 注:web 服务按开发态约定把宿主 ./data 挂载到 /app/data,runner 上
+          # data/math_ai.db 是被跟踪的演示库,"文件不存在"断言在此语义下必然误报;
+          # "是否回落 SQLite"由上方 verify_database_backend 的实际方言断言承担。
 
       - name: Show Compose diagnostics
         if: always()
