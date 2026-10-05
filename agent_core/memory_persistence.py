@@ -612,6 +612,18 @@ class MemoryPersistenceFacade:
                 inserted = 0
                 async with db.begin():
                     for data in batch:
+                        # is_correct 是 Boolean 列，上游 LLM 抽取链路可能透传
+                        # 空串或字符串布尔，直接落库会抛 "Not a boolean value"，
+                        # 在写入边界统一归一化。
+                        correct_raw = data.get("is_correct")
+                        if isinstance(correct_raw, str):
+                            lowered = correct_raw.strip().lower()
+                            if lowered in {"true", "1", "yes"}:
+                                data["is_correct"] = True
+                            elif lowered in {"false", "0", "no"}:
+                                data["is_correct"] = False
+                            else:
+                                data["is_correct"] = None
                         event_id = data.get("event_id")
                         if event_id:
                             try:
