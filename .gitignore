@@ -110,3 +110,9 @@ math_question_bank_pdf_demo/*.pdf
 # 项目文档：除顶层 README.md / AGENTS.md 外，docs/ 与 plans/ 全部不入 Git
 docs/
 plans/
+
+# ===== 本地调试产物（2026-10-06 清理后防复发）=====
+# 根目录一次性调试日志（compose 冷启动/pytest 前端构建等重定向输出）与 API 调试 dump
+/log*.txt
+/*_log.txt
+/*_tmp.json
