@@ -62,7 +62,10 @@ def _run_subprocess(mode: str) -> dict:
     )
 
     if result.returncode != 0:
-        # 解析探针结果字典(含 lifespan_error 等失败原因),供断言消息完整展示
+        # 诊断:同步重跑一次,输出直达 pytest 捕获(CI 日志完整可见,不受截断)
+        print("=== SUBPROCESS RERUN (diagnostic) ===")
+        subprocess.run([sys.executable, _SUBPROCESS_SCRIPT, f"--{mode}"], env=env)
+        print("=== SUBPROCESS RERUN END ===")
         data: dict = {}
         idx = result.stdout.find("{")
         if idx >= 0:
