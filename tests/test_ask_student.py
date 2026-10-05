@@ -38,7 +38,10 @@ def _make_input(
 
 
 @pytest.fixture(autouse=True)
-def _clean_store():
+def _clean_store(monkeypatch):
+    # 本组测试验证交互式澄清流程;CI 无 .env 时 CONTENT_AI_PROVIDER 缺省 mock
+    # 会使 AskStudentTool 走 headless 自动跳过分支,须显式脱离
+    monkeypatch.setattr("app.config.settings.settings.CONTENT_AI_PROVIDER", "dashscope")
     get_clarification_store().reset()
     yield
     get_clarification_store().reset()
