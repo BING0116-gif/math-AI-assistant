@@ -53,11 +53,25 @@ async def _iterate_with_timeout(events, timeout_seconds: float):
 
     消费方提前 break 时也要确定性关闭内层事件流（超时/预算触顶后不留挂起的
     LLM 连接），所以 finally 里级联 aclose，而不是依赖 GC 的异步收尾。
+
+    Python 3.10 兼容:不用 asyncio.timeout（3.11+），用 deadline + wait_for
+    实现同语义的总预算——超时取消挂起的 __anext__ 并抛 TimeoutError。
     """
     try:
-        async with asyncio.timeout(timeout_seconds):
-            async for event in events:
-                yield event
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+    except RuntimeError:
+        raise
+    iterator = events.__aiter__()
+    try:
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError(f"agent wall-clock budget exhausted ({timeout_seconds:g}s)")
+            try:
+                event = await asyncio.wait_for(iterator.__anext__(), timeout=remaining)
+            except StopAsyncIteration:
+                return
+            yield event
     finally:
         close = getattr(events, "aclose", None)
         if close is not None:
