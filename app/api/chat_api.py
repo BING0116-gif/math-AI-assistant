@@ -27,6 +27,7 @@ from app.services.stream_handler import (
     stream_agent_response,
     stream_recognize_response,
     stream_multimodal_response,
+    with_sse_heartbeat,
 )
 from app.services.sse_replay import get_sse_replay_buffer
 
@@ -57,6 +58,11 @@ class ChatRequest(BaseModel):
 class RecoverStreamRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=128)
     stream_id: str = Field(min_length=36, max_length=36)
+
+
+class QualityFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    modified_by_user: bool = True
 
 
 class RecognizeRequest(BaseModel):
@@ -145,17 +151,21 @@ async def chat(request: ChatRequest, http_request: Request):
     from app.services.clarification_store import get_clarification_store
     await get_clarification_store().abandon(user_id, validated_session)
     replay_buffer = get_sse_replay_buffer()
-    stream_id = await replay_buffer.start(
+    # 预创建 stream_id：取消端点 DELETE /api/chat/stream/{id} 需要在响应返回前拿到同一 id
+    stream_id = await replay_buffer.create(user_id, validated_session)
+    await replay_buffer.start(
         stream_agent_response(
             get_agent(),
             validated_message, validated_session,
             user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=tutor_context, ai_run_id=run_id,
+            stream_id=stream_id,
         ),
         user_id,
         validated_session,
+        stream_id=stream_id,
     )
     return StreamingResponse(
-        replay_buffer.subscribe(stream_id, user_id, validated_session),
+        with_sse_heartbeat(replay_buffer.subscribe(stream_id, user_id, validated_session)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": stream_id},
     )
@@ -177,10 +187,34 @@ async def recover_chat_stream(request: RecoverStreamRequest, http_request: Reque
         raise HTTPException(status_code=404, detail={"code": "STREAM_NOT_FOUND", "message": "流已过期或不属于当前用户"})
 
     return StreamingResponse(
-        stream,
+        with_sse_heartbeat(stream),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": request.stream_id},
     )
+
+
+@router.post("/api/chat/runs/{run_id}/quality-feedback", responses=STUDENT_API_RESPONSES)
+async def record_quality_feedback(run_id: str, body: QualityFeedbackRequest, http_request: Request):
+    """Record an owned user answer modification without storing answer content."""
+    if not body.modified_by_user:
+        return {"code": 0, "data": {"run_id": run_id, "modified_by_user": False}}
+    from app.services.tutor_service import mark_ai_run_modified
+    if not await mark_ai_run_modified(_user_id(http_request), run_id):
+        raise HTTPException(status_code=404, detail={"code": "AI_RUN_NOT_FOUND", "message": "运行不存在"})
+    return {"code": 0, "data": {"run_id": run_id, "modified_by_user": True}}
+
+
+@router.delete("/api/chat/stream/{stream_id}", responses=STUDENT_API_RESPONSES)
+async def cancel_chat_stream(stream_id: str, http_request: Request):
+    """用户主动停止生成（4.5）：幂等；已产出内容保留，run 记 user_cancelled。"""
+    from app.services.stream_control import cancel_stream
+
+    user_id = _user_id(http_request)
+    replay_buffer = get_sse_replay_buffer()
+    if not replay_buffer.owns_stream(stream_id, user_id):
+        raise HTTPException(status_code=404, detail={"code": "STREAM_NOT_FOUND", "message": "流不存在或不属于当前用户"})
+    cancelled = cancel_stream(stream_id)
+    return {"code": 0, "data": {"stream_id": stream_id, "cancelled": cancelled}}
 
 
 @router.post("/api/chat/react", include_in_schema=False, deprecated=True, responses={
@@ -204,11 +238,11 @@ async def chat_react(request: ChatRequest, http_request: Request):
 
     user_id, tutor_context, run_id = await _tutor_run(http_request, validated_session, request.tutor_mode, request.context, validated_message)
     return StreamingResponse(
-        stream_agent_response(
+        with_sse_heartbeat(stream_agent_response(
             get_agent(),
             validated_message, validated_session, "React",
             user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=tutor_context, ai_run_id=run_id,
-        ),
+        )),
         media_type="text/event-stream",
     )
 
@@ -231,14 +265,25 @@ async def recognize(request: RecognizeRequest, http_request: Request):
     if not request.image:
         raise HTTPException(status_code=400, detail="请提供图片数据")
 
-    return StreamingResponse(
+    # 4.6.2 恢复全覆盖：识图流接入 replay buffer，断线可按 X-Stream-ID 恢复
+    user_id = str(http_request.state.user_id)
+    replay_buffer = get_sse_replay_buffer()
+    stream_id = await replay_buffer.create(user_id, validated_session)
+    await replay_buffer.start(
         stream_recognize_response(
             get_agent(),
             request.image,
             validated_session,
-            user_id=str(http_request.state.user_id),
+            user_id=user_id,
         ),
+        user_id,
+        validated_session,
+        stream_id=stream_id,
+    )
+    return StreamingResponse(
+        with_sse_heartbeat(replay_buffer.subscribe(stream_id, user_id, validated_session)),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": stream_id},
     )
 
 
@@ -265,13 +310,23 @@ async def chat_multimodal(request: MultimodalChatRequest, http_request: Request)
         raise HTTPException(status_code=400, detail="图片数据格式不合法")
 
     user_id, tutor_context, run_id = await _tutor_run(http_request, validated_session, request.tutor_mode, request.context, validated_message)
-    return StreamingResponse(
+    # 4.6.2 恢复全覆盖：多模态流接入 replay buffer
+    replay_buffer = get_sse_replay_buffer()
+    stream_id = await replay_buffer.create(user_id, validated_session)
+    await replay_buffer.start(
         stream_multimodal_response(
             get_agent(),
             validated_message, request.image, validated_session,
             user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=tutor_context, ai_run_id=run_id,
         ),
+        user_id,
+        validated_session,
+        stream_id=stream_id,
+    )
+    return StreamingResponse(
+        with_sse_heartbeat(replay_buffer.subscribe(stream_id, user_id, validated_session)),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": stream_id},
     )
 
 
@@ -341,13 +396,23 @@ async def answer_clarification(request: ClarificationAnswerRequest, http_request
         raise HTTPException(status_code=403, detail={"code": "TUTOR_CONTEXT_FORBIDDEN", "message": str(error)})
     run_id = await start_ai_run(user_id, internal_id, request.tutor_mode, resolved)
 
-    return StreamingResponse(
+    # 4.6.2 恢复全覆盖：澄清续接流接入 replay buffer
+    replay_buffer = get_sse_replay_buffer()
+    stream_id = await replay_buffer.create(user_id, validated_session)
+    await replay_buffer.start(
         stream_agent_response(
             get_agent(),
             continuation, validated_session,
             user_id=user_id, tutor_mode=request.tutor_mode, tutor_context=resolved, ai_run_id=run_id,
         ),
+        user_id,
+        validated_session,
+        stream_id=stream_id,
+    )
+    return StreamingResponse(
+        with_sse_heartbeat(replay_buffer.subscribe(stream_id, user_id, validated_session)),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Stream-ID": stream_id},
     )
 
 

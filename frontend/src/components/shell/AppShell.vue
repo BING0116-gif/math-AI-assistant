@@ -80,6 +80,11 @@ function startNewChat() {
   router.push('/')
 }
 
+async function switchAccount() {
+  await authStore.logout()
+  await router.replace('/login')
+}
+
 function openChat(chatId: string) {
   chatStore.switchChat(chatId)
   router.push(`/chat/${chatId}`)
@@ -246,6 +251,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <small>{{ userRoleLabel }}</small>
           </span>
         </RouterLink>
+        <button type="button" class="account-switch" @click="switchAccount">切换账号</button>
       </div>
     </aside>
 
@@ -337,6 +343,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <Sun v-else :size="15" :stroke-width="1.75" />
               {{ themeLabel }}
             </button>
+            <button class="mobile-drawer__account" type="button" @click="switchAccount">切换账号</button>
           </div>
         </aside>
       </div>
@@ -851,6 +858,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   min-height: 44px;
   width: 100%;
 }
+.mobile-drawer__account {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px var(--space-2);
+  border: 0;
+  border-radius: var(--r-s);
+  color: var(--accent-text);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.mobile-drawer__account:hover { background: var(--brand-soft); }
 
 /* ============ 响应式 ============ */
 /* ≤1279px:侧栏收窄为 rail(68px) */

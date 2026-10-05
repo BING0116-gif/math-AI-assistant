@@ -1,0 +1,25 @@
+id: mq-v2-tool-failure-001
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: "推荐题目服务超时时应该如何回答？"
+requirements:
+  - "明确告知服务失败"
+  - "提供替代行动"
+oracle:
+  answer_match:
+    mode: behavioral
+    expected: "暂时不可用"
+  key_steps:
+    - {text: "暂时不可用", weight: 1}
+    - {text: "稍后再试", weight: 1}
+  forbidden_claims: ["我为你找到了以下题目"]
+tool_failure_plan:
+  tool: recommend_questions
+  failure: timeout
+  inject: {hang_seconds: 40}
+critic_expectation:
+  verdict: warn
+  must_check: [answered_question]
+user_fixture: eval_standard_user
+ai_offline_case: true

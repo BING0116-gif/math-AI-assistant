@@ -1,0 +1,16 @@
+id: mq-v2-advanced-proof-004
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: "证明单调有界数列必然收敛。"
+requirements: ["说明单调性", "说明有界性", "给出收敛结论"]
+oracle:
+  answer_match: {mode: expression, expected: "收敛"}
+  key_steps:
+    - {text: "单调性", weight: 1}
+    - {text: "有界性", weight: 1}
+    - {text: "收敛", weight: 2}
+  forbidden_claims: ["所有数列都收敛"]
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

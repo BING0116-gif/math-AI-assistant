@@ -62,11 +62,22 @@ def _run_subprocess(mode: str) -> dict:
     )
 
     if result.returncode != 0:
+        # 诊断:同步重跑一次,输出直达 pytest 捕获(CI 日志完整可见,不受截断)
+        print("=== SUBPROCESS RERUN (diagnostic) ===")
+        subprocess.run([sys.executable, _SUBPROCESS_SCRIPT, f"--{mode}"], env=env)
+        print("=== SUBPROCESS RERUN END ===")
+        data: dict = {}
+        idx = result.stdout.find("{")
+        if idx >= 0:
+            try:
+                data = json.loads(result.stdout[idx:])
+            except json.JSONDecodeError:
+                data = {}
         return {
             "success": False,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
             "returncode": result.returncode,
+            "stderr_tail": result.stderr[-800:],
+            **data,
         }
 
     # stdout 包含日志行 + JSON 块（多行缩进 JSON）
@@ -112,7 +123,7 @@ class TestNoApiKeyStartupSubprocess:
     def test_no_key_app_imports_successfully(self):
         """新进程中没有 DASHSCOPE_API_KEY，真实 app import 成功。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')} {result.get('stdout', '')[:100]}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("assembly_success") is True
         assert result.get("ai_available") is False
         assert result.get("ai_reason") == "missing_api_key"
@@ -120,20 +131,20 @@ class TestNoApiKeyStartupSubprocess:
     def test_no_key_math_agent_not_initialized(self):
         """无 Key 时 MathAgent 没有初始化。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("math_agent_not_imported") is True
         assert result.get("agent_is_none") is True
 
     def test_no_key_dynamic_llm_not_initialized(self):
         """无 Key 时 dynamic LLM factory 没有初始化。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("dynamic_llm_not_imported") is True
 
     def test_no_key_llm_service_not_initialized(self):
         """无 Key 时 LLMService 在 assembly 阶段没有初始化。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("llm_service_not_initialized") is True, (
             f"LLMService was initialized: {result.get('ai_modules_loaded', '')}"
         )
@@ -141,7 +152,7 @@ class TestNoApiKeyStartupSubprocess:
     def test_no_key_lifespan_entered(self):
         """无 Key 时 FastAPI lifespan 真实进入，health 正常。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')} {result.get('stdout', '')[:100]}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("lifespan_entered") is True, (
             f"Lifespan not entered: {result.get('lifespan_error', '')}"
         )
@@ -150,7 +161,7 @@ class TestNoApiKeyStartupSubprocess:
     def test_no_key_lifespan_no_llm_service(self):
         """无 Key 时 lifespan 内 LLMService 没有被初始化。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("lifespan_llm_service_not_initialized") is True, (
             f"LLMService was initialized during lifespan: {result.get('lifespan_new_ai_modules', '')}"
         )
@@ -158,7 +169,7 @@ class TestNoApiKeyStartupSubprocess:
     def test_no_key_health_returns_healthy(self):
         """无 Key 时 lifespan 内 /api/health 返回 200。"""
         result = _run_subprocess("no-key")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("health_status") == 200
         data = result.get("health_data_unavailable")
         if isinstance(data, dict):
@@ -175,33 +186,33 @@ class TestAiDisabledSubprocess:
     def test_disabled_app_imports_successfully(self):
         """AI_ENABLED=false + 有 Key 时 app import 成功。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')} {result.get('stdout', '')[:100]}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("assembly_success") is True
 
     def test_disabled_ai_reason(self):
         """AI_ENABLED=false 时 reason = disabled_by_config。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("ai_available") is False
         assert result.get("ai_reason") == "disabled_by_config"
 
     def test_disabled_math_agent_not_initialized(self):
         """AI_ENABLED=false 时 MathAgent 没有初始化。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("math_agent_not_imported") is True
         assert result.get("agent_is_none") is True
 
     def test_disabled_dynamic_llm_not_initialized(self):
         """AI_ENABLED=false 时 dynamic LLM factory 没有初始化。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("dynamic_llm_not_imported") is True
 
     def test_disabled_llm_service_not_initialized(self):
         """AI_ENABLED=false 时 LLMService 在 assembly 阶段没有初始化。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("llm_service_not_initialized") is True, (
             f"LLMService was initialized: {result.get('ai_modules_loaded', '')}"
         )
@@ -209,7 +220,7 @@ class TestAiDisabledSubprocess:
     def test_disabled_lifespan_entered(self):
         """AI_ENABLED=false + 有 Key 时 lifespan 真实进入，health 正常。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')} {result.get('stdout', '')[:100]}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("lifespan_entered") is True, (
             f"Lifespan not entered: {result.get('lifespan_error', '')}"
         )
@@ -221,7 +232,7 @@ class TestAiDisabledSubprocess:
     def test_disabled_health_returns_healthy(self):
         """AI_ENABLED=false + 有 Key 时 lifespan 内 health 返回正常。"""
         result = _run_subprocess("disabled")
-        assert result["success"], f"Subprocess failed: {result.get('parse_error', '')}"
+        assert result["success"], f"Subprocess failed: rc={result.get('returncode')} parse={result.get('parse_error', '')} stderr={result.get('stderr', '')[:800]} stdout_tail={result.get('stdout', '')[-600:]}"
         assert result.get("health_status") == 200
 
 

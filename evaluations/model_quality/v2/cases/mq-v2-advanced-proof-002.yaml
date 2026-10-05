@@ -1,0 +1,17 @@
+id: mq-v2-advanced-proof-002
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: "证明连续函数在闭区间上能取得最大值。"
+requirements: ["说明闭区间条件", "给出最大值存在结论"]
+oracle:
+  answer_match: {mode: expression, expected: "最大值"}
+  key_steps:
+    - {text: "闭区间", weight: 1}
+    - {text: "连续函数", weight: 1}
+    - {text: "最大值存在", weight: 2}
+  allowed_expressions: ["极值定理"]
+  forbidden_claims: ["任意开区间都成立"]
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Any, List
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 
@@ -23,6 +23,41 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
         "json_output": True,
         "vision": True,
     },
+}
+
+# 阶段三 5.2 模型注册表：路由/能力校验/成本核算三个消费者的唯一事实源。
+# 价格单位为 元/百万 token;初始值含占位成分（deepseek-chat 为公开牌价，
+# 其余待 3-E 首轮校准）,价格变更必须走 PR 并更新 effective_from。
+MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "deepseek-chat": {
+        "provider": "deepseek", "tier": "standard",
+        "price_in_per_m": 2.0, "price_out_per_m": 8.0,
+        "p95_latency_s": 6.0, "effective_from": "2026-10-04",
+    },
+    "deepseek-v4-flash": {
+        "provider": "deepseek", "tier": "light",
+        "price_in_per_m": 1.0, "price_out_per_m": 4.0,
+        "p95_latency_s": 2.0, "effective_from": "2026-10-04",
+    },
+    "qwen-vl-plus": {
+        "provider": "dashscope", "tier": "vision",
+        "price_in_per_m": 8.0, "price_out_per_m": 8.0,
+        "p95_latency_s": 8.0, "effective_from": "2026-10-04",
+    },
+    "qwen-vl-max": {
+        "provider": "dashscope", "tier": "vision",
+        "price_in_per_m": 20.0, "price_out_per_m": 20.0,
+        "p95_latency_s": 10.0, "effective_from": "2026-10-04",
+    },
+}
+
+# 阶段三 5.1 规则路由表 v1（键 = TaskType.value,零额外模型调用）。
+# T4 multimodal 不入文本路由表:视觉档由能力表强制。
+MODEL_ROUTE_TABLE: dict[str, str] = {
+    "knowledge": "deepseek-v4-flash",
+    "quick": "deepseek-v4-flash",
+    "concept": "deepseek-chat",
+    "solution": "deepseek-chat",
 }
 
 
@@ -76,6 +111,61 @@ class Settings(BaseSettings):
     JSON_LOGS: bool = Field(default=True, alias="JSON_LOGS")
     METRICS_ENABLED: bool = Field(default=True, alias="METRICS_ENABLED")
     METRICS_BEARER_TOKEN: str = Field(default="", alias="METRICS_BEARER_TOKEN")
+    # 阶段一质量闭环指标开关；关闭时后续质量埋点调用方应跳过上报。
+    # 指标定义仍保留在 Prometheus registry 中，便于灰度期间保持契约稳定。
+    QUALITY_METRICS_ENABLED: bool = Field(default=True, alias="QUALITY_METRICS_ENABLED")
+    CRITIC_MODE: str = Field(default="off", alias="CRITIC_MODE")
+    CRITIC_SAMPLE_RATE: float = Field(default=0.1, ge=0, le=1, alias="CRITIC_SAMPLE_RATE")
+    # deterministic-mock = 离线确定性检查(零 Token);配置真实模型名后走 LLM 后验检查
+    CRITIC_MODEL: str = Field(default="deterministic-mock", alias="CRITIC_MODEL")
+    CRITIC_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, le=120, alias="CRITIC_TIMEOUT_SECONDS")
+    # Critic 当日 Token 消耗上限:触顶自动降级为 off 并告警日志(路线图 3.5.4)
+    CRITIC_MAX_DAILY_TOKENS: int = Field(default=200000, ge=0, alias="CRITIC_MAX_DAILY_TOKENS")
+    AGENT_TOOL_GUARD_ENABLED: bool = Field(default=True, alias="AGENT_TOOL_GUARD_ENABLED")
+    AGENT_TOOL_DEFAULT_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, alias="AGENT_TOOL_DEFAULT_TIMEOUT_SECONDS")
+    AGENT_TOOL_RETRY_MAX: int = Field(default=1, ge=0, le=3, alias="AGENT_TOOL_RETRY_MAX")
+    TOOL_RETRY_BACKOFF_BASE_SECONDS: float = Field(default=0.5, ge=0, le=30, alias="TOOL_RETRY_BACKOFF_BASE_SECONDS")
+    CIRCUIT_ENABLED: bool = Field(default=True, alias="CIRCUIT_ENABLED")
+    CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, ge=1, le=100, alias="CIRCUIT_FAILURE_THRESHOLD")
+    CIRCUIT_WINDOW_SECONDS: float = Field(default=30.0, gt=0, alias="CIRCUIT_WINDOW_SECONDS")
+    CIRCUIT_COOLDOWN_SECONDS: float = Field(default=60.0, gt=0, alias="CIRCUIT_COOLDOWN_SECONDS")
+    SSE_HEARTBEAT_ENABLED: bool = Field(default=True, alias="SSE_HEARTBEAT_ENABLED")
+    SSE_HEARTBEAT_SECONDS: float = Field(default=15.0, gt=0, le=120, alias="SSE_HEARTBEAT_SECONDS")
+    # 阶段二 4.6.3 replay buffer 容量治理：超限淘汰最老事件，恢复遇 seq_hole 发 reset。
+    SSE_BUFFER_MAX_EVENTS: int = Field(default=2000, ge=100, alias="SSE_BUFFER_MAX_EVENTS")
+    SSE_BUFFER_MAX_BYTES: int = Field(default=2 * 1024 * 1024, ge=65536, alias="SSE_BUFFER_MAX_BYTES")
+    SSE_STREAM_TTL_SECONDS: float = Field(default=300.0, gt=0, le=3600, alias="SSE_STREAM_TTL_SECONDS")
+    # 阶段二 Agent 级预算（路线图 4.3）：总超时/迭代上限/Run 级 Token 预算。
+    # Token 预算设为 0 表示关闭预算护栏。
+    AGENT_TOTAL_TIMEOUT_SECONDS: float = Field(default=90.0, gt=0, le=600, alias="AGENT_TOTAL_TIMEOUT_SECONDS")
+    AGENT_MAX_TOOL_ROUNDS: int = Field(default=5, ge=1, le=20, alias="AGENT_MAX_TOOL_ROUNDS")
+    AGENT_MAX_TOTAL_TOKENS: int = Field(default=60000, ge=0, alias="AGENT_MAX_TOTAL_TOKENS")
+    # 阶段二 4.4 分级降级：故障驱动的备用模型切换（L3）。候选与主模型共用
+    # LLM_API_BASE / LLM_API_KEY；跨供应商映射待阶段三模型注册表。
+    LLM_FAILOVER_ENABLED: bool = Field(default=False, alias="LLM_FAILOVER_ENABLED")
+    LLM_FALLBACK_MODELS: list[str] = Field(default_factory=list, alias="LLM_FALLBACK_MODELS")
+    LLM_FAILOVER_WINDOW_SECONDS: float = Field(default=60.0, gt=0, le=600, alias="LLM_FAILOVER_WINDOW_SECONDS")
+    LLM_FAILOVER_FAILURES: int = Field(default=3, ge=1, le=20, alias="LLM_FAILOVER_FAILURES")
+    LLM_FAILOVER_PROBE_SECONDS: float = Field(default=300.0, gt=0, le=3600, alias="LLM_FAILOVER_PROBE_SECONDS")
+    # 阶段三 5.1 规则路由:默认关闭=现状;开启后按档位查表(零额外模型调用)。
+    MODEL_ROUTING_ENABLED: bool = Field(default=False, alias="MODEL_ROUTING_ENABLED")
+    MATHAI_MODEL_ROUTING: dict[str, str] = Field(default_factory=lambda: dict(MODEL_ROUTE_TABLE), alias="MATHAI_MODEL_ROUTING")
+    # 阶段四 6.4 冲突检测与仲裁:默认关闭=现状;开启后写入路径做同 kind 近邻仲裁。
+    MEMORY_CONFLICT_ENABLED: bool = Field(default=False, alias="MEMORY_CONFLICT_ENABLED")
+    MEMORY_CONFLICT_MERGE_SIMILARITY: float = Field(default=0.92, ge=0, le=1, alias="MEMORY_CONFLICT_MERGE_SIMILARITY")
+    MEMORY_CONFLICT_DETECT_SIMILARITY: float = Field(default=0.85, ge=0, le=1, alias="MEMORY_CONFLICT_DETECT_SIMILARITY")
+    # 阶段五 7.1 学习路径(纯规则,零 LLM):薄弱判定阈值与每周容量。
+    LEARNING_PATH_MASTERY_THRESHOLD: float = Field(default=0.6, ge=0.05, le=0.95, alias="LEARNING_PATH_MASTERY_THRESHOLD")
+    LEARNING_PATH_WEEK_CAPACITY: int = Field(default=5, ge=1, le=20, alias="LEARNING_PATH_WEEK_CAPACITY")
+    # 阶段六 8.4/12.2 灰度放量表:{"model_routing": 10} = 该 flag 对 10% 用户桶生效
+    FEATURE_FLAG_ROLLOUT: dict[str, int] = Field(default_factory=dict, alias="FEATURE_FLAG_ROLLOUT")
+
+    @field_validator("CRITIC_MODE")
+    @classmethod
+    def validate_critic_mode(cls, value):
+        if value not in {"off", "sample", "all"}:
+            raise ValueError("CRITIC_MODE must be off, sample, or all")
+        return value
 
     # 开发/测试期临时旁路：允许 mock AI 生成的题正式发布。
     # 默认 False（与 §18 硬性规则一致，保护生产题库不被 mock 数据污染）；

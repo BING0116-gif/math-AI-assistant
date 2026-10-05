@@ -1,0 +1,19 @@
+id: mq-v2-tool-failure-008
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: "错题本服务不可用时，助手应如何处理保存请求？"
+requirements: ["说明保存失败", "不声称已保存", "给出重试建议"]
+oracle:
+  answer_match: {mode: behavioral, expected: "保存失败"}
+  key_steps:
+    - {text: "保存失败", weight: 1}
+    - {text: "稍后重试", weight: 1}
+  forbidden_claims: ["已经保存到错题本"]
+tool_failure_plan:
+  tool: save_error_book
+  failure: unavailable
+  inject: {reason: service_unavailable}
+critic_expectation: {verdict: warn, must_check: [answered_question]}
+user_fixture: eval_standard_user
+ai_offline_case: true

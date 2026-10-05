@@ -36,3 +36,21 @@ def test_rag_quality_direct_and_module_entrypoints_are_importable():
     assert "--gold" in direct.stdout
     assert "--results" in direct.stdout
     assert "--output" in direct.stdout
+
+
+def test_v2_offline_audit_never_calls_live_model():
+    completed = _run(
+        "-m",
+        "scripts.model_quality_eval",
+        "audit-v2",
+        "--dataset",
+        "evaluations/model_quality/v2",
+    )
+
+    assert completed.returncode == 0
+    payload = json.loads(completed.stdout)
+    assert payload["status"] == "offline_safe"
+    assert payload["case_count"] == 61
+    assert payload["offline_case_count"] == 61
+    assert payload["live_calls"] == 0
+    assert payload["model_quality_claim"] is False

@@ -23,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -46,6 +46,12 @@ jobs:
 
       - name: Validate model quality goldens without AI
         run: python -m scripts.model_quality_eval validate --dataset evaluations/model_quality/v1
+
+      - name: Validate v2 quality matrix without AI
+        run: |
+          python -m scripts.model_quality_eval validate-v2 --dataset evaluations/model_quality/v2
+          python -m scripts.model_quality_eval audit-v2 --dataset evaluations/model_quality/v2
+          python -m scripts.model_quality_eval validate-gates --gates evaluations/model_quality/v2/gates.yaml
 
       - name: Run tests with coverage
         run: |
@@ -71,7 +77,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          # 锁定包链(html-encoding-sniffer@6/jsdom27 等)要求 node ^22.12/^20.19+
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -104,15 +111,18 @@ jobs:
 
       - name: Validate Prometheus configuration and alert rules
         run: |
+          # v3 镜像入口是 prometheus,promtool 必须经 --entrypoint 调用
           docker run --rm \
+            --entrypoint=promtool \
             -v "$PWD:/workspace:ro" \
             prom/prometheus:v3.5.0 \
-            promtool check rules /workspace/ops/prometheus-agent-alerts.yml
+            check rules /workspace/ops/prometheus-agent-alerts.yml
           docker run --rm \
+            --entrypoint=promtool \
             -v "$PWD/ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
             -v "$PWD/ops/prometheus-agent-alerts.yml:/etc/prometheus/agent-alerts.yml:ro" \
             prom/prometheus:v3.5.0 \
-            promtool check config /etc/prometheus/prometheus.yml
+            check config /etc/prometheus/prometheus.yml
 
       - name: Build and start empty stack
         run: docker compose up -d --build
@@ -134,7 +144,9 @@ jobs:
           docker compose exec -T web python -m scripts.verification.verify_database_backend postgresql
           docker compose exec -T db psql -U mathai -d math_ai -c '\d memories'
           docker compose exec -T db psql -U mathai -d math_ai -c '\d user_profiles'
-          test ! -f data/math_ai.db
+          # 注:web 服务按开发态约定把宿主 ./data 挂载到 /app/data,runner 上
+          # data/math_ai.db 是被跟踪的演示库,"文件不存在"断言在此语义下必然误报;
+          # "是否回落 SQLite"由上方 verify_database_backend 的实际方言断言承担。
 
       - name: Show Compose diagnostics
         if: always()

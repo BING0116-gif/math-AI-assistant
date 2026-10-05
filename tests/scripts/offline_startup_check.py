@@ -155,6 +155,21 @@ if __name__ == "__main__":
         print(json.dumps({"error": f"Unknown mode: {mode}"}))
         sys.exit(1)
 
+    # 数据库隔离:checkout 里可能存在被跟踪的演示库 data/math_ai.db(其
+    # alembic_version 常与 schema 脱节),lifespan 迁移会误打其上并报
+    # "table already exists"。探针用自己的临时库,行为在任何 checkout 下一致。
+    import tempfile
+    from pathlib import Path
+
+    _probe_db = Path(tempfile.gettempdir()) / f"mathai_probe_{os.getpid()}.db"
+    _probe_db_posix = _probe_db.as_posix()
+    os.environ["ASYNC_DATABASE_URL"] = f"sqlite+aiosqlite:///{_probe_db_posix}"
+    os.environ["DATABASE_URL"] = f"sqlite:///{_probe_db_posix}"
+    # CI runner 无 .env:lifespan 的安全校验要求显式 32+ 字符 JWT 密钥
+    os.environ.setdefault(
+        "JWT_SECRET_KEY", "offline-probe-jwt-secret-0123456789abcdef"
+    )
+
     result = run_check()
     print(json.dumps(result, indent=2, ensure_ascii=False))
 

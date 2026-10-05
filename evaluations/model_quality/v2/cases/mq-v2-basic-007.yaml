@@ -1,0 +1,15 @@
+id: mq-v2-basic-007
+category: basic
+modality: text
+tutor_mode: solve
+question: "解方程 2x+3=9。"
+requirements: ["给出 x 的值", "展示移项过程"]
+oracle:
+  answer_match: {mode: numeric, expected: "3", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "x=3", weight: 1}
+    - {text: "移项", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

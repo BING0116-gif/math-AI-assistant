@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-008
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "检索一道傅里叶级数练习题；如果没有证据请明确说明。"
+requirements: ["说明检索结果", "没有证据时不编造"]
+oracle:
+  answer_match: {mode: behavioral, expected: "没有找到"}
+  key_steps:
+    - {text: "没有找到", weight: 1}
+    - {text: "不编造", weight: 1}
+  forbidden_claims: ["题目编号是 fs-999"]
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: []
+  citation_required: false
+critic_expectation: {verdict: warn, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true

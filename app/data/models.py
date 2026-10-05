@@ -702,6 +702,15 @@ class AIInteractionRun(Base):
     latency_ms = Column(Integer, nullable=True)
     token_usage = Column(JSON, nullable=True)
     estimated_cost = Column(Float, nullable=True)
+    # Quality-loop fields are nullable/backward-compatible; they contain only
+    # low-cardinality verdicts and redacted issue metadata, never raw prompts.
+    critic_verdict = Column(String(10), nullable=True)
+    critic_issues = Column(JSON, nullable=True)
+    quality_sampled = Column(Boolean, nullable=False, default=False, server_default="false")
+    review_verdict = Column(String(10), nullable=True)
+    reviewer_id = Column(String(36), nullable=True)
+    followup_count = Column(Integer, nullable=False, default=0, server_default="0")
+    modified_by_user = Column(Boolean, nullable=False, default=False, server_default="false")
     status = Column(String(20), nullable=False, default="started", index=True)
     error_code = Column(String(100), nullable=True)
     output_text = Column(Text, nullable=True)
@@ -869,6 +878,17 @@ class Memory(Base):
     last_accessed = Column(Integer, nullable=True)
     access_count = Column(Integer, default=0)
     deleted_at = Column(Integer, nullable=True)
+    # 阶段四 6.1/6.2:防污染类型系统与置信度。存量行由 server_default 回填
+    # (confidence=0.6/kind=context/conflict_status=none),旧 payload 缺列同口径兼容。
+    confidence = Column(Float, nullable=False, default=0.6, server_default="0.6")
+    memory_kind = Column(String(32), nullable=False, default="context", server_default="context")
+    last_confirmed_at = Column(Integer, nullable=True)
+    superseded_by = Column(
+        Integer,
+        ForeignKey("memories.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    conflict_status = Column(String(16), nullable=False, default="none", server_default="none")
 
     __table_args__ = (
         Index("idx_mem_user_status", "user_id", "status"),

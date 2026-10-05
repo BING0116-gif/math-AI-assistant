@@ -1,0 +1,19 @@
+id: mq-v2-multi-turn-002
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "把上一轮的结果代入 x=2。"
+context_fixture:
+  conversation:
+    - {role: user, content: "我们得到 f'(x)=2x。"}
+    - {role: assistant, content: "请继续说明代入值。"}
+requirements: ["沿用 f'(x)=2x", "代入 x=2"]
+oracle:
+  answer_match: {mode: numeric, expected: "4", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "沿用 f'(x)=2x", weight: 1}
+    - {text: "代入 x=2", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

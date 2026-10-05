@@ -1,0 +1,25 @@
+id: mq-v2-multi-turn-001
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "沿用上一轮的变量设定，求导数。"
+context_fixture:
+  conversation:
+    - {role: user, content: "设 f(x)=x^2。"}
+    - {role: assistant, content: "已记录函数定义。"}
+requirements:
+  - "沿用 f(x)=x^2"
+  - "给出导数"
+oracle:
+  answer_match:
+    mode: expression
+    expected: "2x"
+  key_steps:
+    - {text: "沿用 f(x)=x^2", weight: 1}
+    - {text: "导数为 2x", weight: 1}
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check: [answered_question, no_gap]
+user_fixture: eval_standard_user
+ai_offline_case: true

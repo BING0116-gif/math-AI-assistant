@@ -1,0 +1,17 @@
+id: mq-v2-vision-006
+category: vision
+modality: image
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+tutor_mode: solve
+question: "识别图中的积分上下限并判断积分方向。"
+requirements: ["识别积分上下限", "判断积分方向"]
+oracle:
+  answer_match: {mode: behavioral, expected: "积分方向"}
+  key_steps:
+    - {text: "识别积分上下限", weight: 1}
+    - {text: "积分方向", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: warn, must_check: [answered_question, numeric_consistency]}
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -185,6 +185,8 @@ npm run dev
 - Swagger / ReDoc：仅 `DEBUG=true` 时开放 `/docs` 和 `/redoc`
 - OpenAPI JSON：<http://127.0.0.1:8000/openapi.json>
 
+首次打开学生端根地址时，未登录会先进入 `/login`。登录接口返回服务端确认的角色：`student` 进入学生首页，`admin` 进入 `/admin` 管理工作台；前端不会根据用户输入自行提升权限。学生账号可在登录页注册，管理员账号由 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 配置并在启动时初始化。登录后可在学生端或管理员端点击“切换账号”清理当前会话并回到登录页。
+
 ### 本地开发常用脚本
 
 ```powershell

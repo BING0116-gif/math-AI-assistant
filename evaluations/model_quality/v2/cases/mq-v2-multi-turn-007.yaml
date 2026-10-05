@@ -1,0 +1,19 @@
+id: mq-v2-multi-turn-007
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: "沿用上一轮的定义，指出该函数的定义域。"
+context_fixture:
+  conversation:
+    - {role: user, content: "上一轮定义 f(x)=sqrt(x-2)。"}
+    - {role: assistant, content: "已记录函数表达式。"}
+requirements: ["沿用 f(x)=sqrt(x-2)", "给出定义域"]
+oracle:
+  answer_match: {mode: behavioral, expected: "x 大于等于 2"}
+  key_steps:
+    - {text: "sqrt(x-2)", weight: 1}
+    - {text: "定义域", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, no_gap]}
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -30,11 +30,52 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from agent_core.strategies.base import AgentStrategy
 from agent_core.callbacks import ThoughtRecordingCallbackHandler
 from agent_core.langchain_adapter import get_tool_converter
+from agent_core.degradation import degradation_text
+from agent_core.model_failover import get_model_failover_coordinator
 from tools.base_tool import BaseTool
 from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
 from app.services.mode_gating import filter_tools_for_mode, normalize_tutor_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _budget_setting(name: str, fallback):
+    """Read an agent-budget setting; strategies must also work without app settings."""
+    try:
+        from app.config.settings import settings
+        return getattr(settings, name)
+    except Exception:
+        return fallback
+
+
+async def _iterate_with_timeout(events, timeout_seconds: float):
+    """Apply one wall-clock budget to an async event stream.
+
+    消费方提前 break 时也要确定性关闭内层事件流（超时/预算触顶后不留挂起的
+    LLM 连接），所以 finally 里级联 aclose，而不是依赖 GC 的异步收尾。
+
+    Python 3.10 兼容:不用 asyncio.timeout（3.11+），用 deadline + wait_for
+    实现同语义的总预算——超时取消挂起的 __anext__ 并抛 TimeoutError。
+    """
+    try:
+        deadline = asyncio.get_running_loop().time() + timeout_seconds
+    except RuntimeError:
+        raise
+    iterator = events.__aiter__()
+    try:
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError(f"agent wall-clock budget exhausted ({timeout_seconds:g}s)")
+            try:
+                event = await asyncio.wait_for(iterator.__anext__(), timeout=remaining)
+            except StopAsyncIteration:
+                return
+            yield event
+    finally:
+        close = getattr(events, "aclose", None)
+        if close is not None:
+            await close()
 
 
 class MaxIterationsMiddleware(AgentMiddleware):
@@ -75,20 +116,24 @@ class LangChainReActStrategy(AgentStrategy):
         llm: Any,
         registry: ToolRegistry,
         system_prompt: str,
-        max_iterations: int = 5,
-        timeout_seconds: float = 120.0,
+        max_iterations: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
         verbose: bool = False,
         system_prompt_builder: Optional[Callable[[List[BaseTool]], str]] = None,
+        max_total_tokens: Optional[int] = None,
     ):
         self._llm = llm
         self._registry = registry
         self._system_prompt = system_prompt
-        self._max_iterations = max_iterations
-        self._timeout_seconds = timeout_seconds
+        # 预算缺省从 settings 读取（路线图 4.3），显式传参优先（测试/特殊部署）。
+        self._max_iterations = max_iterations if max_iterations is not None else _budget_setting("AGENT_MAX_TOOL_ROUNDS", 5)
+        self._timeout_seconds = timeout_seconds if timeout_seconds is not None else _budget_setting("AGENT_TOTAL_TIMEOUT_SECONDS", 120.0)
+        self._token_budget = max_total_tokens if max_total_tokens is not None else _budget_setting("AGENT_MAX_TOTAL_TOKENS", 60000)
         self._verbose = verbose
         self._system_prompt_builder = system_prompt_builder
         self._last_used_tools: set = set()  # 最近一次 stream 执行中使用的工具集
         self._last_token_usage: Dict[str, int] = {}
+        self._last_run_status: str = "completed"
 
         self._recorders: Dict[str, ThoughtRecordingCallbackHandler] = {}
 
@@ -124,7 +169,13 @@ class LangChainReActStrategy(AgentStrategy):
 
         logger.info(f"已转换 {len(self._tools)} 个工具为LangChain格式")
 
-        middleware: List[AgentMiddleware] = []
+        # Keep the execution budget in the compiled agent as well as around the
+        # outer stream.  The middleware prevents an agent from repeatedly
+        # calling tools, while the outer timeout covers a single hung tool/LLM
+        # call that never returns another event.
+        middleware: List[AgentMiddleware] = [
+            MaxIterationsMiddleware(max_iterations=self._max_iterations),
+        ]
 
         # [已移除] SummarizationMiddleware 会对工具返回内容进行摘要压缩，
         # 导致推荐题目等结构化数据在传回LLM时丢失细节或被改写。
@@ -154,6 +205,36 @@ class LangChainReActStrategy(AgentStrategy):
         logger.info(f"LangChain ReAct Agent初始化完成 ({elapsed:.1f}ms)")
 
         return agent
+
+    def _rebind_llm(self, model: str) -> None:
+        """L3 故障转移：换用候选模型并清空已编译 agent 缓存。
+
+        候选与主模型共用 LLM_API_BASE / LLM_API_KEY（跨供应商映射待阶段三
+        模型注册表）；工具转换与 LLM 无关，无需重建。
+        """
+        from langchain_openai import ChatOpenAI
+
+        try:
+            from app.config.settings import settings
+
+            api_key = settings.LLM_API_KEY or None
+            base_url = settings.LLM_API_BASE or None
+        except Exception:
+            api_key, base_url = None, None
+        temperature = getattr(self._llm, "temperature", None)
+        previous = str(getattr(self._llm, "model_name", "?") or "?")
+        self._llm = ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            streaming=True,
+            temperature=temperature if temperature is not None else 0.7,
+        )
+        self._agents_by_mode.clear()
+        self._prompts_by_mode.clear()
+        self._agent = None
+        self._tools = []
+        logger.warning(f"[FAILOVER] LangChainReActStrategy 已切换模型: {previous} -> {model}")
 
     def _get_recorder(self, session_id: str) -> ThoughtRecordingCallbackHandler:
         if session_id not in self._recorders:
@@ -219,6 +300,15 @@ class LangChainReActStrategy(AgentStrategy):
         )
         self._last_used_tools = set()
         self._last_token_usage = {}
+        self._last_run_status = "completed"
+
+        # L3 故障转移：若上一窗口的连续失败已触发粘性切换，则本次 run 直接用候选模型。
+        failover = get_model_failover_coordinator()
+        primary_model = str(getattr(self._llm, "model_name", "") or "")
+        active_model = failover.current_model(primary_model) if primary_model else primary_model
+        if active_model != primary_model:
+            self._rebind_llm(active_model)
+            self._last_run_status = "degraded"
 
         try:
             token_count = 0
@@ -227,11 +317,16 @@ class LangChainReActStrategy(AgentStrategy):
             _used_tools = set()  # 追踪本次执行中使用的工具名称
             _token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-            async for event in agent.astream_events(
-                {"messages": messages},
-                config={'callbacks': [recorder]},
-                version="v2",
-            ):
+            event_stream = _iterate_with_timeout(
+                agent.astream_events(
+                    {"messages": messages},
+                    config={'callbacks': [recorder]},
+                    version="v2",
+                ),
+                self._timeout_seconds,
+            )
+            budget_exceeded = False
+            async for event in event_stream:
                 event_name = event.get("event", "")
 
                 # 追踪工具调用（用于去重检测）
@@ -253,8 +348,9 @@ class LangChainReActStrategy(AgentStrategy):
                     if tool_name:
                         elapsed = time.perf_counter() - tool_started_at.pop(tool_name, time.perf_counter())
                         try:
-                            from app.observability import AGENT_TOOL_CALLS, AGENT_TOOL_LATENCY
-                            AGENT_TOOL_CALLS.labels(tool_name[:80], "success").inc()
+                            # 终态 success/error/timeout/unavailable 由适配器单一漏斗记录
+                            # （guard 失败以结果字符串返回，on_tool_end 不代表成功）。
+                            from app.observability import AGENT_TOOL_LATENCY
                             AGENT_TOOL_LATENCY.labels(tool_name[:80]).observe(elapsed)
                         except Exception:
                             pass
@@ -289,6 +385,10 @@ class LangChainReActStrategy(AgentStrategy):
                     _token_usage["prompt_tokens"] += int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
                     _token_usage["completion_tokens"] += int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
                     _token_usage["total_tokens"] += int(usage.get("total_tokens", 0) or 0)
+                    # Run 级 Token 预算（路线图 4.3.3）：触顶即优雅收尾，不抛 500。
+                    if self._token_budget and _token_usage["total_tokens"] >= self._token_budget:
+                        budget_exceeded = True
+                        break
 
                 if event_name != "on_chat_model_stream":
                     continue
@@ -306,6 +406,14 @@ class LangChainReActStrategy(AgentStrategy):
                 _full_output.append(content)
                 logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
                 yield content
+
+            # 确定性关闭底层事件流：预算触顶 break 时也要收掉 astream_events 生成器，
+            # 不留挂起的 LLM 连接；正常结束/异常路径下这是无害的幂等操作。
+            await event_stream.aclose()
+
+            # LLM 正常产出 → 清空失败窗口（粘性切换仍由探测计时器回切）。
+            if primary_model:
+                failover.record_success()
 
             # 可观测性：记录LLM完整输出和工具使用情况
             _complete = "".join(_full_output)
@@ -333,6 +441,17 @@ class LangChainReActStrategy(AgentStrategy):
                 f"tokens={token_count}, yields={yield_count}"
             )
 
+            # 预算触顶：已流出的内容保留，追加诚实收尾文案；半截结果不进记忆提炼。
+            if budget_exceeded:
+                self._last_run_status = "budget_exceeded"
+                logger.warning(
+                    f"[STREAM] Run 级 Token 预算触顶 "
+                    f"({_token_usage['total_tokens']} >= {self._token_budget})，优雅收尾"
+                )
+                yield "\n\n**【⚠️ 已达单次回答长度上限】** 已保留目前进展。你可以让我“继续”，或把问题拆成更小的步骤再问。"
+                recorder.finish_process("[预算触顶终止]")
+                return
+
             # [P0-01] 自动记忆提取与持久化（流式模式）
             await self._auto_persist_memory(
                 context=context,
@@ -343,14 +462,21 @@ class LangChainReActStrategy(AgentStrategy):
             )
 
         except asyncio.TimeoutError:
+            self._last_run_status = "timeout"
             logger.error(f"[STREAM] Agent执行超时 ({self._timeout_seconds}s)")
-            yield "\n\n**【⏰ 执行超时】** 请简化问题后重试"
+            yield degradation_text("timeout")
             recorder.finish_process("[超时终止]")
 
         except Exception as e:
+            # L3 记账：窗口内连续失败达阈值则粘性切换，保护后续 run；
+            # 本次 run 走 L4 模板兜底——诚实告知失败，绝不假装成功，
+            # 也不把异常类型/栈信息透给用户（安全约束 10.5）。
             logger.error(f"[STREAM] Agent执行失败: {type(e).__name__}: {e}", exc_info=True)
-            yield f"\n\n**【[ERR] 执行错误】** {type(e).__name__}: {str(e)}"
-            recorder.finish_process(f"[错误] {e}")
+            if primary_model:
+                failover.record_failure(primary_model)
+            self._last_run_status = "failed_l4"
+            yield degradation_text("model_failure")
+            recorder.finish_process("[L4 降级]")
 
     def _format_chat_history(
         self,

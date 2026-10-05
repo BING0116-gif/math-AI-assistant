@@ -22,6 +22,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
+from tools.execution_guard import ToolExecutionGuard, default_guard_policy
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class HybridToolRegistry:
         self._execution_history: List[Dict[str, Any]] = []
         self._max_history: int = 1000
         self._langchain_enabled: bool = _LANGCHAIN_AVAILABLE
+        self._execution_guard = ToolExecutionGuard(default_guard_policy())
 
         logger.info(
             "HybridToolRegistry 初始化完成"
@@ -408,7 +410,19 @@ class HybridToolRegistry:
                 f"[{execution_id}] 开始执行工具: [{tool_name}] "
                 f"query={input_data.query[:50]}..."
             )
-            result = await tool.execute(input_data)
+            try:
+                from app.config.settings import settings
+                guard_enabled = settings.AGENT_TOOL_GUARD_ENABLED
+            except Exception:
+                guard_enabled = True
+            if guard_enabled:
+                result = await self._execution_guard.run(
+                    tool_name,
+                    lambda: tool.execute(input_data),
+                    retryable=ToolCapability.ERROR_BOOK_MANAGEMENT not in tool.capabilities,
+                )
+            else:
+                result = await tool.execute(input_data)
             elapsed = (time.time() - start_time) * 1000
             result.execution_time_ms = elapsed
             result.tool_name = tool_name

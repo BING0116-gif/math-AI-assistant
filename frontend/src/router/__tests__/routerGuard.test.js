@@ -28,7 +28,7 @@ describe('Protected Route Guard', () => {
     router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', name: 'Home', component: HomeView },
+        { path: '/', name: 'Home', component: HomeView, meta: { requiresAuth: true } },
         { path: '/login', name: 'Login', component: HomeView },
         { path: '/chat', name: 'Chat', component: ChatView },
         {
@@ -43,6 +43,12 @@ describe('Protected Route Guard', () => {
           component: DashboardView,
           meta: { title: '学习看板', requiresAuth: true },
         },
+        {
+          path: '/admin',
+          name: 'AdminHome',
+          component: HomeView,
+          meta: { requiresAuth: true, requiresAdmin: true },
+        },
       ],
     })
 
@@ -55,6 +61,9 @@ describe('Protected Route Guard', () => {
         const authStore = useAuthStore()
         if (!authStore.isAuthenticated) {
           return { path: '/login', query: { redirect: to.fullPath } }
+        }
+        if (to.meta.requiresAdmin && authStore.role !== 'admin') {
+          return { path: '/', query: { error: 'admin_required' } }
         }
       }
     })
@@ -109,14 +118,31 @@ describe('Protected Route Guard', () => {
   // Public routes are always accessible
   // ============================================================
   describe('public routes', () => {
-    it('should allow access to home without auth', async () => {
+    it('should redirect the root entry to login without auth', async () => {
       await router.push('/')
-      expect(router.currentRoute.value.path).toBe('/')
+      expect(router.currentRoute.value.path).toBe('/login')
+      expect(router.currentRoute.value.query.redirect).toBe('/')
     })
 
-    it('should allow access to chat without auth', async () => {
-      await router.push('/chat')
-      expect(router.currentRoute.value.path).toBe('/chat')
+    it('should reject the admin route for a student session', async () => {
+      const authStore = useAuthStore()
+      localStorage.setItem('auth_token', 'student-token')
+      localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1', role: 'student' }))
+      authStore.restoreSession()
+
+      await router.push('/admin')
+      expect(router.currentRoute.value.path).toBe('/')
+      expect(router.currentRoute.value.query.error).toBe('admin_required')
+    })
+
+    it('should allow the admin route for an admin session', async () => {
+      const authStore = useAuthStore()
+      localStorage.setItem('auth_token', 'admin-token')
+      localStorage.setItem('current_user', JSON.stringify({ user_id: 'a1', username: 'admin', role: 'admin' }))
+      authStore.restoreSession()
+
+      await router.push('/admin')
+      expect(router.currentRoute.value.path).toBe('/admin')
     })
   })
 })

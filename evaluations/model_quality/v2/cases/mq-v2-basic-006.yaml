@@ -1,0 +1,15 @@
+id: mq-v2-basic-006
+category: basic
+modality: text
+tutor_mode: solve
+question: "计算数列 1/n 在 n 趋于无穷时的极限。"
+requirements: ["给出极限值", "说明趋于零"]
+oracle:
+  answer_match: {mode: numeric, expected: "0", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "极限值为 0", weight: 1}
+    - {text: "趋于零", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, derivation_closed]}
+user_fixture: eval_standard_user
+ai_offline_case: true

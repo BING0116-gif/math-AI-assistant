@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-004
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "查找一道导数应用题并给出知识点标签。"
+requirements: ["查找应用题", "给出知识点标签"]
+oracle:
+  answer_match: {mode: behavioral, expected: "应用题"}
+  key_steps:
+    - {text: "查找应用题", weight: 1}
+    - {text: "知识点标签", weight: 1}
+  forbidden_claims: []
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-derivative-004]
+  citation_required: true
+critic_expectation: {verdict: pass, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true

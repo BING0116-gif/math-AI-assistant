@@ -1,0 +1,19 @@
+id: mq-v2-tool-failure-009
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: "学习进度查询超时后，回答需要如何避免误导？"
+requirements: ["说明查询超时", "不编造进度", "建议稍后查询"]
+oracle:
+  answer_match: {mode: behavioral, expected: "查询超时"}
+  key_steps:
+    - {text: "查询超时", weight: 1}
+    - {text: "稍后查询", weight: 1}
+  forbidden_claims: ["你的进度是"]
+tool_failure_plan:
+  tool: get_learning_progress
+  failure: timeout
+  inject: {timeout_seconds: 20}
+critic_expectation: {verdict: warn, must_check: [answered_question]}
+user_fixture: eval_standard_user
+ai_offline_case: true

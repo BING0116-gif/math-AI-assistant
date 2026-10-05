@@ -1,0 +1,22 @@
+id: mq-v2-advanced-proof-001
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: "证明函数在极值点满足必要的二阶条件。"
+requirements:
+  - "给出极值点条件"
+  - "说明二阶展开"
+oracle:
+  answer_match:
+    mode: expression
+    expected: "f''(c)"
+  key_steps:
+    - {text: "极值点条件", weight: 1}
+    - {text: "二阶展开", weight: 2}
+  allowed_expressions: ["泰勒", "Taylor"]
+  forbidden_claims: ["函数必为三次多项式"]
+critic_expectation:
+  verdict: pass
+  must_check: [answered_question, derivation_closed, no_gap]
+user_fixture: eval_standard_user
+ai_offline_case: true

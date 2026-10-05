@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -46,6 +46,59 @@ AGENT_CONTEXT_TRIMS = Counter("mathai_agent_context_trims_total", "Context trims
 SSE_EVENTS = Counter("mathai_sse_events_total", "SSE events emitted", ["event_type"])
 CONTENT_EVENTS = Counter("mathai_content_events_total", "Content operations", ["operation", "status"])
 RECOVERY_RUNS = Counter("mathai_recovery_runs_total", "Recovery/repair runs", ["operation", "status"])
+
+# 阶段一质量闭环指标（1-A）。这些指标只描述低基数的质量/路由状态，
+# 不携带 user_id、问题内容或模型输出，避免把学生数据写入 Prometheus。
+AGENT_CRITIC_VERDICTS = Counter(
+    "mathai_agent_critic_verdicts_total",
+    "Answer Critic verdicts",
+    ["verdict", "capability"],
+)
+AGENT_ANSWER_MODIFIED = Counter(
+    "mathai_agent_answer_modified_total",
+    "Answers modified by users",
+    ["source"],
+)
+AGENT_FOLLOWUP = Counter(
+    "mathai_agent_followup_total",
+    "Follow-up questions associated with an Agent run",
+    ["gap"],
+)
+AGENT_REVIEW_SAMPLED = Counter(
+    "mathai_agent_review_sampled_total",
+    "Agent runs sampled for quality review",
+    ["queue"],
+)
+AGENT_REVIEW_VERDICTS = Counter(
+    "mathai_agent_review_verdicts_total",
+    "Quality review verdicts",
+    ["verdict", "reviewer_type"],
+)
+MODEL_ROUTE = Counter(
+    "mathai_model_route_total",
+    "Model route transitions",
+    ["from", "to", "reason"],
+)
+TOOL_CIRCUIT_STATE = Gauge(
+    "mathai_tool_circuit_state",
+    "Current circuit breaker state (0/1) by tool and state",
+    ["tool", "state"],
+)
+TOOL_RETRIES = Counter(
+    "mathai_tool_retry_total",
+    "Bounded tool retry attempts",
+    ["tool", "outcome"],
+)
+LEARNING_PATH_STEPS = Counter(
+    "mathai_learning_path_step_total",
+    "Learning path step interactions",
+    ["step_type"],
+)
+VARIANT_SESSIONS = Counter(
+    "mathai_variant_session_total",
+    "Similar-question (variant) session outcomes",
+    ["status"],
+)
 
 _SENSITIVE = re.compile(r"(authorization|password|secret|api[_-]?key|token|prompt|answer|content)", re.I)
 

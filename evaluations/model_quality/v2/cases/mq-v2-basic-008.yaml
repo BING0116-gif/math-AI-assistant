@@ -1,0 +1,15 @@
+id: mq-v2-basic-008
+category: basic
+modality: text
+tutor_mode: solve
+question: "解分式方程 1/x=2，并说明定义域限制。"
+requirements: ["给出 x 的值", "说明 x 不等于 0"]
+oracle:
+  answer_match: {mode: numeric, expected: "0.5", tolerance: 1.0e-9}
+  key_steps:
+    - {text: "x=1/2", weight: 1}
+    - {text: "x 不等于 0", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: pass, must_check: [answered_question, units_domain]}
+user_fixture: eval_standard_user
+ai_offline_case: true

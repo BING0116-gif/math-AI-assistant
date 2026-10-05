@@ -25,6 +25,10 @@ class RetrievedMemory:
     content: str
     score: float
     source: str = "sql"
+    # 阶段四 6.4/6.8:注入侧防护需要 kind 与置信度;旧数据缺列按 context/0.6 兜底
+    memory_kind: str = "context"
+    confidence: float = 0.6
+    created_at: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -33,6 +37,9 @@ class RetrievedMemory:
             "content": self.content,
             "score": self.score,
             "source": self.source,
+            "memory_kind": self.memory_kind,
+            "confidence": self.confidence,
+            "created_at": self.created_at,
         }
 
 
@@ -198,6 +205,9 @@ class MemoryApplicationService:
                 Memory.status == "active",
                 Memory.deleted_at.is_(None),
                 or_(Memory.expire_at.is_(None), Memory.expire_at > now),
+                # 6.4 注入侧防护:冲突未裁定(review)的双侧记忆都不得进入提示,
+                # 避免模型自行脑补仲裁;裁定后的记忆恢复正常注入
+                or_(Memory.conflict_status.is_(None), Memory.conflict_status != "review"),
             ).order_by(Memory.importance.desc(), Memory.created_at.desc()).limit(200))).scalars())
             ranked = []
             for row in rows:
@@ -221,6 +231,9 @@ class MemoryApplicationService:
             return [RetrievedMemory(
                 id=row.id, memory_type=row.memory_type,
                 content=row.content[:500], score=round(score, 4),
+                memory_kind=row.memory_kind or "context",
+                confidence=float(row.confidence if row.confidence is not None else 0.6),
+                created_at=int(row.created_at or 0),
             ).to_dict() for score, row in selected]
 
     @staticmethod

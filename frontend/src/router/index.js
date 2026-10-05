@@ -6,7 +6,7 @@ const routes = [
     path: '/',
     name: 'Home',
     component: () => import('@/views/HomeView.vue'),
-    meta: { title: '数学AI助手', transition: 'slide-fade' },
+    meta: { title: '数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
     path: '/login',
@@ -65,6 +65,12 @@ const routes = [
     meta: { title: '记忆画像 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
+    path: '/learning/path',
+    name: 'LearningPath',
+    component: () => import('@/views/LearningPathView.vue'),
+    meta: { title: '我的学习路径 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
+  },
+  {
     path: '/paper/test',
     redirect: '/apply/practice',
   },
@@ -111,6 +117,12 @@ const routes = [
     name: 'AdminAgentMetrics',
     component: () => import('@/views/AdminAgentMetricsView.vue'),
     meta: { title: 'Agent 指标 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
+  },
+  {
+    path: '/admin/quality',
+    name: 'AdminQuality',
+    component: () => import('@/views/AdminQualityView.vue'),
+    meta: { title: '回答质量抽检 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
   },
 ]
 

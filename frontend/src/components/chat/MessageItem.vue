@@ -42,6 +42,12 @@
           <span class="msg-loading-text">正在组织推导…</span>
         </div>
 
+        <!-- Critic 可信度徽标(阶段五 5-C):后验质量检查结果 -->
+        <div v-if="message.critic?.verdict && !isStreaming" class="critic-badge" :class="`critic-badge--${message.critic.verdict}`" :title="criticTitle">
+          <ShieldCheck :size="13" />
+          <span>{{ criticLabel }}</span>
+        </div>
+
         <!-- 消息操作 — 默认弱化,hover 显示(原型 .msg-meta) -->
         <div v-if="!isStreaming" class="msg-actions">
           <template v-if="message.errorBookStatus === 'added'">
@@ -77,6 +83,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { ShieldCheck } from 'lucide-vue-next'
 import { renderMarkdown } from '@/utils/markdown'
 import MathVisualCard from '@/components/math/MathVisualCard.vue'
 import MathAnimationCard from '@/components/math/MathAnimationCard.vue'
@@ -99,6 +106,19 @@ const renderedContent = computed(() => {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/\n/g, '<br>')
+})
+
+// Critic 徽标文案(阶段五 5-C):verdict → 展示语义
+const criticLabel = computed(() => {
+  const verdict = props.message.critic?.verdict
+  if (verdict === 'pass') return '已通过质量检查'
+  if (verdict === 'warn') return '存在小瑕疵'
+  if (verdict === 'fail') return '质量存疑,建议追问'
+  return ''
+})
+const criticTitle = computed(() => {
+  const issues = props.message.critic?.issues || []
+  return issues.length ? `问题: ${issues.join('、')}` : 'Answer Critic 后验检查'
 })
 </script>
 
@@ -452,4 +472,19 @@ const renderedContent = computed(() => {
     animation: none;
   }
 }
+
+/* Critic 可信度徽标(阶段五 5-C) */
+.critic-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.critic-badge--pass { background: var(--green-soft, rgba(60, 150, 105, .12)); color: var(--green); }
+.critic-badge--warn { background: var(--amber-soft); color: var(--amber); }
+.critic-badge--fail { background: var(--rose-soft); color: var(--rose); }
 </style>

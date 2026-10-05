@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.data.database import get_db_session
 from app.data.models import AIInteractionRun, ChatSession, KnowledgeGraphVersion, KnowledgePoint, PracticeSession, Question, QuestionKnowledgePoint
 from app.services.mode_gating import CANONICAL_TUTOR_MODES, LEGACY_MODE_ALIASES, normalize_tutor_mode
+from app.observability import AGENT_ANSWER_MODIFIED, AGENT_CRITIC_VERDICTS, AGENT_FOLLOWUP, AGENT_REVIEW_SAMPLED, AI_COST
 
 TUTOR_MODES = set(CANONICAL_TUTOR_MODES) | set(LEGACY_MODE_ALIASES)
 TUTOR_PROMPT_VERSION = "tutor-mode-v2-gated"
@@ -117,8 +118,40 @@ async def start_ai_run(user_id: str, chat_session_id: str, mode: str, context: d
     mode = normalize_tutor_mode(mode)
     run_id = str(uuid.uuid4())
     async with get_db_session() as db:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+        previous = (await db.execute(
+            select(AIInteractionRun)
+            .where(
+                AIInteractionRun.user_id == user_id,
+                AIInteractionRun.chat_session_id == chat_session_id,
+                AIInteractionRun.request_kind == "tutor",
+                AIInteractionRun.created_at >= cutoff,
+            )
+            .order_by(AIInteractionRun.created_at.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if previous is not None:
+            previous.followup_count = int(previous.followup_count or 0) + 1
+            AGENT_FOLLOWUP.labels(gap="followup").inc()
         db.add(AIInteractionRun(id=run_id, user_id=user_id, chat_session_id=chat_session_id, request_kind="tutor", tutor_mode=mode, intent=intent, course_id=context.get("course_id"), knowledge_point_codes=context.get("knowledge_point_codes") or [], prompt_version=TUTOR_PROMPT_VERSION, status="started"))
     return run_id
+
+
+async def mark_ai_run_modified(user_id: str, run_id: str) -> bool:
+    """Mark one owned run as user-modified, idempotently."""
+    async with get_db_session() as db:
+        run = (await db.execute(
+            select(AIInteractionRun).where(
+                AIInteractionRun.id == run_id,
+                AIInteractionRun.user_id == user_id,
+            )
+        )).scalar_one_or_none()
+        if run is None:
+            return False
+        if not run.modified_by_user:
+            run.modified_by_user = True
+            AGENT_ANSWER_MODIFIED.labels(source="user").inc()
+        return True
 
 
 async def complete_ai_run(run_id: str, *, status: str, metadata: dict[str, Any] | None = None, error_code: str | None = None) -> None:
@@ -131,3 +164,35 @@ async def complete_ai_run(run_id: str, *, status: str, metadata: dict[str, Any] 
         if data.get("prompt_version") is not None: run.prompt_version = data["prompt_version"]
         run.tool_names = sorted(set(data.get("tool_names") or [])); run.latency_ms = data.get("latency_ms")
         run.token_usage = data.get("token_usage"); run.estimated_cost = data.get("estimated_cost")
+        critic_changed = "critic_verdict" in data
+        sampled_changed = "quality_sampled" in data
+        review_changed = "review_verdict" in data
+        modified_changed = "modified_by_user" in data
+        followup_changed = "followup_count" in data
+        if critic_changed: run.critic_verdict = data.get("critic_verdict")
+        if "critic_issues" in data: run.critic_issues = data.get("critic_issues")
+        if "quality_sampled" in data: run.quality_sampled = bool(data.get("quality_sampled"))
+        if "review_verdict" in data: run.review_verdict = data.get("review_verdict")
+        if "reviewer_id" in data: run.reviewer_id = data.get("reviewer_id")
+        if "followup_count" in data: run.followup_count = max(0, int(data.get("followup_count", 0) or 0))
+        if "modified_by_user" in data: run.modified_by_user = bool(data.get("modified_by_user"))
+        capability = data.get("capability") or run.request_kind or "unknown"
+        if run.critic_verdict in {"pass", "warn", "fail"}:
+            AGENT_CRITIC_VERDICTS.labels(verdict=run.critic_verdict, capability=capability).inc()
+        if sampled_changed and run.quality_sampled:
+            AGENT_REVIEW_SAMPLED.labels(queue="pending").inc()
+        if review_changed and run.review_verdict in {"pass", "fail"}:
+            AGENT_REVIEW_SAMPLED.labels(queue="graded").inc()
+        if modified_changed and run.modified_by_user:
+            AGENT_ANSWER_MODIFIED.labels(source="user").inc()
+        if followup_changed and run.followup_count:
+            AGENT_FOLLOWUP.labels(gap="followup").inc(run.followup_count)
+        if run.estimated_cost is not None:
+            # 5.3 成本观测统一口径:provider 从 MODEL_REGISTRY 反查,未登记用 unknown
+            try:
+                from app.config.settings import MODEL_REGISTRY
+
+                provider = str((MODEL_REGISTRY.get(str(run.model or "")) or {}).get("provider") or "unknown")
+                AI_COST.labels(provider[:80], str(run.model or "unknown")[:80], "CNY").inc(float(run.estimated_cost))
+            except Exception:
+                pass

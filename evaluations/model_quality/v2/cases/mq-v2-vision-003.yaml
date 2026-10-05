@@ -1,0 +1,17 @@
+id: mq-v2-vision-003
+category: vision
+modality: image
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+tutor_mode: solve
+question: "读取图片中的矩阵并判断其阶数。"
+requirements: ["读取矩阵", "判断阶数"]
+oracle:
+  answer_match: {mode: behavioral, expected: "阶数"}
+  key_steps:
+    - {text: "读取矩阵", weight: 1}
+    - {text: "判断阶数", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: warn, must_check: [answered_question, numeric_consistency]}
+user_fixture: eval_standard_user
+ai_offline_case: true

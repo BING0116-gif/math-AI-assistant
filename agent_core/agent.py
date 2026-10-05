@@ -68,6 +68,33 @@ class StrategyConfig:
     stream: bool = True
 
 
+def build_memory_context_lines(memories: Optional[List[Dict[str, Any]]]) -> List[str]:
+    """记忆注入行构造(阶段四 6.4 注入侧防护)。
+
+    - 总纲:仅用于个性化表达,不可当作题目事实;
+    - misconception 必须带纠正框架——历史错误绝不可被采纳为正确知识(防污染);
+    - context 带时间标注(往期会话,可能已过时);
+    - 其余(preference/fact)原样列出。
+    """
+    lines = ["【相关长期记忆】以下仅用于个性化表达，不可当作题目事实；如与当前输入冲突，以当前输入为准。"]
+    now = int(time.time())
+    for item in memories or []:
+        kind = str((item or {}).get("memory_kind") or "context")
+        content = str((item or {}).get("content") or "")[:300]
+        if kind == "misconception":
+            lines.append(f"- 【该生曾犯的错：仅供纠错参考，绝不代表正确答案，不可采纳】{content}")
+        elif kind == "context":
+            created = int((item or {}).get("created_at") or 0)
+            if created > 0:
+                days = max(0, (now - created) // 86400)
+                lines.append(f"- 【来自 {days} 天前的会话，可能已过时】{content}")
+            else:
+                lines.append(f"- 【来自往期会话，可能已过时】{content}")
+        else:
+            lines.append(f"- {content}")
+    return lines
+
+
 @dataclass
 class DynamicParamsConfig:
     """动态参数配置。"""
@@ -473,10 +500,8 @@ class MathAgent:
             )
             context["relevant_memories"] = memories
             if memories:
-                memory_lines = [
-                    "【相关长期记忆】以下仅用于个性化表达，不可当作题目事实；如与当前输入冲突，以当前输入为准。"
-                ]
-                memory_lines.extend(f"- {item['content'][:300]}" for item in memories)
+                # 阶段四 6.4:kind 分框注入——misconception 带纠正框架、context 带时间标注
+                memory_lines = build_memory_context_lines(memories)
                 chat_history_dicts.insert(1 if chat_history_dicts else 0, {
                     "role": "system", "content": "\n".join(memory_lines)[:1800],
                 })
@@ -1037,6 +1062,8 @@ class MathAgent:
 
         # [P0-03] 存储跟进推荐文本，供 SSE follow_up 事件使用
         self._follow_up_text = follow_up_text
+        # 透传策略级 run 终态(completed/timeout/budget_exceeded)，供 SSE 层记指标与落库
+        self._last_run_status = str(getattr(strategy, "_last_run_status", "") or "completed")
 
         history.add_ai_message(full_response)
         public_animations = list(context.get("animations") or [])
@@ -1049,7 +1076,7 @@ class MathAgent:
             "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
             "tool_names": sorted(getattr(strategy, "_last_used_tools", set()) or []),
             "token_usage": getattr(strategy, "_last_token_usage", None) or None,
-            "estimated_cost": None,
+            "estimated_cost": self._estimate_run_cost(strategy),
             "tutor_mode": canonical_mode,
             "capability": route.manifest.name,
             "capability_strategy_policy": route.manifest.strategy_policy,
@@ -1250,12 +1277,13 @@ class MathAgent:
                 key: int(strategy_usage.get(key, 0) or 0) + int(vision_usage.get(key, 0) or 0)
                 for key in ("prompt_tokens", "completion_tokens", "total_tokens")
             }
+            self._last_run_status = str(getattr(strategy, "_last_run_status", "") or "completed")
             self._last_run_metadata = {
                 "model": self._model,
                 "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
                 "tool_names": sorted(set(getattr(strategy, "_last_used_tools", set()) or []) | {"vision_tool"}),
                 "token_usage": token_usage if token_usage["total_tokens"] else None,
-                "estimated_cost": None,
+                "estimated_cost": self._estimate_run_cost(strategy),
                 "tutor_mode": canonical_mode,
                 "capability": route.manifest.name,
                 "capability_strategy_policy": route.manifest.strategy_policy,
@@ -1330,6 +1358,21 @@ class MathAgent:
 
     # ── 策略选择 ────────────────────────────────────────────────────────
 
+    def _estimate_run_cost(self, strategy: Any) -> float | None:
+        """按 MODEL_REGISTRY 计价表估算本次 run 成本(元);未登记价格返回 None(5.3)。"""
+        try:
+            from app.services.model_router import get_model_router
+
+            usage = getattr(strategy, "_last_token_usage", None) or {}
+            model = str(getattr(getattr(strategy, "_llm", None), "model_name", "") or self._model)
+            return get_model_router().estimate_cost(
+                model,
+                int(usage.get("prompt_tokens", 0) or 0),
+                int(usage.get("completion_tokens", 0) or 0),
+            )
+        except Exception:
+            return None
+
     async def _select_strategy(
         self,
         user_input: str,
@@ -1346,7 +1389,23 @@ class MathAgent:
         intent = self._classify_intent(user_input)
 
         if self._enable_dynamic_params and self._dynamic_llm_factory:
-            _optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
+            # 阶段三 5.1 规则路由:故障粘性优先,其次按档位查表(默认关闭=现状);
+            # 能力校验 fail-closed 在 router 内执行。
+            from app.services.model_router import get_model_router
+
+            resolved_model = get_model_router().resolve_model(
+                intent.task_type.value,
+                primary_model=self._model,
+                bucket_key=session_id,
+            )
+            if resolved_model and resolved_model != self._model:
+                _optimized_llm = self._dynamic_llm_factory.get_llm_for_model(intent.task_type, resolved_model)
+                logger.info(
+                    f"路由决策: type={intent.task_type.value} model={resolved_model} "
+                    f"(confidence={intent.confidence:.2f})"
+                )
+            else:
+                _optimized_llm = self._dynamic_llm_factory.get_llm(intent.task_type)
             logger.info(
                 f"已应用动态参数: type={intent.task_type.value}, "
                 f"confidence={intent.confidence:.2f}"

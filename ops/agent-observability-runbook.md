@@ -50,6 +50,47 @@
 3. 保留当前问题、系统安全约束、用户画像和近期对话；不能无条件扩大上下文窗口。
 4. 调整预算后必须重新运行上下文隔离和 Agent 质量回归测试。
 
+## 阶段二可靠性处置（路线图 4.7）
+
+### MathAIAgentToolTimeoutRateHigh — 工具超时率 > 10%/10m
+
+1. 按 `tool` 标签定位集中超时的工具；对照 `mathai_agent_tool_duration_seconds` 看是普遍变慢还是尾部挂起。
+2. 检查该工具下游（SQL/Qdrant/外部模型）健康度；`AGENT_TOOL_TIMEOUT_OVERRIDES` 只允许在有数据支撑时调整。
+3. 工具层已有守卫（超时→重试→熔断），不要为消除告警而调大重试次数——先修依赖。
+
+### MathAIToolCircuitOpen — 熔断 OPEN 持续 > 5m
+
+1. `mathai_tool_circuit_state{state="open"}==1` 的 `tool` 标签即故障工具；Agent 会收到"该工具暂不可用"并继续（减工具运行）。
+2. 依赖恢复后熔断会在冷却期（`CIRCUIT_COOLDOWN_SECONDS`，默认 60s）后放行探测请求自动闭合；确认 `mathai_tool_retry_total` 与工具成功率回升。
+3. 误伤（依赖健康但被熔断）时核对 `CIRCUIT_FAILURE_THRESHOLD` 与窗口；紧急逃生门 `CIRCUIT_ENABLED=false` 需登记变更并在故障后恢复。
+
+### MathAIAgentTimeoutRateHigh — run 超时率 > 5%/10m
+
+1. 先分清是模型慢还是工具挂起：TTFT 指标与工具耗时直方图对照。
+2. `AGENT_TOTAL_TIMEOUT_SECONDS`（默认 90s）触发的是优雅收尾，已流出内容保留；若超时率因长推导误杀，先观察两周再校准阈值，不要静默调大超时。
+3. 确认前端收到 `type: error` 的收尾事件后能正常渲染（不再等待）。
+
+### MathAIDegradationRateHigh — L4 率 > 1%/30m 或 degraded > 8%/10m
+
+1. L4（`failed_l4`）= 主模型与候选全部失败后的模板兜底；`degraded` = 使用候选模型完成。
+2. 结合 `mathai_model_route_total{reason="degrade"}` 与 `LLM_FALLBACK_MODELS` 检查候选配置；候选能力必须已登记 `MODEL_CAPABILITIES`（fail-closed 不切换）。
+3. 主模型恢复后 failover 每 5 分钟自动探测回切；不需要手动干预。
+
+### MathAIModelFailoverFrequent — degrade 切换 > 10 次/30m（P2）
+
+1. 主模型在窗口内反复达失败阈值，多半是供应商限流/抖动；联系供应商或在注册表中固定更稳的模型。
+2. 检查是否有候选在能力表中被过滤导致来回切换日志重复。
+
+### MathAISSEHeartbeatMissing — 有流量但心跳跌零 5m（P2）
+
+1. 确认 `SSE_HEARTBEAT_ENABLED` 未被关闭；`mathai_sse_events_total{event_type="heartbeat"}` 速率是否确实为零。
+2. 检查中间代理（nginx/网关）对 comment 帧的缓冲——心跳是 `: ping`，不应被拦截；代理空闲超时需大于 `SSE_HEARTBEAT_SECONDS`。
+
+### 取消与断连（非告警，日常排查）
+
+- 学生点击"停止生成"：`DELETE /api/chat/stream/{id}` 幂等置位取消，run 记 `status=user_cancelled`，已产出内容保留在 replay buffer，可 recover。
+- 客户端断连：run 记 `status=client_disconnected`，半截结果不进记忆/错题本；`/api/chat` 的 producer 独立于连接，断线后 run 会继续完成并可供 recover。
+
 ## 隐私与合规边界
 
 - Prometheus 标签不得包含用户 ID、会话 ID、题目内容、原始查询、答案或工具参数。

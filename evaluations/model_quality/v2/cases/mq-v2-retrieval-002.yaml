@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-002
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "根据知识点推荐一道连续性练习题。"
+requirements: ["给出推荐", "引用知识点依据"]
+oracle:
+  answer_match: {mode: behavioral, expected: "推荐"}
+  key_steps:
+    - {text: "给出推荐", weight: 1}
+    - {text: "引用知识点依据", weight: 1}
+  forbidden_claims: []
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-continuity-002]
+  citation_required: true
+critic_expectation: {verdict: pass, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -60,6 +60,9 @@ onMounted(load)
           <button class="action-card" type="button" @click="router.push('/admin/readiness')">
             <strong>能力就绪度</strong><span>检查系统能力与配置状态</span>
           </button>
+          <button class="action-card" type="button" @click="router.push('/admin/quality')">
+            <strong>回答质量抽检</strong><span>处理脱敏的 Critic 抽检队列并记录判定</span>
+          </button>
         </section>
 
         <section class="status-panel">

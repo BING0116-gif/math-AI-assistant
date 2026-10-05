@@ -1,0 +1,17 @@
+id: mq-v2-vision-004
+category: vision
+modality: image
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+tutor_mode: solve
+question: "识别图中的方程并判断其解的个数。"
+requirements: ["识别方程", "判断解的个数"]
+oracle:
+  answer_match: {mode: behavioral, expected: "解的个数"}
+  key_steps:
+    - {text: "识别方程", weight: 1}
+    - {text: "解的个数", weight: 1}
+  forbidden_claims: []
+critic_expectation: {verdict: warn, must_check: [answered_question, numeric_consistency]}
+user_fixture: eval_standard_user
+ai_offline_case: true

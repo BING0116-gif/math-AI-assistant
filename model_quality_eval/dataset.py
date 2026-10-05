@@ -14,6 +14,7 @@ import yaml
 from PIL import Image, UnidentifiedImageError
 
 from .schema import EvaluationCase, Manifest, PrimaryCategory, RunReport
+from .v2_schema import V2Case, V2Manifest
 
 
 class DatasetValidationError(ValueError):
@@ -42,6 +43,19 @@ class DatasetBundle:
         return {case.case_id: case for case in self.cases}
 
 
+@dataclass(frozen=True)
+class V2DatasetBundle:
+    root: Path
+    manifest: V2Manifest
+    cases: tuple[V2Case, ...]
+    computed_hash: str
+    case_hashes: dict[str, str]
+
+    @property
+    def by_id(self) -> dict[str, V2Case]:
+        return {case.id: case for case in self.cases}
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -62,6 +76,18 @@ def compute_dataset_hash(root: Path, manifest_data: dict[str, Any]) -> str:
         asset = (case_data.get("input") or {}).get("image_asset")
         if asset:
             digest.update((root / PurePosixPath(asset)).read_bytes())
+    return digest.hexdigest()
+
+
+def compute_v2_dataset_hash(root: Path, manifest_data: dict[str, Any]) -> str:
+    canonical_manifest = dict(manifest_data)
+    canonical_manifest.pop("dataset_hash", None)
+    digest = hashlib.sha256(
+        json.dumps(canonical_manifest, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    )
+    for ref in sorted(manifest_data.get("cases", []), key=lambda item: item["case_id"]):
+        case_path = root / PurePosixPath(ref["path"])
+        digest.update(case_path.read_bytes())
     return digest.hexdigest()
 
 
@@ -181,3 +207,80 @@ def dataset_schema() -> dict[str, Any]:
 
 def report_schema() -> dict[str, Any]:
     return RunReport.model_json_schema()
+
+
+def load_v2_case(path: str | Path) -> V2Case:
+    """Validate one v2 case without mutating the hash-locked v1 dataset."""
+    case_path = Path(path)
+    if not case_path.is_file():
+        raise DatasetValidationError(f"missing v2 case: {case_path}")
+    raw_text = case_path.read_text(encoding="utf-8")
+    _validate_sensitive_content(case_path, raw_text)
+    try:
+        return V2Case.model_validate(yaml.safe_load(raw_text))
+    except Exception as exc:
+        if isinstance(exc, DatasetValidationError):
+            raise
+        raise DatasetValidationError(f"invalid v2 case {case_path}: {exc}") from exc
+
+
+def load_v2_dataset(dataset_root: str | Path) -> V2DatasetBundle:
+    root = Path(dataset_root).resolve()
+    manifest_path = root / "manifest.yaml"
+    if not manifest_path.is_file():
+        raise DatasetValidationError(f"missing manifest: {manifest_path}")
+    manifest_data = _load_yaml(manifest_path)
+    try:
+        manifest = V2Manifest.model_validate(manifest_data)
+    except Exception as exc:
+        raise DatasetValidationError(f"invalid v2 manifest: {exc}") from exc
+    cases: list[V2Case] = []
+    case_hashes: dict[str, str] = {}
+    for ref in manifest.cases:
+        ref_path = PurePosixPath(ref.path)
+        if ref_path.is_absolute() or ".." in ref_path.parts:
+            raise DatasetValidationError(f"unsafe v2 case path: {ref.path}")
+        path = root / ref_path
+        case = load_v2_case(path)
+        if case.id != ref.case_id:
+            raise DatasetValidationError(f"v2 case id mismatch in {path}")
+        if case.id in case_hashes:
+            raise DatasetValidationError(f"duplicate v2 case_id detected: {case.id}")
+        if case.image_asset:
+            asset_ref = PurePosixPath(case.image_asset)
+            if asset_ref.is_absolute() or ".." in asset_ref.parts:
+                raise DatasetValidationError(f"unsafe v2 image asset path: {case.image_asset}")
+            asset_path = root / asset_ref
+            if not asset_path.is_file():
+                raise DatasetValidationError(f"missing v2 image asset: {asset_path}")
+            actual = hashlib.sha256(asset_path.read_bytes()).hexdigest()
+            if actual != case.image_sha256:
+                raise DatasetValidationError(f"v2 image SHA-256 mismatch: {case.id}")
+            try:
+                with Image.open(asset_path) as image:
+                    width, height = image.size
+                    image.verify()
+            except (OSError, UnidentifiedImageError) as exc:
+                raise DatasetValidationError(f"invalid v2 image asset: {case.id}") from exc
+            if width < 32 or height < 32 or width > 2048 or height > 2048:
+                raise DatasetValidationError(f"v2 image dimensions out of range: {case.id}")
+        case_hashes[case.id] = hashlib.sha256(path.read_bytes()).hexdigest()
+        cases.append(case)
+    counts = Counter(case.category for case in cases)
+    expected = {name: count for name, count in manifest.category_quotas.items() if count}
+    if counts != expected:
+        raise DatasetValidationError(f"v2 category quotas mismatch: actual={dict(counts)}, expected={expected}")
+    computed_hash = compute_v2_dataset_hash(root, manifest_data)
+    if manifest.dataset_hash != computed_hash:
+        raise DatasetValidationError(
+            f"v2 dataset hash mismatch: manifest={manifest.dataset_hash}, computed={computed_hash}"
+        )
+    return V2DatasetBundle(root, manifest, tuple(cases), computed_hash, case_hashes)
+
+
+def v2_case_schema() -> dict[str, Any]:
+    return V2Case.model_json_schema()
+
+
+def v2_manifest_schema() -> dict[str, Any]:
+    return V2Manifest.model_json_schema()

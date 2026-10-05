@@ -28,15 +28,18 @@ from app.api.error_api import router as error_router
 from app.api.events_api import router as events_router
 from app.api.knowledge_api import router as knowledge_router
 from app.api.memory_api import router as memory_router
+from app.api.memory_student_api import router as memory_student_router
 from app.api.memory_dashboard import router as dashboard_router
 from app.api.memory_internal_api import router as memory_internal_router
 from app.api.profile_api import router as profile_router
 from app.api.recommendation_api import router as recommendation_router
 from app.api.learning_hub_api import router as learning_hub_router
+from app.api.learning_path_api import router as learning_path_router
 from app.api.legacy_import_api import router as legacy_import_router
 from app.api.readiness_api import router as readiness_router
 from app.api.admin_overview_api import router as admin_overview_router
 from app.api.admin_agent_metrics_api import router as admin_agent_metrics_router
+from app.api.quality_admin_api import router as quality_admin_router
 from app.api.notes_api import router as notes_router
 from app.api.student_paper_api import router as student_paper_router
 from app.config.settings import settings
@@ -70,6 +73,7 @@ def _register_routers(target_app: FastAPI) -> None:
         auth_router,
         animation_router,
         memory_router,
+        memory_student_router,
         profile_router,
         data_router,
         recommendation_router,
@@ -90,10 +94,12 @@ def _register_routers(target_app: FastAPI) -> None:
         assessment_router,
         exam_router,
         learning_hub_router,
+        learning_path_router,
         legacy_import_router,
         readiness_router,
         admin_overview_router,
         admin_agent_metrics_router,
+        quality_admin_router,
         notes_router,
         student_paper_router,
     )

@@ -1,0 +1,19 @@
+id: mq-v2-retrieval-005
+category: retrieval
+modality: text
+tutor_mode: solve
+question: "从积分知识点中推荐一道带解析的题。"
+requirements: ["推荐积分题", "说明有解析"]
+oracle:
+  answer_match: {mode: behavioral, expected: "推荐"}
+  key_steps:
+    - {text: "推荐积分题", weight: 1}
+    - {text: "说明有解析", weight: 1}
+  forbidden_claims: []
+retrieval_expectation:
+  required: true
+  expected_evidence_ids: [qid-integral-005]
+  citation_required: true
+critic_expectation: {verdict: pass, must_check: [answered_question, citations_real]}
+user_fixture: eval_standard_user
+ai_offline_case: true
