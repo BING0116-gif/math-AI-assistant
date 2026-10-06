@@ -65,7 +65,20 @@ class EmbeddingService:
 
     async def encode_async(self, text: str) -> list[float]:
         await self.initialize()
-        return await asyncio.to_thread(self.encode, text)
+        # Track A 9.4 第 1 层：嵌入结果按文本+模型哈希缓存（默认关）。
+        from app.services.cache_layers import (
+            EMBEDDING_TTL_SECONDS,
+            cached_lookup,
+            embedding_cache_key,
+        )
+
+        return await cached_lookup(
+            "embedding",
+            settings.CACHE_EMBEDDINGS_ENABLED,
+            embedding_cache_key(text, self.model_name),
+            EMBEDDING_TTL_SECONDS,
+            lambda: asyncio.to_thread(self.encode, str(text)),
+        )
 
     def health(self) -> dict[str, Any]:
         return {

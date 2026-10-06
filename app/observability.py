@@ -47,6 +47,10 @@ SSE_EVENTS = Counter("mathai_sse_events_total", "SSE events emitted", ["event_ty
 CONTENT_EVENTS = Counter("mathai_content_events_total", "Content operations", ["operation", "status"])
 RECOVERY_RUNS = Counter("mathai_recovery_runs_total", "Recovery/repair runs", ["operation", "status"])
 
+# Track A 9.4 缓存分层命中率（layer=embedding|vector_search）。层关闭时不打点。
+CACHE_HITS = Counter("mathai_cache_hit_total", "Cache hits by layer", ["layer"])
+CACHE_MISSES = Counter("mathai_cache_miss_total", "Cache misses by layer", ["layer"])
+
 # 阶段一质量闭环指标（1-A）。这些指标只描述低基数的质量/路由状态，
 # 不携带 user_id、问题内容或模型输出，避免把学生数据写入 Prometheus。
 AGENT_CRITIC_VERDICTS = Counter(

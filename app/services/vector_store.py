@@ -22,7 +22,7 @@ import logging
 import time
 import traceback
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -407,6 +407,52 @@ class QdrantVectorStoreManager:
         if not query_text:
             return []
 
+        # Track A 9.4 第 2 层：检索结果按 query+过滤参数哈希缓存（默认关）。
+        # 语料是全局公开题库（where_filter 不含任何用户维度），键无需用户
+        # 身份；命中时重建新对象返回，调用方的就地改动不会污染缓存。
+        from app.config.settings import settings
+        from app.services.cache_layers import (
+            VECTOR_SEARCH_TTL_SECONDS,
+            cached_lookup,
+            vector_search_cache_key,
+        )
+
+        cache_key = vector_search_cache_key(
+            query_text, category_filter, difficulty_range, n_results, vector_weight
+        )
+
+        async def _uncached() -> List[Dict[str, Any]]:
+            return [
+                asdict(item)
+                for item in await self._hybrid_search_uncached(
+                    query_text,
+                    category_filter,
+                    difficulty_range,
+                    n_results,
+                    vector_weight,
+                )
+            ]
+
+        payload = await cached_lookup(
+            "vector_search",
+            settings.CACHE_VECTOR_SEARCH_ENABLED,
+            cache_key,
+            VECTOR_SEARCH_TTL_SECONDS,
+            _uncached,
+        )
+        return [
+            item if isinstance(item, VectorSearchResult) else VectorSearchResult(**item)
+            for item in payload
+        ]
+
+    async def _hybrid_search_uncached(
+        self,
+        query_text: str,
+        category_filter: Optional[str],
+        difficulty_range: Optional[Tuple[int, int]],
+        n_results: int,
+        vector_weight: float,
+    ) -> List[VectorSearchResult]:
         query_vector = await self._embedding.encode_async(query_text)
 
         where_filter = {

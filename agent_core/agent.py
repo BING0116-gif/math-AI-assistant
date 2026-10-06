@@ -467,47 +467,57 @@ class MathAgent:
             chat_history_dicts.insert(0, {"role": "system", "content": tutor_instruction(canonical_mode) + f"\n课程与题目上下文：{tutor_context}"})
             context["chat_history"] = chat_history_dicts
 
-        # 注入用户技能画像到上下文（统一读取 ProfileSnapshot）
-        context["user_skill_instruction"] = ""
-        if user_id and self._persistence_facade:
+        # 注入用户技能画像与长期记忆（Track A 9.2：两者互不依赖，并行装载，
+        # 单路失败降级为空、非阻塞语义不变；注入顺序保持确定性——画像在前、
+        # 记忆紧随其后，与串行版一致）。
+        async def _load_profile():
+            if not (user_id and self._persistence_facade):
+                return None
             try:
-                profile = await self._persistence_facade.get_profile_snapshot(user_id)
-                if profile and (profile.skills or profile.weak_points):
-                    skill_text = self._format_skill_profile_for_llm(profile)
-                    context["user_skill_instruction"] = skill_text
-                    context["user_skill_profile"] = profile
-
-                    chat_history_dicts.insert(0, {
-                        "role": "system",
-                        "content": skill_text,
-                    })
-                    context["chat_history"] = chat_history_dicts
-
-                    logger.info(
-                        f"[Skill] 已注入用户技能画像: "
-                        f"skills={len(profile.skills)}, "
-                        f"weak={len(profile.weak_points)}, "
-                        f"cr={profile.correct_rate:.0%}"
-                    )
+                return await self._persistence_facade.get_profile_snapshot(user_id)
             except Exception as e:
                 logger.warning(f"[Skill] 加载用户技能画像失败（非阻塞）: {e}")
+                return None
+
+        async def _load_memories():
+            try:
+                return await self._memory_application.retrieve(
+                    user_id, user_input, session_id, limit=5
+                )
+            except Exception as e:
+                logger.warning(f"长期记忆检索失败（非阻塞）: {e}")
+                return []
+
+        profile, memories = await asyncio.gather(_load_profile(), _load_memories())
+
+        context["user_skill_instruction"] = ""
+        if profile and (profile.skills or profile.weak_points):
+            skill_text = self._format_skill_profile_for_llm(profile)
+            context["user_skill_instruction"] = skill_text
+            context["user_skill_profile"] = profile
+
+            chat_history_dicts.insert(0, {
+                "role": "system",
+                "content": skill_text,
+            })
+            context["chat_history"] = chat_history_dicts
+
+            logger.info(
+                f"[Skill] 已注入用户技能画像: "
+                f"skills={len(profile.skills)}, "
+                f"weak={len(profile.weak_points)}, "
+                f"cr={profile.correct_rate:.0%}"
+            )
 
         # Long-term memories are hints about this user, never mathematical facts.
-        context["relevant_memories"] = []
-        try:
-            memories = await self._memory_application.retrieve(
-                user_id, user_input, session_id, limit=5
-            )
-            context["relevant_memories"] = memories
-            if memories:
-                # 阶段四 6.4:kind 分框注入——misconception 带纠正框架、context 带时间标注
-                memory_lines = build_memory_context_lines(memories)
-                chat_history_dicts.insert(1 if chat_history_dicts else 0, {
-                    "role": "system", "content": "\n".join(memory_lines)[:1800],
-                })
-                context["chat_history"] = chat_history_dicts
-        except Exception as e:
-            logger.warning(f"长期记忆检索失败（非阻塞）: {e}")
+        context["relevant_memories"] = memories
+        if memories:
+            # 阶段四 6.4:kind 分框注入——misconception 带纠正框架、context 带时间标注
+            memory_lines = build_memory_context_lines(memories)
+            chat_history_dicts.insert(1 if chat_history_dicts else 0, {
+                "role": "system", "content": "\n".join(memory_lines)[:1800],
+            })
+            context["chat_history"] = chat_history_dicts
 
         # 供运行元数据和质量评测使用的确定性上下文指标；不记录原文，
         # 避免观测日志泄露学生题目或回答内容。

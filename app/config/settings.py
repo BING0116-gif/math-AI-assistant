@@ -191,6 +191,17 @@ class Settings(BaseSettings):
         alias="REDIS_URL",
     )
 
+    # Track A 9.4 缓存分层按层开关（默认全关）。键只覆盖全局内容
+    # （公开题库的嵌入/向量检索）；用户作用域数据未设计编键前不得接入。
+    CACHE_EMBEDDINGS_ENABLED: bool = Field(
+        default=False,
+        alias="CACHE_EMBEDDINGS_ENABLED",
+    )
+    CACHE_VECTOR_SEARCH_ENABLED: bool = Field(
+        default=False,
+        alias="CACHE_VECTOR_SEARCH_ENABLED",
+    )
+
     CORS_ORIGINS: List[str] = Field(
         default=[
             "http://localhost:8000",
