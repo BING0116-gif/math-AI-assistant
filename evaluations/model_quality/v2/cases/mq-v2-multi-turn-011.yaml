@@ -1,0 +1,31 @@
+id: mq-v2-multi-turn-011
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: 沿用上一轮的判别式结果,给出方程的两个根。
+requirements:
+- 沿用判别式
+- 给出两根
+oracle:
+  answer_match:
+    mode: expression
+    expected: x=1,x=2
+  key_steps:
+  - text: 判别式 1 大于零
+    weight: 1
+  - text: 两根为 1 和 2
+    weight: 1
+  forbidden_claims: []
+context_fixture:
+  conversation:
+  - role: user
+    content: 解方程 x²-3x+2=0,先给判别式。
+  - role: assistant
+    content: 判别式 9-4=1>0。
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

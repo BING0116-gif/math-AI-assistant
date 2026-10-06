@@ -1,0 +1,31 @@
+id: mq-v2-multi-turn-008
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: 对上一轮的函数再求二阶导。
+requirements:
+- 沿用上轮函数
+- 给出二阶导数
+oracle:
+  answer_match:
+    mode: expression
+    expected: '6'
+  key_steps:
+  - text: 沿用 g(x)=3x²+2x
+    weight: 1
+  - text: g''(x)=6
+    weight: 1
+  forbidden_claims: []
+context_fixture:
+  conversation:
+  - role: user
+    content: 设 g(x)=3x²+2x。
+  - role: assistant
+    content: 已记录 g(x)=3x²+2x,一阶导 g'(x)=6x+2。
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

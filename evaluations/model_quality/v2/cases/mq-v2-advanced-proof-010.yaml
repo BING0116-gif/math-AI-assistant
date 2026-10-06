@@ -1,0 +1,29 @@
+id: mq-v2-advanced-proof-010
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: 设 a+b=1,证明 a²+b² ≥ 1/2。
+requirements:
+- 给出代数变形
+- 给出放缩链
+oracle:
+  answer_match:
+    mode: expression
+    expected: a²+b²≥1/2
+  key_steps:
+  - text: a²+b²=(a+b)²-2ab
+    weight: 1
+  - text: ab≤1/4
+    weight: 2
+  - text: 故 a²+b²≥1-1/2=1/2
+    weight: 2
+  allowed_expressions:
+  - 基本不等式
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

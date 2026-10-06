@@ -1,74 +1,203 @@
-schema_version: "2.0"
-dataset_version: "2.0.0"
-dataset_hash: "bc143c059af1bbf0e2819d5daea9ffea1c996b8f6ccbe6c286cc6d6312f45855"
-title: "Math AI Assistant quality loop v2 representative matrix"
+schema_version: '2.0'
+dataset_version: 2.0.0
+dataset_hash: d67513c326ac6ca762d78e8eb5e13127efe28477584e0d1c57859a61d44faa6a
+title: Math AI Assistant quality loop v2 representative matrix
 cases:
-  - {case_id: mq-v2-basic-001, path: cases/mq-v2-basic-001.yaml}
-  - {case_id: mq-v2-basic-002, path: cases/mq-v2-basic-002.yaml}
-  - {case_id: mq-v2-basic-003, path: cases/mq-v2-basic-003.yaml}
-  - {case_id: mq-v2-basic-004, path: cases/mq-v2-basic-004.yaml}
-  - {case_id: mq-v2-basic-005, path: cases/mq-v2-basic-005.yaml}
-  - {case_id: mq-v2-basic-006, path: cases/mq-v2-basic-006.yaml}
-  - {case_id: mq-v2-basic-007, path: cases/mq-v2-basic-007.yaml}
-  - {case_id: mq-v2-basic-008, path: cases/mq-v2-basic-008.yaml}
-  - {case_id: mq-v2-basic-009, path: cases/mq-v2-basic-009.yaml}
-  - {case_id: mq-v2-basic-010, path: cases/mq-v2-basic-010.yaml}
-  - {case_id: mq-v2-advanced-proof-001, path: cases/mq-v2-advanced-proof-001.yaml}
-  - {case_id: mq-v2-advanced-proof-002, path: cases/mq-v2-advanced-proof-002.yaml}
-  - {case_id: mq-v2-advanced-proof-003, path: cases/mq-v2-advanced-proof-003.yaml}
-  - {case_id: mq-v2-advanced-proof-004, path: cases/mq-v2-advanced-proof-004.yaml}
-  - {case_id: mq-v2-advanced-proof-005, path: cases/mq-v2-advanced-proof-005.yaml}
-  - {case_id: mq-v2-advanced-proof-006, path: cases/mq-v2-advanced-proof-006.yaml}
-  - {case_id: mq-v2-advanced-proof-007, path: cases/mq-v2-advanced-proof-007.yaml}
-  - {case_id: mq-v2-multi-turn-001, path: cases/mq-v2-multi-turn-001.yaml}
-  - {case_id: mq-v2-multi-turn-002, path: cases/mq-v2-multi-turn-002.yaml}
-  - {case_id: mq-v2-multi-turn-003, path: cases/mq-v2-multi-turn-003.yaml}
-  - {case_id: mq-v2-multi-turn-004, path: cases/mq-v2-multi-turn-004.yaml}
-  - {case_id: mq-v2-multi-turn-005, path: cases/mq-v2-multi-turn-005.yaml}
-  - {case_id: mq-v2-multi-turn-006, path: cases/mq-v2-multi-turn-006.yaml}
-  - {case_id: mq-v2-multi-turn-007, path: cases/mq-v2-multi-turn-007.yaml}
-  - {case_id: mq-v2-vision-001, path: cases/mq-v2-vision-001.yaml}
-  - {case_id: mq-v2-vision-002, path: cases/mq-v2-vision-002.yaml}
-  - {case_id: mq-v2-vision-003, path: cases/mq-v2-vision-003.yaml}
-  - {case_id: mq-v2-vision-004, path: cases/mq-v2-vision-004.yaml}
-  - {case_id: mq-v2-vision-005, path: cases/mq-v2-vision-005.yaml}
-  - {case_id: mq-v2-vision-006, path: cases/mq-v2-vision-006.yaml}
-  - {case_id: mq-v2-vision-007, path: cases/mq-v2-vision-007.yaml}
-  - {case_id: mq-v2-retrieval-001, path: cases/mq-v2-retrieval-001.yaml}
-  - {case_id: mq-v2-retrieval-002, path: cases/mq-v2-retrieval-002.yaml}
-  - {case_id: mq-v2-retrieval-003, path: cases/mq-v2-retrieval-003.yaml}
-  - {case_id: mq-v2-retrieval-004, path: cases/mq-v2-retrieval-004.yaml}
-  - {case_id: mq-v2-retrieval-005, path: cases/mq-v2-retrieval-005.yaml}
-  - {case_id: mq-v2-retrieval-006, path: cases/mq-v2-retrieval-006.yaml}
-  - {case_id: mq-v2-retrieval-007, path: cases/mq-v2-retrieval-007.yaml}
-  - {case_id: mq-v2-retrieval-008, path: cases/mq-v2-retrieval-008.yaml}
-  - {case_id: mq-v2-retrieval-009, path: cases/mq-v2-retrieval-009.yaml}
-  - {case_id: mq-v2-retrieval-010, path: cases/mq-v2-retrieval-010.yaml}
-  - {case_id: mq-v2-tool-failure-001, path: cases/mq-v2-tool-failure-001.yaml}
-  - {case_id: mq-v2-tool-failure-002, path: cases/mq-v2-tool-failure-002.yaml}
-  - {case_id: mq-v2-tool-failure-003, path: cases/mq-v2-tool-failure-003.yaml}
-  - {case_id: mq-v2-tool-failure-004, path: cases/mq-v2-tool-failure-004.yaml}
-  - {case_id: mq-v2-tool-failure-005, path: cases/mq-v2-tool-failure-005.yaml}
-  - {case_id: mq-v2-tool-failure-006, path: cases/mq-v2-tool-failure-006.yaml}
-  - {case_id: mq-v2-tool-failure-007, path: cases/mq-v2-tool-failure-007.yaml}
-  - {case_id: mq-v2-tool-failure-008, path: cases/mq-v2-tool-failure-008.yaml}
-  - {case_id: mq-v2-tool-failure-009, path: cases/mq-v2-tool-failure-009.yaml}
-  - {case_id: mq-v2-tool-failure-010, path: cases/mq-v2-tool-failure-010.yaml}
-  - {case_id: mq-v2-security-001, path: cases/mq-v2-security-001.yaml}
-  - {case_id: mq-v2-security-002, path: cases/mq-v2-security-002.yaml}
-  - {case_id: mq-v2-security-003, path: cases/mq-v2-security-003.yaml}
-  - {case_id: mq-v2-security-004, path: cases/mq-v2-security-004.yaml}
-  - {case_id: mq-v2-security-005, path: cases/mq-v2-security-005.yaml}
-  - {case_id: mq-v2-security-006, path: cases/mq-v2-security-006.yaml}
-  - {case_id: mq-v2-security-007, path: cases/mq-v2-security-007.yaml}
-  - {case_id: mq-v2-security-008, path: cases/mq-v2-security-008.yaml}
-  - {case_id: mq-v2-security-009, path: cases/mq-v2-security-009.yaml}
-  - {case_id: mq-v2-security-010, path: cases/mq-v2-security-010.yaml}
+- case_id: mq-v2-basic-001
+  path: cases/mq-v2-basic-001.yaml
+- case_id: mq-v2-basic-002
+  path: cases/mq-v2-basic-002.yaml
+- case_id: mq-v2-basic-003
+  path: cases/mq-v2-basic-003.yaml
+- case_id: mq-v2-basic-004
+  path: cases/mq-v2-basic-004.yaml
+- case_id: mq-v2-basic-005
+  path: cases/mq-v2-basic-005.yaml
+- case_id: mq-v2-basic-006
+  path: cases/mq-v2-basic-006.yaml
+- case_id: mq-v2-basic-007
+  path: cases/mq-v2-basic-007.yaml
+- case_id: mq-v2-basic-008
+  path: cases/mq-v2-basic-008.yaml
+- case_id: mq-v2-basic-009
+  path: cases/mq-v2-basic-009.yaml
+- case_id: mq-v2-basic-010
+  path: cases/mq-v2-basic-010.yaml
+- case_id: mq-v2-advanced-proof-001
+  path: cases/mq-v2-advanced-proof-001.yaml
+- case_id: mq-v2-advanced-proof-002
+  path: cases/mq-v2-advanced-proof-002.yaml
+- case_id: mq-v2-advanced-proof-003
+  path: cases/mq-v2-advanced-proof-003.yaml
+- case_id: mq-v2-advanced-proof-004
+  path: cases/mq-v2-advanced-proof-004.yaml
+- case_id: mq-v2-advanced-proof-005
+  path: cases/mq-v2-advanced-proof-005.yaml
+- case_id: mq-v2-advanced-proof-006
+  path: cases/mq-v2-advanced-proof-006.yaml
+- case_id: mq-v2-advanced-proof-007
+  path: cases/mq-v2-advanced-proof-007.yaml
+- case_id: mq-v2-multi-turn-001
+  path: cases/mq-v2-multi-turn-001.yaml
+- case_id: mq-v2-multi-turn-002
+  path: cases/mq-v2-multi-turn-002.yaml
+- case_id: mq-v2-multi-turn-003
+  path: cases/mq-v2-multi-turn-003.yaml
+- case_id: mq-v2-multi-turn-004
+  path: cases/mq-v2-multi-turn-004.yaml
+- case_id: mq-v2-multi-turn-005
+  path: cases/mq-v2-multi-turn-005.yaml
+- case_id: mq-v2-multi-turn-006
+  path: cases/mq-v2-multi-turn-006.yaml
+- case_id: mq-v2-multi-turn-007
+  path: cases/mq-v2-multi-turn-007.yaml
+- case_id: mq-v2-vision-001
+  path: cases/mq-v2-vision-001.yaml
+- case_id: mq-v2-vision-002
+  path: cases/mq-v2-vision-002.yaml
+- case_id: mq-v2-vision-003
+  path: cases/mq-v2-vision-003.yaml
+- case_id: mq-v2-vision-004
+  path: cases/mq-v2-vision-004.yaml
+- case_id: mq-v2-vision-005
+  path: cases/mq-v2-vision-005.yaml
+- case_id: mq-v2-vision-006
+  path: cases/mq-v2-vision-006.yaml
+- case_id: mq-v2-vision-007
+  path: cases/mq-v2-vision-007.yaml
+- case_id: mq-v2-retrieval-001
+  path: cases/mq-v2-retrieval-001.yaml
+- case_id: mq-v2-retrieval-002
+  path: cases/mq-v2-retrieval-002.yaml
+- case_id: mq-v2-retrieval-003
+  path: cases/mq-v2-retrieval-003.yaml
+- case_id: mq-v2-retrieval-004
+  path: cases/mq-v2-retrieval-004.yaml
+- case_id: mq-v2-retrieval-005
+  path: cases/mq-v2-retrieval-005.yaml
+- case_id: mq-v2-retrieval-006
+  path: cases/mq-v2-retrieval-006.yaml
+- case_id: mq-v2-retrieval-007
+  path: cases/mq-v2-retrieval-007.yaml
+- case_id: mq-v2-retrieval-008
+  path: cases/mq-v2-retrieval-008.yaml
+- case_id: mq-v2-retrieval-009
+  path: cases/mq-v2-retrieval-009.yaml
+- case_id: mq-v2-retrieval-010
+  path: cases/mq-v2-retrieval-010.yaml
+- case_id: mq-v2-tool-failure-001
+  path: cases/mq-v2-tool-failure-001.yaml
+- case_id: mq-v2-tool-failure-002
+  path: cases/mq-v2-tool-failure-002.yaml
+- case_id: mq-v2-tool-failure-003
+  path: cases/mq-v2-tool-failure-003.yaml
+- case_id: mq-v2-tool-failure-004
+  path: cases/mq-v2-tool-failure-004.yaml
+- case_id: mq-v2-tool-failure-005
+  path: cases/mq-v2-tool-failure-005.yaml
+- case_id: mq-v2-tool-failure-006
+  path: cases/mq-v2-tool-failure-006.yaml
+- case_id: mq-v2-tool-failure-007
+  path: cases/mq-v2-tool-failure-007.yaml
+- case_id: mq-v2-tool-failure-008
+  path: cases/mq-v2-tool-failure-008.yaml
+- case_id: mq-v2-tool-failure-009
+  path: cases/mq-v2-tool-failure-009.yaml
+- case_id: mq-v2-tool-failure-010
+  path: cases/mq-v2-tool-failure-010.yaml
+- case_id: mq-v2-security-001
+  path: cases/mq-v2-security-001.yaml
+- case_id: mq-v2-security-002
+  path: cases/mq-v2-security-002.yaml
+- case_id: mq-v2-security-003
+  path: cases/mq-v2-security-003.yaml
+- case_id: mq-v2-security-004
+  path: cases/mq-v2-security-004.yaml
+- case_id: mq-v2-security-005
+  path: cases/mq-v2-security-005.yaml
+- case_id: mq-v2-security-006
+  path: cases/mq-v2-security-006.yaml
+- case_id: mq-v2-security-007
+  path: cases/mq-v2-security-007.yaml
+- case_id: mq-v2-security-008
+  path: cases/mq-v2-security-008.yaml
+- case_id: mq-v2-security-009
+  path: cases/mq-v2-security-009.yaml
+- case_id: mq-v2-security-010
+  path: cases/mq-v2-security-010.yaml
+- case_id: mq-v2-advanced-proof-008
+  path: cases/mq-v2-advanced-proof-008.yaml
+- case_id: mq-v2-advanced-proof-009
+  path: cases/mq-v2-advanced-proof-009.yaml
+- case_id: mq-v2-advanced-proof-010
+  path: cases/mq-v2-advanced-proof-010.yaml
+- case_id: mq-v2-advanced-proof-011
+  path: cases/mq-v2-advanced-proof-011.yaml
+- case_id: mq-v2-advanced-proof-012
+  path: cases/mq-v2-advanced-proof-012.yaml
+- case_id: mq-v2-advanced-proof-013
+  path: cases/mq-v2-advanced-proof-013.yaml
+- case_id: mq-v2-basic-011
+  path: cases/mq-v2-basic-011.yaml
+- case_id: mq-v2-basic-012
+  path: cases/mq-v2-basic-012.yaml
+- case_id: mq-v2-basic-013
+  path: cases/mq-v2-basic-013.yaml
+- case_id: mq-v2-basic-014
+  path: cases/mq-v2-basic-014.yaml
+- case_id: mq-v2-basic-015
+  path: cases/mq-v2-basic-015.yaml
+- case_id: mq-v2-basic-016
+  path: cases/mq-v2-basic-016.yaml
+- case_id: mq-v2-basic-017
+  path: cases/mq-v2-basic-017.yaml
+- case_id: mq-v2-basic-018
+  path: cases/mq-v2-basic-018.yaml
+- case_id: mq-v2-multi-turn-008
+  path: cases/mq-v2-multi-turn-008.yaml
+- case_id: mq-v2-multi-turn-009
+  path: cases/mq-v2-multi-turn-009.yaml
+- case_id: mq-v2-multi-turn-010
+  path: cases/mq-v2-multi-turn-010.yaml
+- case_id: mq-v2-multi-turn-011
+  path: cases/mq-v2-multi-turn-011.yaml
+- case_id: mq-v2-retrieval-011
+  path: cases/mq-v2-retrieval-011.yaml
+- case_id: mq-v2-retrieval-012
+  path: cases/mq-v2-retrieval-012.yaml
+- case_id: mq-v2-retrieval-013
+  path: cases/mq-v2-retrieval-013.yaml
+- case_id: mq-v2-retrieval-014
+  path: cases/mq-v2-retrieval-014.yaml
+- case_id: mq-v2-security-011
+  path: cases/mq-v2-security-011.yaml
+- case_id: mq-v2-security-012
+  path: cases/mq-v2-security-012.yaml
+- case_id: mq-v2-security-013
+  path: cases/mq-v2-security-013.yaml
+- case_id: mq-v2-security-014
+  path: cases/mq-v2-security-014.yaml
+- case_id: mq-v2-security-015
+  path: cases/mq-v2-security-015.yaml
+- case_id: mq-v2-security-016
+  path: cases/mq-v2-security-016.yaml
+- case_id: mq-v2-security-017
+  path: cases/mq-v2-security-017.yaml
+- case_id: mq-v2-tool-failure-011
+  path: cases/mq-v2-tool-failure-011.yaml
+- case_id: mq-v2-tool-failure-012
+  path: cases/mq-v2-tool-failure-012.yaml
+- case_id: mq-v2-vision-008
+  path: cases/mq-v2-vision-008.yaml
+- case_id: mq-v2-vision-009
+  path: cases/mq-v2-vision-009.yaml
+- case_id: mq-v2-vision-010
+  path: cases/mq-v2-vision-010.yaml
 category_quotas:
-  basic: 10
-  advanced_proof: 7
-  multi_turn: 7
-  vision: 7
-  retrieval: 10
-  tool_failure: 10
-  security: 10
+  basic: 18
+  advanced_proof: 13
+  multi_turn: 11
+  vision: 10
+  retrieval: 14
+  tool_failure: 12
+  security: 17

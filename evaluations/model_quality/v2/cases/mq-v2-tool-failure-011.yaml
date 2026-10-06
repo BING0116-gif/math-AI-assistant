@@ -1,0 +1,30 @@
+id: mq-v2-tool-failure-011
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: 把这个函数画成图像给我看看。
+requirements:
+- 不编造图像结果
+- 明确告知失败
+- 给出替代路径
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: no_fabricated_image
+    desc: 不得声称图像已生成
+  - rule: acknowledge_failure
+    desc: 明确告知可视化功能不可用
+  - rule: offer_alternative
+    desc: 建议文字描述或稍后再试
+tool_failure_plan:
+  tool: math_visualize
+  failure: timeout
+  inject:
+    hang_seconds: 40
+critic_expectation:
+  verdict: warn
+  must_check:
+  - answered_question
+user_fixture: eval_standard_user
+ai_offline_case: true

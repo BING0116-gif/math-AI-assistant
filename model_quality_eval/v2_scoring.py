@@ -35,7 +35,7 @@ class V2CaseScore(BaseModel):
 
 
 _CITATION_RE = re.compile(
-    r"(?:qid|题目(?:id|ID)?|来源|证据)\s*[:：#]?\s*([A-Za-z0-9][A-Za-z0-9_-]*)",
+    r"(?:qid|题目(?:id|ID)?|来源|证据)\s*[:：#]?\s*(?=[A-Za-z0-9_-]*\d)([A-Za-z0-9][A-Za-z0-9_-]*)",
     re.IGNORECASE,
 )
 _REFUSAL_MARKERS = ("不能", "无法", "无权", "拒绝", "不应", "不提供")

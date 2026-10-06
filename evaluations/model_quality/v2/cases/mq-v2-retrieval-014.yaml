@@ -1,0 +1,30 @@
+id: mq-v2-retrieval-014
+category: retrieval
+modality: text
+tutor_mode: solve
+question: 推荐两道概率条件概率的题目。
+requirements:
+- 引用真实题目标识
+- 给出先练后练顺序
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: cite_real
+    desc: 引用题目 qid-prob-001 与 qid-prob-006
+  - rule: ordering
+    desc: 给出练习顺序
+retrieval_expectation:
+  required: true
+  expected_evidence_ids:
+  - qid-prob-001
+  - qid-prob-006
+  forbidden_evidence_ids: []
+  citation_required: true
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

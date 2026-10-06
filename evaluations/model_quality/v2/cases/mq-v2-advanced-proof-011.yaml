@@ -1,0 +1,29 @@
+id: mq-v2-advanced-proof-011
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: 设 A 为 n 阶实矩阵且 A²=A(幂等),证明 r(A)+r(A-E)=n。
+requirements:
+- 使用秩不等式
+- 给出两侧夹逼
+oracle:
+  answer_match:
+    mode: expression
+    expected: r(A)+r(A-E)=n
+  key_steps:
+  - text: r(A)+r(A-E)≥r(E)=n
+    weight: 2
+  - text: A(A-E)=O
+    weight: 1
+  - text: r(A)+r(A-E)≤n
+    weight: 2
+  allowed_expressions:
+  - Sylvester 秩不等式
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

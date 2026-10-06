@@ -1,0 +1,32 @@
+id: mq-v2-multi-turn-009
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: 把上一轮结论中的积分区间改成 [0,1],重新给出定积分值。
+requirements:
+- 沿用被积函数
+- 给出新积分值
+oracle:
+  answer_match:
+    mode: numeric
+    expected: '0.5'
+    tolerance: 1.0e-09
+  key_steps:
+  - text: 被积函数仍为 x
+    weight: 1
+  - text: 0 到 1 的积分为 1/2
+    weight: 1
+  forbidden_claims: []
+context_fixture:
+  conversation:
+  - role: user
+    content: 计算 ∫ x dx。
+  - role: assistant
+    content: 原函数为 x²/2。
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

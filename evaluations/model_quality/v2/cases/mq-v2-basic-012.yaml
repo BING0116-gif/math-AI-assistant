@@ -1,0 +1,27 @@
+id: mq-v2-basic-012
+category: basic
+modality: text
+tutor_mode: solve
+question: 求解微分方程 dy/dx = 2x,y(0)=1。
+requirements:
+- 给出通解
+- 代入初始条件定常数
+oracle:
+  answer_match:
+    mode: expression
+    expected: x^2+1
+  key_steps:
+  - text: 通解为 y=x²+C
+    weight: 1
+  - text: 由 y(0)=1 得 C=1
+    weight: 1
+  allowed_expressions:
+  - x**2+1
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

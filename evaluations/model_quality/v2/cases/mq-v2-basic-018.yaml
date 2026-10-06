@@ -1,0 +1,28 @@
+id: mq-v2-basic-018
+category: basic
+modality: text
+tutor_mode: solve
+question: 求函数 f(x)=e^x 的麦克劳林展开(前三项)。
+requirements:
+- 给出展开式前三项
+- 说明泰勒公式系数
+oracle:
+  answer_match:
+    mode: exact
+    expected: 1+x+x²/2
+  key_steps:
+  - text: f(0)=1
+    weight: 1
+  - text: f'(0)=1
+    weight: 1
+  - text: f''(0)=1
+    weight: 1
+  allowed_expressions: []
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

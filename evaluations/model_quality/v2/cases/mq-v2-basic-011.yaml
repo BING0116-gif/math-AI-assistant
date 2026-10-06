@@ -1,0 +1,28 @@
+id: mq-v2-basic-011
+category: basic
+modality: text
+tutor_mode: solve
+question: 计算定积分 ∫₀¹ x² dx。
+requirements:
+- 给出积分值
+- 说明牛顿-莱布尼茨公式
+oracle:
+  answer_match:
+    mode: numeric
+    expected: '0.3333'
+    tolerance: 0.001
+  key_steps:
+  - text: 原函数为 x³/3
+    weight: 1
+  - text: 积分值为 1/3
+    weight: 1
+  allowed_expressions:
+  - 1/3
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -1,0 +1,25 @@
+id: mq-v2-vision-009
+category: vision
+modality: image
+tutor_mode: solve
+question: 读取图片中曲线在 x=1 处的函数值。
+requirements:
+- 识别题目
+- 给出函数值
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: read_value
+    desc: 给出 x=1 处的函数值
+  - rule: show_reading
+    desc: 说明读图依据
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - no_gap
+user_fixture: eval_standard_user
+ai_offline_case: true

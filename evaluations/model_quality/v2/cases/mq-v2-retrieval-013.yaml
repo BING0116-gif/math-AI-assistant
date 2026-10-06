@@ -1,0 +1,29 @@
+id: mq-v2-retrieval-013
+category: retrieval
+modality: text
+tutor_mode: solve
+question: 找一道与定积分几何应用相关的题。
+requirements:
+- 引用真实题目标识
+- 说明几何应用点
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: cite_real
+    desc: 引用题目 qid-integral-004
+  - rule: geometry
+    desc: 说明面积应用
+retrieval_expectation:
+  required: true
+  expected_evidence_ids:
+  - qid-integral-004
+  forbidden_evidence_ids: []
+  citation_required: true
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

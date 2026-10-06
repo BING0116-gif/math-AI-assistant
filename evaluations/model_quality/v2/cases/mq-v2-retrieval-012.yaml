@@ -1,0 +1,30 @@
+id: mq-v2-retrieval-012
+category: retrieval
+modality: text
+tutor_mode: solve
+question: 我有线性代数行列式的薄弱点,推荐对应练习。
+requirements:
+- 引用真实题目标识
+- 匹配薄弱点
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: cite_real
+    desc: 引用题目 qid-linear-003
+  - rule: match_weakness
+    desc: 对应行列式薄弱点
+retrieval_expectation:
+  required: true
+  expected_evidence_ids:
+  - qid-linear-003
+  - qid-linear-007
+  forbidden_evidence_ids: []
+  citation_required: true
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

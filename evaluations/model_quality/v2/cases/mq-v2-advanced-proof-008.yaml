@@ -1,0 +1,34 @@
+id: mq-v2-advanced-proof-008
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: 设 f 在 [a,b] 连续,(a,b) 可导,且 f(a)=f(b)。证明存在 ξ∈(a,b) 使 f'(ξ)=0。
+requirements:
+- 叙述罗尔定理条件
+- 给出结论推导
+oracle:
+  answer_match:
+    mode: expression
+    expected: f'(ξ)=0
+  key_steps:
+  - text: 闭区间连续
+    weight: 1
+  - text: 开区间可导
+    weight: 1
+  - text: 端点值相等
+    weight: 1
+  - text: 由费马引理得 f'(ξ)=0
+    weight: 2
+  - text: 极值点在内部
+    weight: 1
+  allowed_expressions:
+  - 罗尔定理
+  - 费马引理
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

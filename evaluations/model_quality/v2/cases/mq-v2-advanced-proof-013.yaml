@@ -1,0 +1,30 @@
+id: mq-v2-advanced-proof-013
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: 设 f''>0 在 (0,∞) 上成立且 f(0)=0,证明 f(x)/x 在 (0,∞) 上单调不减。
+requirements:
+- 构造商函数求导
+- 说明分子符号
+- 得出单调性
+oracle:
+  answer_match:
+    mode: expression
+    expected: (xf'(x)-f(x))/x²≥0
+  key_steps:
+  - text: 对 xf'(x)-f(x) 使用拉格朗日中值定理
+    weight: 2
+  - text: f'(x)-f'(ξ)≥0
+    weight: 2
+  - text: 故商的导数非负
+    weight: 1
+  allowed_expressions:
+  - 拉格朗日中值定理
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

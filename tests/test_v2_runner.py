@@ -27,7 +27,7 @@ def bundle():
 
 
 def test_mocked_run_full_dataset_pipeline_selfcheck(bundle):
-    """全量 61 条:oracle 确定性应答必须全满分(管线自检),耗时应远低于 5 分钟预算。"""
+    """全量 95 条:oracle 确定性应答必须全满分(管线自检),耗时应远低于 5 分钟预算。"""
     started = time.perf_counter()
     report = run_mocked_v2(bundle, run_id="selfcheck-test", label="selfcheck")
     elapsed = time.perf_counter() - started

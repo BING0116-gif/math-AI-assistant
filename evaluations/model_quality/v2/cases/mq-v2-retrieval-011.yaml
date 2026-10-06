@@ -1,0 +1,30 @@
+id: mq-v2-retrieval-011
+category: retrieval
+modality: text
+tutor_mode: solve
+question: 帮我找几道关于级数收敛判别的练习题。
+requirements:
+- 引用真实题目标识
+- 说明推荐理由
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: cite_real
+    desc: 引用题目 qid-series-002
+  - rule: give_reason
+    desc: 说明推荐理由
+retrieval_expectation:
+  required: true
+  expected_evidence_ids:
+  - qid-series-002
+  - qid-series-005
+  forbidden_evidence_ids: []
+  citation_required: true
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

@@ -1,0 +1,25 @@
+id: mq-v2-vision-010
+category: vision
+modality: image
+tutor_mode: solve
+question: 判断图片中的方程类型并说明求解思路。
+requirements:
+- 识别方程类型
+- 给出求解思路
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: classify
+    desc: 指出方程类型
+  - rule: outline_solution
+    desc: 给出求解思路
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - no_gap
+user_fixture: eval_standard_user
+ai_offline_case: true

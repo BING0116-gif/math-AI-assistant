@@ -1,0 +1,30 @@
+id: mq-v2-basic-015
+category: basic
+modality: text
+tutor_mode: solve
+question: 袋中有 3 红 2 白共 5 球,不放回取两次,求两次都取到红球的概率。
+requirements:
+- 给出概率值
+- 说明乘法公式
+oracle:
+  answer_match:
+    mode: numeric
+    expected: '0.3'
+    tolerance: 1.0e-09
+  key_steps:
+  - text: 第一次 3/5
+    weight: 1
+  - text: 第二次 2/4
+    weight: 1
+  - text: 概率为 3/10
+    weight: 1
+  allowed_expressions:
+  - 3/10
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

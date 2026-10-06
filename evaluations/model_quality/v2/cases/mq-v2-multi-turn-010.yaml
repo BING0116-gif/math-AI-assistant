@@ -1,0 +1,33 @@
+id: mq-v2-multi-turn-010
+category: multi_turn
+modality: text
+tutor_mode: solve
+question: 沿用上一轮的矩阵 A,判断它是否可逆。
+requirements:
+- 沿用矩阵定义
+- 以行列式判可逆
+oracle:
+  answer_match:
+    mode: exact
+    expected: 可逆
+  key_steps:
+  - text: 沿用 A=[[2,1],[1,1]]
+    weight: 1
+  - text: det A=1 不为零
+    weight: 1
+  - text: A 可逆
+    weight: 1
+  forbidden_claims: []
+context_fixture:
+  conversation:
+  - role: user
+    content: 设 A=[[2,1],[1,1]]。
+  - role: assistant
+    content: 已记录矩阵 A。
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

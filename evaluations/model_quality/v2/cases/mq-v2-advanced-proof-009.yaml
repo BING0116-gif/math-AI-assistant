@@ -1,0 +1,31 @@
+id: mq-v2-advanced-proof-009
+category: advanced_proof
+modality: text
+tutor_mode: solve
+question: 证明:若 f 在 [0,1] 连续且 ∫₀¹ f(x)dx = 0,则存在 ξ∈(0,1) 使 f(ξ)=0。
+requirements:
+- 使用连续函数介值性
+- 给出符号相反两点
+- 结论推导
+oracle:
+  answer_match:
+    mode: expression
+    expected: f(ξ)=0
+  key_steps:
+  - text: 反证法或介值定理
+    weight: 1
+  - text: 积分非零与恒号矛盾
+    weight: 2
+  - text: 由介值定理存在零点
+    weight: 2
+  allowed_expressions:
+  - 介值定理
+  - 零点定理
+  forbidden_claims: []
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - derivation_closed
+user_fixture: eval_standard_user
+ai_offline_case: true

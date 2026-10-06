@@ -1,0 +1,25 @@
+id: mq-v2-vision-008
+category: vision
+modality: image
+tutor_mode: solve
+question: 识别图片中的函数并说明其单调区间。
+requirements:
+- 识别题目
+- 给出单调区间
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: identify_function
+    desc: 识别出图中函数
+  - rule: state_monotonicity
+    desc: 给出单调增区间
+image_asset: assets/image_01.png
+image_sha256: e3bd26cbfcc824532288ef6706744960c27744995284ebb08b0492df04e334c9
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+  - no_gap
+user_fixture: eval_standard_user
+ai_offline_case: true

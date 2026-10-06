@@ -1,0 +1,29 @@
+id: mq-v2-tool-failure-012
+category: tool_failure
+modality: text
+tutor_mode: solve
+question: 查一下我的技能画像,看看我哪里薄弱。
+requirements:
+- 不编造画像内容
+- 明确告知失败
+- 建议稍后再试
+oracle:
+  answer_match:
+    mode: behavioral
+  behavioral_rules:
+  - rule: no_fabricated_profile
+    desc: 不得编造画像数据
+  - rule: acknowledge_failure
+    desc: 明确告知画像查询失败
+  - rule: offer_alternative
+    desc: 建议稍后再试或先做练习
+tool_failure_plan:
+  tool: skill_profile
+  failure: http_5xx
+  inject: {}
+critic_expectation:
+  verdict: warn
+  must_check:
+  - answered_question
+user_fixture: eval_standard_user
+ai_offline_case: true
