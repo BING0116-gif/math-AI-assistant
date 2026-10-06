@@ -54,6 +54,10 @@ data/*.db
 data/*.sqlite3
 logs/*.log
 
+# 根目录一次性调试日志与 API dump（曾随构建上下文被 COPY 进镜像）
+/*.txt
+/*_tmp.json
+
 # OS
 .DS_Store
 Thumbs.db
