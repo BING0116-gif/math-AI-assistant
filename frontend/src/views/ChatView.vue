@@ -108,6 +108,13 @@ onUnmounted(() => {
     cancelAnimationFrame(renderRafId)
     renderRafId = null
   }
+  // Track A 9.6：组件卸载时取消尚未触发的合并 flush 并丢弃排队事件，
+  // 避免卸载后定时器仍回调 store.updateMessage 与滚动
+  if (agentStepFlushTimer !== null) {
+    clearTimeout(agentStepFlushTimer)
+    agentStepFlushTimer = null
+  }
+  pendingAgentStepBatches.clear()
 })
 
 // ---- SSE 流式处理 ----
@@ -161,29 +168,64 @@ function processTyping(msgId: string) {
 }
 
 // SSE 事件处理（命名事件：follow_up / ask_student）
+// Track A 9.6:agent_step 高频事件按 50ms 窗口合并,统一 flush 进 store,
+// 长推导(>100 事件)不再逐条触发响应式更新与滚动
+const pendingAgentStepBatches = new Map<string, any[]>()
+let agentStepFlushTimer: number | null = null
+
+function queueAgentStep(data: any, messageId: string) {
+  const list = pendingAgentStepBatches.get(messageId) || []
+  list.push(data)
+  pendingAgentStepBatches.set(messageId, list)
+  if (agentStepFlushTimer === null) {
+    agentStepFlushTimer = window.setTimeout(flushAgentSteps, 50)
+  }
+}
+
+function applyAgentStep(steps: any[], data: any): any[] {
+  const next = [...steps]
+  if ((data.event_type === 'tool_end' || data.event_type === 'tool_error') && data.tool) {
+    const active = [...next].reverse().find(item => item.tool === data.tool && item.status === 'running')
+    if (active) active.status = data.event_type === 'tool_error' ? 'error' : 'done'
+  } else {
+    next.push({
+      type: data.event_type || 'thinking',
+      tool: data.tool || '',
+      label: data.message || '正在处理',
+      status: data.event_type === 'tool_start'
+        ? 'running'
+        : (data.event_type === 'tool_error' ? 'error' : 'done'),
+    })
+  }
+  return next
+}
+
+function flushAgentSteps() {
+  // 手动调用（如 handleDone）时同样取消已排的定时器，防止双重 flush 与定时器漂移
+  if (agentStepFlushTimer !== null) {
+    clearTimeout(agentStepFlushTimer)
+    agentStepFlushTimer = null
+  }
+  if (pendingAgentStepBatches.size === 0) return
+  const batches = new Map(pendingAgentStepBatches)
+  pendingAgentStepBatches.clear()
+  let touched = false
+  for (const [messageId, events] of batches) {
+    const message = store.currentMessages.find(item => item.id === messageId)
+    if (!message) continue
+    let steps = [...(message.agentSteps || [])]
+    for (const data of events) {
+      steps = applyAgentStep(steps, data)
+    }
+    store.updateMessage(store.currentChatId, messageId, { agentSteps: steps }, { persist: false })
+    touched = true
+  }
+  if (touched) nextTick(() => scrollToBottom())
+}
+
 function handleEvent(eventType: string, data: any, messageId?: string) {
   if (eventType === 'agent_step' && messageId) {
-    const message = store.currentMessages.find(item => item.id === messageId)
-    if (message) {
-      const steps = [...(message.agentSteps || [])]
-      if ((data.event_type === 'tool_end' || data.event_type === 'tool_error') && data.tool) {
-        const active = [...steps].reverse().find(item => item.tool === data.tool && item.status === 'running')
-        if (active) active.status = data.event_type === 'tool_error' ? 'error' : 'done'
-      } else {
-        steps.push({
-          type: data.event_type || 'thinking',
-          tool: data.tool || '',
-          label: data.message || '正在处理',
-          status: data.event_type === 'tool_start'
-            ? 'running'
-            : (data.event_type === 'tool_error' ? 'error' : 'done'),
-        })
-      }
-      // Agent 步骤是高频瞬态事件，只更新内存；最终 done 事件统一持久化，
-      // 避免每个工具状态都触发一次 localStorage 同步写入。
-      store.updateMessage(store.currentChatId, messageId, { agentSteps: steps }, { persist: false })
-      nextTick(() => scrollToBottom())
-    }
+    queueAgentStep(data, messageId)
     return
   }
   if (eventType === 'follow_up' && data.type === 'recommendation') {
@@ -303,6 +345,7 @@ async function streamAgentReply(
 
     const handleDone = (state: any = {}) => {
       if (state.disconnected) return
+      flushAgentSteps()
       streaming.value = false
       streamingMessageId.value = null
       activeStreamId.value = null
@@ -336,6 +379,8 @@ async function streamAgentReply(
             // 服务端淘汰过旧事件后要求整段重拉：清空本地缓冲，由重放内容重建消息
             typingBuffer = ''
             rawContentBuffer = ''
+            // Track A 9.6：同步丢弃该消息尚未 flush 的 agent_step 队列，避免旧事件在重置后回填
+            pendingAgentStepBatches.delete(msgId)
             store.updateMessage(chatId, msgId, { content: '', agentSteps: [] })
           }
           handleEvent(eventType, data, msgId)
