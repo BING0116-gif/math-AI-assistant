@@ -16,6 +16,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from model_quality_eval.dataset import DatasetValidationError, load_dataset, load_v2_case, load_v2_dataset
+from model_quality_eval.v2_runner import compare_v2_reports, run_mocked_v2
 from model_quality_eval.gates import load_gates
 from model_quality_eval.reporting import (
     apply_human_reviews,
@@ -126,6 +127,41 @@ def command_audit_v2(args) -> int:
         "model_quality_claim": False,
     }, ensure_ascii=False))
     return 0
+
+def command_run_v2(args) -> int:
+    bundle = load_v2_dataset(args.dataset)
+    selected = None
+    if args.case_id:
+        by_id = bundle.by_id
+        missing = [cid for cid in args.case_id if cid not in by_id]
+        if missing:
+            print(json.dumps({"status": "error", "error": f"unknown case ids: {missing}"}, ensure_ascii=False))
+            return 1
+        selected = [by_id[cid] for cid in args.case_id]
+    run_id = args.run_id or new_run_id(args.label)
+    report = run_mocked_v2(bundle, run_id=run_id, label=args.label, selected=selected)
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "v2_results.json", report)
+    print(json.dumps({
+        "run_id": run_id,
+        "mode": "mocked",
+        "dataset_hash": report["dataset_hash"],
+        "summary": report["summary"],
+        "output": str(output.resolve()),
+    }, ensure_ascii=False))
+    return 0
+
+
+def command_compare_v2(args) -> int:
+    baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+    candidate = json.loads(Path(args.candidate).read_text(encoding="utf-8"))
+    gates = load_gates(args.gates)
+    verdict = compare_v2_reports(baseline, candidate, gates)
+    print(json.dumps(verdict, ensure_ascii=False))
+    return 0 if verdict["status"] == "approved" else 2
+
+
 
 
 def command_run(args) -> int:
@@ -256,6 +292,20 @@ def build_parser() -> argparse.ArgumentParser:
     audit_v2 = subcommands.add_parser("audit-v2")
     audit_v2.add_argument("--dataset", required=True)
     audit_v2.set_defaults(handler=command_audit_v2)
+
+    run_v2 = subcommands.add_parser("run-v2", help="Deterministic mocked run over a v2 dataset (no model calls)")
+    run_v2.add_argument("--dataset", required=True)
+    run_v2.add_argument("--label", default="candidate")
+    run_v2.add_argument("--run-id")
+    run_v2.add_argument("--output", required=True)
+    run_v2.add_argument("--case-id", action="append")
+    run_v2.set_defaults(handler=command_run_v2)
+
+    compare_v2 = subcommands.add_parser("compare-v2", help="Gate verdict between two v2 mocked/live reports")
+    compare_v2.add_argument("--baseline", required=True)
+    compare_v2.add_argument("--candidate", required=True)
+    compare_v2.add_argument("--gates", required=True)
+    compare_v2.set_defaults(handler=command_compare_v2)
 
     run = subcommands.add_parser("run")
     run.add_argument("--dataset", required=True)

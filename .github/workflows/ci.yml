@@ -171,3 +171,32 @@ jobs:
 
       - name: Verify Docker image
         run: docker images math-ai-assistant
+
+  # 路线图 3.3.1:PR 打 run-eval 标签时跑 v2 mocked 全量回归(无模型调用)
+  v2-mocked-eval:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-eval')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run v2 mocked full regression
+        run: |
+          python -m scripts.model_quality_eval run-v2 \
+            --dataset evaluations/model_quality/v2 \
+            --label "pr-${{ github.event.number }}" \
+            --output /tmp/v2-pr
+      - name: Gate against baseline when present
+        run: |
+          if [ -f evaluations/model_quality/v2/baseline_results.json ]; then
+            python -m scripts.model_quality_eval compare-v2 \
+              --baseline evaluations/model_quality/v2/baseline_results.json \
+              --candidate /tmp/v2-pr/v2_results.json \
+              --gates evaluations/model_quality/v2/gates.yaml
+          else
+            echo "No v2 baseline yet; mocked report archived only (1-J pending)."
+          fi

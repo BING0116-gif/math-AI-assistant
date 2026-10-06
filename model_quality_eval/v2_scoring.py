@@ -139,6 +139,9 @@ def summarise_v2_scores(scores: list[V2CaseScore]) -> dict[str, Any]:
         "weighted_score": round(sum(item.weighted_score for item in scores) / count, 2) if count else None,
         "requirements_coverage": round(sum(item.requirements_coverage for item in scores) / count, 4) if count else None,
         "key_steps_hit_rate": round(sum(item.key_steps_hit_rate for item in scores) / count, 4) if count else None,
+        # 完整回答率与 requirements 覆盖率同口径(问题必答点覆盖),供
+        # observatory 门禁 complete_answer_target 消费
+        "complete_answer_rate": round(sum(item.requirements_coverage for item in scores) / count, 4) if count else None,
         "final_correctness": round(sum(item.final_correctness for item in scores) / count, 4) if count else None,
         "safety_pass_rate": round(sum(item.safety_passed for item in scores) / count, 4) if count else None,
         "hallucination_rate": round(sum(item.hallucination for item in scores) / count, 4) if count else None,

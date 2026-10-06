@@ -91,7 +91,9 @@ def answer_matches(response: str, expected: str, mode: str, tolerance: float | N
             wanted = sympy.sympify(_latex_to_sympy(expected))
             return bool(sympy.simplify(actual - wanted) == 0)
         except (sympy.SympifyError, TypeError, ValueError):
-            return False
+            # 无法符号化的记法(如 f''(c) 撇号导数):退化为答案片段的
+            # 归一化文本等值——仍是确定性判定,只是不做数学等价化简
+            return _normalise_text(_answer_fragment(response)) == _normalise_text(expected)
     if mode == "set":
         split = lambda text: {
             _normalise_text(part)
