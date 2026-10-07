@@ -12,7 +12,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream, cancelChatStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
-import { generateUUID } from '@/utils/helpers'
+import { generateUUID, chatErrorSourceId } from '@/utils/helpers'
 import { DEFAULT_TUTOR_MODE, TUTOR_MODES, normalizeTutorMode } from '@/utils/tutorModes'
 import { useAiCapability } from '@/composables/useAiCapability'
 
@@ -44,6 +44,7 @@ const tutorContext = {
 }
 
 const errorForm = reactive({
+  id: '',
   question: '',
   question_type: 'text',
   correct_answer: '',
@@ -55,6 +56,7 @@ const errorForm = reactive({
 })
 
 let currentErrorMsgId: string | null = null
+let currentErrorSourceKey = ''
 const availableTags = ['极限', '导数', '积分', '微分方程', '级数', '多元函数']
 
 // 监听滚动以决定是否自动滚底
@@ -74,6 +76,31 @@ watch(() => store.currentMessages.length, () => {
   nextTick(() => scrollToBottom())
 })
 
+// 回填“已加入错题本”徽章：loadServerChat 会把助手消息重置为 pending，
+// 这里用稳定来源键与已加载错题比对，避免刷新后“加入”按钮重现导致的重复入库风险。
+function reconcileErrorBookBadges() {
+  const chatId = store.currentChatId
+  if (!chatId) return
+  const addedKeys = new Set<string>(
+    (errorBookStore.errors || [])
+      .map((e: any) => e.id)
+      .filter((id: any) => typeof id === 'string' && (id as string).startsWith('chat:'))
+  )
+  if (!addedKeys.size) return
+  const msgs = store.currentMessages as any[]
+  for (let i = 1; i < msgs.length; i++) {
+    const m = msgs[i]
+    if (m.sender === 'ai' && !m.system && m.errorBookStatus !== 'added') {
+      const key = chatErrorSourceId(chatId, msgs[i - 1].content || '')
+      if (addedKeys.has(key)) store.setErrorBookStatus(chatId, m.id, 'added', key)
+    }
+  }
+}
+
+watch(() => store.currentChatId, () => {
+  nextTick(reconcileErrorBookBadges)
+})
+
 onMounted(async () => {
   await store.syncFromServer().catch(() => {})
   const chatId = route.params.chatId as string
@@ -88,6 +115,10 @@ onMounted(async () => {
   if (!route.query.tutor_mode) {
     tutorMode.value = normalizeTutorMode(store.currentChat?.defaultTutorMode)
   }
+
+  // 加载错题本以回填当前会话消息的“已加入”状态
+  await errorBookStore.loadErrors().catch(() => {})
+  reconcileErrorBookBadges()
 
   // 首页带问题进入：自动触发首次回答（文本走 query，图片走 store 暂存）
   const initQuery = typeof route.query.q === 'string' ? route.query.q.trim() : ''
@@ -609,6 +640,9 @@ function openErrorBookDialog(msgId: string) {
   }
 
   currentErrorMsgId = msgId
+  // 稳定来源键：会话 ID + 上一句用户问题，后端据此幂等去重、前端据此回填“已加入”
+  currentErrorSourceKey = chatErrorSourceId(store.currentChatId, userMsg.content || '')
+  errorForm.id = currentErrorSourceKey
   errorForm.question = userMsg.content || ''
   errorForm.question_type = (userMsg as any).type === 'image' ? 'image' : 'text'
   errorForm.correct_answer = errorBookStore.extractBestAnswer(aiMsg.content) || ''
@@ -647,7 +681,7 @@ async function confirmAddError() {
   }
   try {
     await errorBookStore.addError({ ...errorForm })
-    store.setErrorBookStatus(store.currentChatId, currentErrorMsgId!, 'added')
+    store.setErrorBookStatus(store.currentChatId, currentErrorMsgId!, 'added', currentErrorSourceKey)
     closeErrorModal()
     ElMessage.success('已成功加入错题本！')
   } catch (err: any) {
