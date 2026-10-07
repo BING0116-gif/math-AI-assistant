@@ -16,6 +16,10 @@ import { ElTabPane, ElTabs } from 'element-plus/es/components/tabs/index'
 import { ElTable, ElTableColumn } from 'element-plus/es/components/table/index'
 import { ElTag } from 'element-plus/es/components/tag/index'
 import { ElTimeline, ElTimelineItem } from 'element-plus/es/components/timeline/index'
+// v-loading 指令（Loading 组件的指令形态）：此前只注册了组件白名单、漏注册该指令，
+// 导致 ErrorBookView / AdminPapersView 等使用 v-loading 的加载态既不显示 spinner 又每次挂载抛
+// "[Vue warn]: Failed to resolve directive: loading"
+import { ElLoadingDirective } from 'element-plus/es/components/loading/index'
 
 import 'element-plus/theme-chalk/base.css'
 import 'element-plus/theme-chalk/el-alert.css'
@@ -27,6 +31,7 @@ import 'element-plus/theme-chalk/el-drawer.css'
 import 'element-plus/theme-chalk/el-input.css'
 import 'element-plus/theme-chalk/el-input-number.css'
 import 'element-plus/theme-chalk/el-link.css'
+import 'element-plus/theme-chalk/el-loading.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-option.css'
@@ -50,6 +55,7 @@ const components = [
 
 export function setElementPlusApp(app) {
   components.forEach((component) => app.component(component.name, component))
+  app.directive('loading', ElLoadingDirective)
 }
 
 export async function ensureElementPlus() {
