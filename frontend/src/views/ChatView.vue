@@ -10,9 +10,11 @@ import ModeGuardNotice from '@/components/chat/ModeGuardNotice.vue'
 import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
+import { useAuthStore } from '@/stores/authStore'
 import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream, cancelChatStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID, chatErrorSourceId } from '@/utils/helpers'
+import { markSkippedSourceId, clearSkippedSourceId, listSkippedSourceIds } from '@/utils/errorBookDismissals'
 import { DEFAULT_TUTOR_MODE, TUTOR_MODES, normalizeTutorMode } from '@/utils/tutorModes'
 import { useAiCapability } from '@/composables/useAiCapability'
 
@@ -20,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useChatStore()
 const errorBookStore = useErrorBookStore()
+const auth = useAuthStore()
 const { isAiAvailable, aiReason } = useAiCapability()
 
 const messagesRef = ref<HTMLElement | null>(null)
@@ -76,8 +79,16 @@ watch(() => store.currentMessages.length, () => {
   nextTick(() => scrollToBottom())
 })
 
-// 回填“已加入错题本”徽章：loadServerChat 会把助手消息重置为 pending，
-// 这里用稳定来源键与已加载错题比对，避免刷新后“加入”按钮重现导致的重复入库风险。
+// 为一条 AI 回答计算与“加入错题本”一致的稳定来源键（上一句用户问题 + 会话 ID）。
+function sourceKeyForAiMessage(msgId: string): string {
+  const msgs = store.currentMessages as any[]
+  const idx = msgs.findIndex((m: any) => m.id === msgId)
+  if (idx <= 0) return ''
+  return chatErrorSourceId(store.currentChatId, msgs[idx - 1]?.content || '')
+}
+
+// 回填助手消息的错题本徒章：loadServerChat 会把助手消息重置为 pending，
+// 这里用稳定来源键比对错题本（added）与本地跳过登记（skipped），added 优先。
 function reconcileErrorBookBadges() {
   const chatId = store.currentChatId
   if (!chatId) return
@@ -86,13 +97,15 @@ function reconcileErrorBookBadges() {
       .map((e: any) => e.id)
       .filter((id: any) => typeof id === 'string' && (id as string).startsWith('chat:'))
   )
-  if (!addedKeys.size) return
+  const skippedKeys = new Set<string>(listSkippedSourceIds(auth.userId))
+  if (!addedKeys.size && !skippedKeys.size) return
   const msgs = store.currentMessages as any[]
   for (let i = 1; i < msgs.length; i++) {
     const m = msgs[i]
     if (m.sender === 'ai' && !m.system && m.errorBookStatus !== 'added') {
       const key = chatErrorSourceId(chatId, msgs[i - 1].content || '')
       if (addedKeys.has(key)) store.setErrorBookStatus(chatId, m.id, 'added', key)
+      else if (m.errorBookStatus === 'pending' && skippedKeys.has(key)) store.setErrorBookStatus(chatId, m.id, 'skipped')
     }
   }
 }
@@ -682,6 +695,7 @@ async function confirmAddError() {
   try {
     await errorBookStore.addError({ ...errorForm })
     store.setErrorBookStatus(store.currentChatId, currentErrorMsgId!, 'added', currentErrorSourceKey)
+    clearSkippedSourceId(auth.userId, currentErrorSourceKey)
     closeErrorModal()
     ElMessage.success('已成功加入错题本！')
   } catch (err: any) {
@@ -692,6 +706,8 @@ async function confirmAddError() {
 
 function handleSkip(msgId: string) {
   store.setErrorBookStatus(store.currentChatId, msgId, 'skipped')
+  const key = sourceKeyForAiMessage(msgId)
+  if (key) markSkippedSourceId(auth.userId, key)
 }
 </script>
 
