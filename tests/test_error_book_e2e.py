@@ -311,6 +311,30 @@ class TestChatSourceIdempotency(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_concurrent_same_source_id_yields_single_row(self):
+        # 端到端并发证据：同一瞬间并发发起 N 个相同 chat:<hash> 的 add()。
+        # 无论各请求走“SELECT 预检查命中”还是“越过预检查撞唯一索引后
+        # IntegrityError 优雅回退”，最终结果都必须一致：库里仅 1 行、
+        # 无异常冒泡（不会 500）、全部返回同一稳定 id。
+        stable = "chat:" + uuid.uuid4().hex[:12]
+
+        async def _one(idx: int):
+            return await self.manager.add(self.user_id, ErrorItem(
+                id=stable, question=f"并发双发 #{idx}",
+                question_type="text", correct_answer="1",
+            ))
+
+        async def _run():
+            return await asyncio.gather(*(_one(i) for i in range(8)))
+
+        results = asyncio.run(_run())
+        # 无异常冒泡，且全部返回同一稳定 id
+        self.assertEqual(set(results), {stable})
+        # 库里该来源键只有 1 行（幂等 + 唯一索引双保险）
+        items = [i for i in asyncio.run(self.manager.get_all(self.user_id))
+                 if i.id == stable]
+        self.assertEqual(len(items), 1)
+
 
 if __name__ == '__main__':
     if sys.platform == 'win32':
