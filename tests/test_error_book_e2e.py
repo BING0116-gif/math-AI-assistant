@@ -12,6 +12,7 @@ import os
 import re
 import tempfile
 import shutil
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -252,6 +253,43 @@ $$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$
             self.assertIn("详细解析内容", loaded.correct_answer)
         finally:
             shutil.rmtree(test_dir)
+
+
+class TestChatSourceIdempotency(unittest.TestCase):
+    """聊天来源稳定 item_id 的幂等去重（防刷新后重复入库）。"""
+
+    def setUp(self):
+        # 独立注册用户，与同模块共享 DB 的其他用例隔离
+        from app.middleware.auth import register_user
+        username = f"dup_{uuid.uuid4().hex[:8]}"
+        user = asyncio.run(register_user(username, "test_password"))
+        self.user_id = user.id
+        self.manager = ErrorBookManager()
+
+    def test_add_with_stable_id_is_idempotent(self):
+        stable_id = "chat:" + uuid.uuid4().hex[:12]
+        first = asyncio.run(self.manager.add(self.user_id, ErrorItem(
+            id=stable_id, question="求极限 lim x->0 sin x / x",
+            question_type="text", correct_answer="1", error_reason="概念不清",
+        )))
+        second = asyncio.run(self.manager.add(self.user_id, ErrorItem(
+            id=stable_id, question="同一个问题重新加入",
+            question_type="text", correct_answer="1",
+        )))
+        self.assertEqual(first, second)
+        items = [i for i in asyncio.run(self.manager.get_all(self.user_id)) if i.id == stable_id]
+        self.assertEqual(len(items), 1)
+        # 幂等保留首次入库内容，第二次不覆盖
+        self.assertEqual(items[0].question, "求极限 lim x->0 sin x / x")
+
+    def test_empty_id_still_creates_distinct_rows(self):
+        # 空 ID（手动/其他来源）仍逐条新增，行为不变
+        a = asyncio.run(self.manager.add(self.user_id, ErrorItem(
+            id="", question="题 A", question_type="text", correct_answer="x")))
+        b = asyncio.run(self.manager.add(self.user_id, ErrorItem(
+            id="", question="题 B", question_type="text", correct_answer="y")))
+        self.assertNotEqual(a, b)
+        self.assertEqual(len(asyncio.run(self.manager.get_all(self.user_id))), 2)
 
 
 if __name__ == '__main__':

@@ -118,11 +118,26 @@ class ErrorBookManager:
     # ------------------------------------------------------------------
 
     async def add(self, user_id: str, item: ErrorItem) -> str:
-        """添加错题（异步）"""
+        """添加错题（异步）。
+
+        幂等：当调用方提供了稳定 ``item.id``（聊天来源错题使用
+        ``chat:<hash>``）且该用户下已存在同 ``item_id`` 时，直接返回已有 ID，
+        不再插入，避免刷新后重复入库。空 ID（手动/其他来源）仍走 uuid 生成，
+        行为不变。
+        """
         if not item.id:
             item.id = str(uuid.uuid4())[:8]
 
         async with get_db_session() as db:
+            existing = await db.scalar(
+                select(ErrorItemModel.id).where(
+                    ErrorItemModel.user_id == user_id,
+                    ErrorItemModel.item_id == item.id,
+                )
+            )
+            if existing is not None:
+                return item.id
+
             db_item = ErrorItemModel(
                 user_id=user_id,
                 item_id=item.id,
