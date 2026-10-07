@@ -9,7 +9,13 @@ class MiddlewareConfig(BaseSettings):
     RATE_LIMIT_MAX_REQUESTS: int = Field(default=30, alias="RATE_LIMIT_PER_MINUTE")
 
     RATE_LIMIT_SKIP_PATHS: Set[str] = Field(
-        default={"/api/admin/"},
+        default={
+            "/api/admin/",
+            # 心跳/轮询类高频请求：多标签页挂后台时会把全局限流预算吃光，
+            # 导致真实页面加载被 429 误伤，故豁免。
+            "/api/learning/activities/",  # 学习活动心跳/结束（POST .../{id}/heartbeat、/end）
+            "/api/animations/jobs/",      # 动画任务状态轮询（前端每 2.5s 一次）
+        },
         alias="RATE_LIMIT_SKIP_PATHS",
     )
 

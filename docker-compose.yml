@@ -25,6 +25,9 @@ services:
       # 不显式透传 → 容器内为空 → 回退默认 "mock"，UI 顶部会显示「AI：mock」。
       - CONTENT_AI_PROVIDER=${CONTENT_AI_PROVIDER:-mock}
       - DEBUG=${DEBUG:-false}
+      # compose environment 是严格白名单：不透传则容器内用代码默认值 30，
+      # .env 里改 RATE_LIMIT_PER_MINUTE 不会生效。
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-300}
       - APP_ENV=${APP_ENV:-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
