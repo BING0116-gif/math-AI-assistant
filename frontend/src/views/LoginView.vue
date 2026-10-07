@@ -94,7 +94,7 @@ async function submit() {
       <div class="card-logo"><Sparkles :size="18" /></div>
       <h1 id="login-heading" class="card-title">{{ isLogin ? '登录你的学习账号' : '创建一个学习账号' }}</h1>
       <p class="card-sub">{{ isLogin ? '继续你的数学学习之旅' : '注册后即可保存自己的学习进度' }}</p>
-      <p v-if="isLogin" class="role-hint">系统将按账号角色进入学生端或管理员工作台</p>
+      <p class="role-hint" :class="{ 'role-hint--hidden': !isLogin }">系统将按账号角色进入学生端或管理员工作台</p>
 
       <div class="mode-tabs" role="tablist" aria-label="登录或注册">
         <span class="tab-indicator" :class="{ register: !isLogin }" aria-hidden="true"></span>
@@ -274,6 +274,9 @@ async function submit() {
 .card-title { margin: 16px 0 0; text-align: center; color: rgba(255, 255, 255, .94); font-family: var(--font-disp); font-size: 19px; font-weight: 600; letter-spacing: .01em; }
 .card-sub { margin: 7px 0 0; text-align: center; color: rgba(255, 255, 255, .52); font-size: 13px; }
 .role-hint { margin: 6px 0 0; text-align: center; color: rgba(250, 199, 117, .65); font-size: 11.5px; }
+/* 始终占位、仅切换可见性:避免登录⇄注册时 v-if 移除该行导致卡片高度跳变(~12px)而上下抖动;
+   visibility:hidden 会同时移出无障碍树,注册态不会朗读此登录专用提示 */
+.role-hint--hidden { visibility: hidden; }
 
 .mode-tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 22px; padding: 4px; border-radius: 12px; background: rgba(255, 255, 255, .09); }
 .tab-indicator { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 6px); border-radius: 9px; background: rgba(255, 255, 255, .92); transition: transform .25s cubic-bezier(.22, 1, .36, 1); }
