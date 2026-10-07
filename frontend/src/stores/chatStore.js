@@ -14,6 +14,7 @@ function createWelcomeMessage() {
     sender: 'ai',
     timestamp: new Date().toLocaleString(),
     type: 'text',
+    system: true, // 系统欢迎语，不应被加入错题本
     errorBookStatus: 'pending',
     errorBookId: null
   }

@@ -48,8 +48,8 @@
           <span>{{ criticLabel }}</span>
         </div>
 
-        <!-- 消息操作 — 默认弱化,hover 显示(原型 .msg-meta) -->
-        <div v-if="!isStreaming" class="msg-actions">
+        <!-- 消息操作 — 默认弱化,hover 显示(原型 .msg-meta);系统欢迎语不可加入错题本 -->
+        <div v-if="!isStreaming && !message.system" class="msg-actions">
           <template v-if="message.errorBookStatus === 'added'">
             <button class="msg-action-btn msg-action-btn--done" disabled>已加入错题本</button>
           </template>
