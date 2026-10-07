@@ -598,7 +598,41 @@ function handleClear() {
 }
 
 function openErrorBookDialog(msgId: string) {
-  // ... 保持原有错题本逻辑
+  const messages = store.currentMessages
+  const msgIdx = messages.findIndex((m: any) => m.id === msgId)
+  const aiMsg = messages[msgIdx]
+  const userMsg = messages[msgIdx - 1]
+
+  if (!aiMsg || !userMsg) {
+    ElMessage.error('未找到对应的问题')
+    return
+  }
+
+  currentErrorMsgId = msgId
+  errorForm.question = userMsg.content || ''
+  errorForm.question_type = (userMsg as any).type === 'image' ? 'image' : 'text'
+  errorForm.correct_answer = errorBookStore.extractBestAnswer(aiMsg.content) || ''
+  errorForm.error_reason = ''
+  errorForm.categories = []
+  errorForm.notes = ''
+
+  showErrorModal.value = true
+  nextTick(() => reasonInput.value?.focus())
+}
+
+function toggleTag(tag: string) {
+  const idx = errorForm.categories.indexOf(tag)
+  if (idx === -1) errorForm.categories.push(tag)
+  else errorForm.categories.splice(idx, 1)
+}
+
+function handleImgError(e: Event) {
+  const target = e.target as HTMLElement
+  target.style.display = 'none'
+  const fallback = target.nextElementSibling as HTMLElement | null
+  if (fallback && fallback.classList.contains('img-fallback')) {
+    fallback.style.display = 'block'
+  }
 }
 
 function closeErrorModal() {
@@ -704,6 +738,63 @@ function handleSkip(msgId: string) {
         />
       </div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="showErrorModal" class="modal-backdrop" @click.self="closeErrorModal">
+        <div class="error-modal-dialog" role="dialog" aria-modal="true" aria-label="添加到错题本">
+          <h3>添加到错题本</h3>
+
+          <div class="form-group">
+            <label>题目预览</label>
+            <div class="preview-box">
+              <img
+                v-if="errorForm.question_type === 'image'"
+                :src="errorForm.question"
+                class="preview-img"
+                @error="handleImgError"
+              />
+              <img v-else class="preview-img img-fallback" style="display:none" alt="" />
+              <div class="preview-text">{{ errorForm.question?.substring(0, 200) }}{{ (errorForm.question?.length || 0) > 200 ? '...' : '' }}</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>错误原因 <span class="required">*</span></label>
+            <textarea
+              v-model="errorForm.error_reason"
+              placeholder="请描述错误原因（如：忘记公式、计算错误、概念不清等）..."
+              rows="3"
+              ref="reasonInput"
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>分类标签</label>
+            <div class="tag-grid">
+              <button
+                v-for="tag in availableTags"
+                :key="tag"
+                class="tag-btn"
+                :class="{ selected: errorForm.categories.includes(tag) }"
+                @click="toggleTag(tag)"
+              >
+                {{ tag }}
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>笔记（可选）</label>
+            <textarea v-model="errorForm.notes" placeholder="补充说明或解题技巧..." rows="2"></textarea>
+          </div>
+
+          <div class="modal-buttons">
+            <button class="btn-cancel" @click="closeErrorModal">取消</button>
+            <button class="btn-confirm" @click="confirmAddError">确认添加</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </AppShell>
 </template>
 
@@ -840,6 +931,189 @@ function handleSkip(msgId: string) {
   }
   .msg-user-wrap {
     max-width: 92%;
+  }
+}
+
+/* 错题本弹窗 — 适配 V4 tokens */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: errModalFadeIn 0.25s ease;
+}
+
+@keyframes errModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.error-modal-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: var(--space-8);
+  max-width: 540px;
+  width: 94%;
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-3);
+  animation: errModalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes errModalIn {
+  from { opacity: 0; transform: scale(0.94) translateY(18px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.error-modal-dialog h3 {
+  font-size: var(--type-xl);
+  margin-bottom: var(--space-5);
+  color: var(--ink-1);
+  font-weight: 700;
+}
+
+.form-group {
+  margin-bottom: var(--space-5);
+}
+
+.form-group label {
+  display: block;
+  font-size: var(--type-sm);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  color: var(--ink-1);
+}
+
+.form-group .required { color: var(--rose); }
+
+.form-group textarea {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-m);
+  font-size: var(--type-md);
+  font-family: inherit;
+  line-height: var(--line-height-base);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: var(--surface-2);
+  color: var(--ink-1);
+}
+
+.form-group textarea:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--brand-soft);
+  background: var(--surface);
+}
+
+.form-group textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.preview-box {
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border-radius: var(--r-m);
+  min-height: 50px;
+  border: 1px solid var(--border);
+}
+
+.preview-img {
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: var(--r-s);
+  margin-bottom: var(--space-2);
+  box-shadow: var(--shadow-1);
+}
+
+.preview-text {
+  font-size: var(--type-md);
+  color: var(--ink-2);
+  line-height: var(--line-height-base);
+  word-break: break-word;
+}
+
+.tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tag-btn {
+  padding: 6px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: var(--type-sm);
+  color: var(--ink-2);
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.tag-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand-text);
+  background: var(--brand-soft);
+}
+
+.tag-btn.selected {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  font-weight: 600;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  justify-content: flex-end;
+}
+
+.modal-buttons button {
+  padding: 9px 24px;
+  border-radius: var(--r-pill);
+  font-size: var(--type-md);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn-cancel {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+}
+
+.btn-cancel:hover {
+  background: var(--surface);
+  color: var(--ink-1);
+  border-color: var(--border-strong);
+}
+
+.btn-confirm {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--glow);
+}
+
+.btn-confirm:hover {
+  background: var(--accent-strong);
+}
+
+.btn-confirm:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 768px) {
+  .error-modal-dialog {
+    padding: var(--space-5);
   }
 }
 </style>
