@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from sqlalchemy import select, delete, update as sa_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.database import get_db_session
@@ -123,7 +124,8 @@ class ErrorBookManager:
         幂等：当调用方提供了稳定 ``item.id``（聊天来源错题使用
         ``chat:<hash>``）且该用户下已存在同 ``item_id`` 时，直接返回已有 ID，
         不再插入，避免刷新后重复入库。空 ID（手动/其他来源）仍走 uuid 生成，
-        行为不变。
+        行为不变。真并发下预检查漏判时，DB 唯一索引 ``(user_id, item_id)`` 会
+        拒绝第二条；本方法捕获 ``IntegrityError`` 并回退为“已存在”，不抛 500。
         """
         if not item.id:
             item.id = str(uuid.uuid4())[:8]
@@ -161,7 +163,12 @@ class ErrorBookManager:
                 last_attempt_id=item.last_attempt_id,
             )
             db.add(db_item)
-            await db.flush()  # 让数据库生成 id，但不提交（get_db_session 会提交）
+            try:
+                await db.flush()  # 让数据库生成 id，但不提交（get_db_session 会提交）
+            except IntegrityError:
+                # 并发双发命中 (user_id, item_id) 唯一索引：视为已存在，优雅回退
+                await db.rollback()
+                return item.id
         return item.id
 
     async def remove(self, user_id: str, item_id: str) -> bool:

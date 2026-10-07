@@ -291,6 +291,26 @@ class TestChatSourceIdempotency(unittest.TestCase):
         self.assertNotEqual(a, b)
         self.assertEqual(len(asyncio.run(self.manager.get_all(self.user_id))), 2)
 
+    def test_unique_index_rejects_duplicate_user_item_id(self):
+        # 并发防护边界：绕过应用层预检查，DB 唯一索引 (user_id, item_id)
+        # 必须拒绝第二条，否则“刷新后并发双发”会重复入库。
+        from app.data.database import async_session_factory
+        from app.data.models import ErrorItem as ErrorItemModel
+        from sqlalchemy.exc import IntegrityError
+
+        stable = "chat:" + uuid.uuid4().hex[:12]
+
+        async def _run():
+            async with async_session_factory() as s:
+                s.add(ErrorItemModel(user_id=self.user_id, item_id=stable, question="q1"))
+                await s.commit()
+            async with async_session_factory() as s:
+                s.add(ErrorItemModel(user_id=self.user_id, item_id=stable, question="q2"))
+                with self.assertRaises(IntegrityError):
+                    await s.commit()
+
+        asyncio.run(_run())
+
 
 if __name__ == '__main__':
     if sys.platform == 'win32':
