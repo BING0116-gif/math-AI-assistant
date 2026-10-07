@@ -66,17 +66,20 @@ async function submit() {
 
 <template>
   <main class="login-page">
-    <!-- 暖夜背景：点阵 + 橙色光晕 + 翠青压阵 -->
-    <div class="bg-dots" aria-hidden="true"></div>
-    <div class="glow glow--orange" aria-hidden="true"></div>
-    <div class="glow glow--amber" aria-hidden="true"></div>
-    <div class="glow glow--emerald" aria-hidden="true"></div>
-    <div class="ring ring--one" aria-hidden="true"></div>
-    <div class="ring ring--two" aria-hidden="true"></div>
-    <div class="ring ring--three" aria-hidden="true"></div>
-    <span class="math-sym math-sym--sum" aria-hidden="true">∑</span>
-    <span class="math-sym math-sym--pi" aria-hidden="true">π</span>
-    <span class="math-sym math-sym--int" aria-hidden="true">∫</span>
+    <!-- 暖夜背景：点阵 + 橙色光晕 + 翠青压阵。装饰单独成层并 overflow:hidden,
+         避免百分比外溢(bottom:-24% 等)撑高 .login-page 的 scrollHeight,导致正常视口常显滚动条、卡片偏心 -->
+    <div class="bg-layer" aria-hidden="true">
+      <div class="bg-dots"></div>
+      <div class="glow glow--orange"></div>
+      <div class="glow glow--amber"></div>
+      <div class="glow glow--emerald"></div>
+      <div class="ring ring--one"></div>
+      <div class="ring ring--two"></div>
+      <div class="ring ring--three"></div>
+      <span class="math-sym math-sym--sum">∑</span>
+      <span class="math-sym math-sym--pi">π</span>
+      <span class="math-sym math-sym--int">∫</span>
+    </div>
 
     <header class="page-bar">
       <RouterLink class="brand" to="/" aria-label="返回数学 AI 助手首页">
@@ -134,13 +137,27 @@ async function submit() {
 /* 暖夜玻璃态：近黑暖底 + 橙色光晕 + 磨砂悬浮卡片（固定暗色氛围，不受主题切换影响） */
 .login-page {
   position: relative;
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: clamp(72px, 10vh, 96px) 20px 56px;
-  overflow: hidden;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 矮视口(高度≤~606px,如横屏手机/被拖矮的窗口)修复:顶栏/底栏改为常规流;容器高度固定为视口、
+     作为唯一滚动容器(避免与 #app 形成双滚动条)。卡片 margin:auto 在剩余空间居中,空间不足时塌缩为 0 并可滚动,
+     不再与顶/底栏重叠或把内容裁到折线外。装饰层已移入 .bg-layer 单独裁剪,故纵向只在内容真正超高时才滚动 */
+  overflow-x: hidden;
+  overflow-y: auto;
   isolation: isolate;
   background: #131008;
+}
+
+/* 装饰背景层:独立绝对定位并自身 overflow:hidden,把百分比外溢的光晕/环/符号裁在本层内,
+   使其不再计入 .login-page 的可滚动溢出高度(修复正常视口常显 10px 滚动条 + 卡片偏心) */
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* ---- 背景层 ---- */
@@ -209,17 +226,17 @@ async function submit() {
 
 /* ---- 顶栏与底栏 ---- */
 .page-bar, .page-footer {
-  position: absolute;
+  position: relative;
   z-index: 1;
-  left: 0;
-  right: 0;
+  flex: 0 0 auto;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 clamp(20px, 4vw, 44px);
 }
-.page-bar { top: 0; height: 68px; }
-.page-footer { bottom: 0; height: 52px; color: rgba(244, 239, 230, .38); font-size: 12px; }
+.page-bar { height: 68px; }
+.page-footer { height: 52px; color: rgba(244, 239, 230, .38); font-size: 12px; }
 .brand { display: inline-flex; align-items: center; gap: 9px; color: #FAC775; font-family: var(--font-disp); font-size: 14px; font-weight: 600; text-decoration: none; letter-spacing: .02em; }
 .brand-mark { width: 28px; height: 28px; display: inline-grid; place-items: center; border-radius: 9px; color: #fff; background: var(--accent); }
 .bar-note { color: rgba(244, 239, 230, .38); font-size: 12px; }
@@ -229,7 +246,9 @@ async function submit() {
 .glass-card {
   position: relative;
   z-index: 1;
-  width: min(100%, 400px);
+  flex: 0 0 auto;
+  margin: auto;
+  width: min(100% - 40px, 400px);
   padding: 34px 32px 26px;
   border-radius: 20px;
   background: rgba(255, 255, 255, .07);
@@ -324,8 +343,7 @@ async function submit() {
 @keyframes sym-float { from { transform: translateY(-6px); } to { transform: translateY(8px); } }
 
 @media (max-width: 560px) {
-  .login-page { padding: 64px 16px 48px; }
-  .glass-card { padding: 28px 22px 22px; }
+  .glass-card { padding: 28px 22px 22px; width: min(100% - 32px, 400px); }
   .ring--two, .math-sym--int { display: none; }
   .bar-note { display: none; }
 }
