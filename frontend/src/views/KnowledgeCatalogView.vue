@@ -312,6 +312,13 @@ const relatedErrors = computed(() => {
     .slice(0, 3)
 })
 
+// ?point= 历史上只接受 pointId；提醒中心的到期项只带 knowledge_point_code，
+// 因此这里同时接受 code（旧链接行为不变，解析后一律归一为 id）。
+function findPoint(ref) {
+  if (!ref) return null
+  return allPoints.value.find(point => point.id === ref) || allPoints.value.find(point => point.code === ref) || null
+}
+
 async function loadCatalog() {
   loading.value = true; error.value = ''; requiresAuth.value = false
   try {
@@ -319,7 +326,7 @@ async function loadCatalog() {
     if (!data.courses?.length) throw new Error('暂时没有可学习的已发布课程。')
     const courseId = data.courses[0].id
     tree.value = (await getCourseTree(courseId)).data
-    const requestedPoint = allPoints.value.find(point => point.id === route.query.point)
+    const requestedPoint = findPoint(route.query.point)
     activeChapterId.value = requestedPoint?.chapterId || (chapterList.value.some(chapter => chapter.id === route.query.chapter) ? route.query.chapter : chapterList.value[0]?.id || '')
     await loadLearningMap(courseId)
     const recommended = allPoints.value.find(point => point.id === learningMap.value?.primary_recommendation?.knowledge_point_id)
@@ -363,8 +370,9 @@ function selectChapter(chapterId, { updateRoute = true } = {}) {
   if (updateRoute) router.push({ query: { ...route.query, chapter: chapterId, point: undefined } })
 }
 
-async function selectPoint(id, { updateRoute = true } = {}) {
-  const summary = allPoints.value.find(point => point.id === id)
+async function selectPoint(ref, { updateRoute = true } = {}) {
+  const summary = findPoint(ref)
+  const id = summary?.id || ref
   if (summary?.chapterId) activeChapterId.value = summary.chapterId
   selectedBranch.value = null
   pointLoading.value = true
@@ -387,7 +395,7 @@ async function selectPoint(id, { updateRoute = true } = {}) {
 
 watch(() => [route.query.chapter, route.query.point], async ([chapterId, pointId]) => {
   if (!tree.value) return
-  if (pointId && pointId !== selectedPoint.value?.id) {
+  if (pointId && findPoint(pointId)?.id !== selectedPoint.value?.id) {
     await selectPoint(pointId, { updateRoute: false })
   } else if (!pointId) {
     selectedPoint.value = null

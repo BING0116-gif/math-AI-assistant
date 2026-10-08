@@ -7,6 +7,7 @@ import AppShell from '@/components/shell/AppShell.vue'
 import AgentComposer from '@/components/conversation/AgentComposer.vue'
 import { useAiCapability } from '@/composables/useAiCapability'
 import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
+import { useReminderPolling } from '@/composables/useReminderPolling'
 import { Sparkles, ChevronRight, BookOpen, Route } from 'lucide-vue-next'
 import { nowIso, parseTimestamp } from '@/utils/dateTime'
 
@@ -14,6 +15,8 @@ const router = useRouter()
 const chatStore = useChatStore()
 const errorBookStore = useErrorBookStore()
 const { isAiAvailable, aiReason } = useAiCapability()
+// 首页是提醒中心的两个拉取入口之一（另一个是 /dashboard）：挂载后一次 + 每 5 分钟。
+useReminderPolling()
 
 const todayStats = computed(() => {
   const today = new Date()

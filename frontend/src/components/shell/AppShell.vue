@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useLearningActivity } from '@/composables/useLearningActivity'
+import ReminderBell from '@/components/shell/ReminderBell.vue'
 import {
   Plus, Search, LayoutDashboard, UserRound, Network, FileText, Target, BookX,
   PanelLeftClose, PanelLeftOpen, Sun, Moon, Menu, X, Trash2, ShieldCheck,
@@ -266,6 +267,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <slot name="topbar-title" />
         </div>
         <div class="topbar__actions">
+          <!-- 铃铛角标用服务端 counts（overdue + today），不读本地错题缓存；
+               数据只在首页/看板轮询，本组件自身不触发周期拉取。 -->
+          <ReminderBell />
           <slot name="topbar-actions" />
         </div>
       </header>

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.api.student_contracts import STUDENT_API_RESPONSES
 from app.services.learning_activity import ActivityError, end_activity, heartbeat_activity, start_activity
 from app.services.learning_hub import LearningHubError, complete_review, defer_review, due_reviews, today_hub, unified_dashboard, unified_profile
+from app.services.reminders import build_reminders
 
 router = APIRouter(prefix="/api/learning", tags=["学习闭环"])
 
@@ -84,6 +85,51 @@ class TodayHubResponse(BaseModel):
     alternatives: list[TodayTask]
 
 
+class ReminderCounts(BaseModel):
+    """角标数据源：badge 用 overdue + today（需要现在处理的），upcoming 只做预览。"""
+
+    overdue: int
+    today: int
+    upcoming: int
+    total: int
+
+
+class ReminderAction(BaseModel):
+    route: str
+    query: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReminderItem(BaseModel):
+    key: str
+    kind: Literal["review_schedule", "error_review"]
+    bucket: Literal["overdue", "today", "upcoming"]
+    source: Literal["knowledge_point", "error_item"]
+    # 只有知识点级排期能被 defer；错题级排期无 deferred_until 字段（见 can_defer）。
+    schedule_id: int | None = None
+    error_item_id: str | None = None
+    question_id: str | None = None
+    knowledge_point_code: str
+    knowledge_point_name: str
+    due_at: datetime | None = None
+    overdue_minutes: int = 0
+    title: str
+    hint: str
+    interval_days: int | None = None
+    review_count: int | None = None
+    algorithm_version: str = ""
+    action: ReminderAction | None = None
+    can_defer: bool = False
+    defer_disabled_reason: str | None = None
+
+
+class RemindersResponse(BaseModel):
+    generated_at: datetime
+    version: str
+    counts: ReminderCounts
+    items: list[ReminderItem]
+    primary: TodayTask | None = None
+
+
 class LearningDashboardResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -143,6 +189,12 @@ async def post_action(request: Request, schedule_id: int, body: ReviewActionRequ
 @router.get("/today", response_model=TodayHubResponse, responses=STUDENT_API_RESPONSES)
 async def get_today(request: Request, limit: int = Query(5, ge=1, le=10)):
     return await today_hub(_user(request), limit=limit)
+
+@router.get("/reminders", response_model=RemindersResponse, responses=STUDENT_API_RESPONSES)
+async def get_reminders(request: Request, limit: int = Query(50, ge=1, le=100)):
+    # 与 get_due / get_today 同口径：user_id 只能来自认证中间件写入的 request.state，
+    # 提醒是派生视图，同样不得让客户端指定要看哪个用户的到期项。
+    return await build_reminders(_user(request), limit=limit)
 
 @router.get("/dashboard", response_model=LearningDashboardResponse, responses=STUDENT_API_RESPONSES)
 async def get_dashboard(request: Request, period: Literal["7d", "30d", "90d"] = "7d"):

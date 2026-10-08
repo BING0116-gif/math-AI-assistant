@@ -9,6 +9,7 @@ import { apiErrorMessage } from '@/utils/apiError'
 import { useDashboardMetrics } from '@/composables/useDashboardMetrics'
 import { chartAnimation, chartVar, useChartTheme } from '@/composables/useChartTheme'
 import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
+import { useReminderPolling } from '@/composables/useReminderPolling'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import {
   BookX, Check, CircleCheck, Clock, Crosshair, Play, Sparkles, Target, TrendingDown, Zap, ArrowUpRight,
@@ -16,6 +17,8 @@ import {
 
 const router = useRouter()
 const errorBookStore = useErrorBookStore()
+// 学习看板是提醒中心的两个拉取入口之一（另一个是首页）：挂载后一次 + 每 5 分钟。
+useReminderPolling()
 
 const learningDashboard = ref<any>(null)
 const learningError = ref('')
