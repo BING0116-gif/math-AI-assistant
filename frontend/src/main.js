@@ -36,9 +36,12 @@ app.use(pinia)
 // 初始化 auth store 并恢复会话;为 API 客户端注入统一的 token getter
 import { useAuthStore } from '@/stores/authStore'
 import { setAuthTokenGetter } from '@/api'
+import { setScopedOwnerGetter } from '@/utils/scopedStorage'
 
 const authStore = useAuthStore()
 setAuthTokenGetter(() => authStore.getAccessToken())
+// 用户态本地缓存分桶需要归属账号：与 token getter 同一手法注入，避免 util 反向 import store
+setScopedOwnerGetter(() => authStore.userId)
 authStore.restoreSession()
 if (authStore.isAuthenticated) {
   void authStore.syncCurrentUser()

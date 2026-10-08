@@ -1,13 +1,17 @@
 import { defineStore } from 'pinia'
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { generateUUID } from '@/utils/helpers'
-import { loadFromStorage, saveToStorage } from '@/utils/storage'
+import { SCOPED_KEYS, ANON_OWNER, currentOwner, loadScoped, saveScoped } from '@/utils/scopedStorage'
 import * as errorBookApi from '@/api/errorBook'
+import { useAuthStore } from '@/stores/authStore'
 
-const STORAGE_KEY = 'math_ai_error_book'
+const STORAGE_KEY = SCOPED_KEYS.errorBook
 
 export const useErrorBookStore = defineStore('errorBook', () => {
-  const errors = ref(loadFromStorage(STORAGE_KEY, []))
+  const auth = useAuthStore()
+  // 错题本地副本含题目原文、答案与错因，必须绑定归属账号；真值在服务端
+  const owner = ref(currentOwner())
+  const errors = ref(loadScoped(STORAGE_KEY, [], owner.value))
   const loading = ref(false)
   const lastError = ref('')
   const currentDetailId = ref(null)
@@ -66,10 +70,30 @@ export const useErrorBookStore = defineStore('errorBook', () => {
   )
 
   function persist() {
-    saveToStorage(STORAGE_KEY, errors.value)
+    // 与 chatStore 同口径：anon 不是账号，未登录态不写任何本地缓存
+    if (owner.value === ANON_OWNER) return
+    saveScoped(STORAGE_KEY, errors.value, owner.value)
   }
 
+  /**
+   * 账号变了就整桶换掉：先锁定新 owner，再加载新账号自己的副本，并清掉上一账号的
+   * 选中项与筛选条件（筛选词可能本身就包含别人的题目文本）。未登录则直接清空。
+   */
+  function ensureOwner() {
+    const next = currentOwner()
+    if (next === owner.value) return
+    owner.value = next
+    errors.value = next === ANON_OWNER ? [] : loadScoped(STORAGE_KEY, [], next)
+    currentDetailId.value = null
+    resetFilter()
+    lastError.value = ''
+  }
+
+  // 同页内登录 / 登出 / 切号：侧标计数与列表立刻换桶，不等到下一次写入
+  watch(() => auth.userId, () => ensureOwner())
+
   async function loadErrors() {
+    ensureOwner()
     loading.value = true
     lastError.value = ''
     try {
@@ -87,6 +111,7 @@ export const useErrorBookStore = defineStore('errorBook', () => {
   }
 
   async function addError(errorData) {
+    ensureOwner()
     lastError.value = ''
     const response = await errorBookApi.addErrorBook(errorData)
     const data = response.data
@@ -102,6 +127,7 @@ export const useErrorBookStore = defineStore('errorBook', () => {
   }
 
   async function updateError(errorId, updates) {
+    ensureOwner()
     const idx = errors.value.findIndex(e => e.id === errorId)
     if (idx === -1) return
 
@@ -111,12 +137,14 @@ export const useErrorBookStore = defineStore('errorBook', () => {
   }
 
   async function deleteError(errorId) {
+    ensureOwner()
     await errorBookApi.deleteErrorBook(errorId)
     errors.value = errors.value.filter(e => e.id !== errorId)
     persist()
   }
 
   async function toggleMastery(errorId) {
+    ensureOwner()
     const error = errors.value.find(e => e.id === errorId)
     if (!error) return
     // Automatic attempt-backed items can only graduate from server-verified
@@ -145,6 +173,7 @@ export const useErrorBookStore = defineStore('errorBook', () => {
   }
 
   function setCurrentDetail(errorId) {
+    ensureOwner()
     currentDetailId.value = errorId
   }
 

@@ -5,11 +5,14 @@
 // 用途：让"跳过"在刷新后仍生效（loadServerChat 会把助手消息重置为 pending，
 // 这里据登记表回填 skipped），而不会污染错题本数据。added 状态优先于 skipped。
 import { loadFromStorage, saveToStorage } from '@/utils/storage'
+import { ANON_OWNER, scopedKey } from '@/utils/scopedStorage'
 
 const PREFIX = 'math_ai_error_book_skipped'
 
+// key 格式由 scopedStorage 统一约定，避免两处各自拼接。这里故意只依赖显式传入的
+// userId（缺失才用 anon）而不调用 currentOwner()：调用方漏传时不得静默写进当前登录账号的登记表。
 function keyFor(userId) {
-  return `${PREFIX}:${userId || 'anon'}`
+  return scopedKey(PREFIX, userId || ANON_OWNER)
 }
 
 /** 返回该用户已跳过的来源键列表（副本）。 */

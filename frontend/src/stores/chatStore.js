@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { generateUUID } from '@/utils/helpers'
-import { loadFromStorage, saveToStorage } from '@/utils/storage'
+import { SCOPED_KEYS, ANON_OWNER, currentOwner, loadScoped, saveScoped } from '@/utils/scopedStorage'
 import { getChatSession, listChatSessions, unwrapChat, updateChatSession } from '@/api/chat'
 import { DEFAULT_TUTOR_MODE, normalizeTutorMode } from '@/utils/tutorModes'
+import { useAuthStore } from '@/stores/authStore'
 
-const STORAGE_KEY = 'math_ai_chats'
+const STORAGE_KEY = SCOPED_KEYS.chats
 
 function createWelcomeMessage() {
   return {
@@ -21,7 +22,10 @@ function createWelcomeMessage() {
 }
 
 export const useChatStore = defineStore('chat', () => {
-  const chats = ref(loadFromStorage(STORAGE_KEY, []))
+  const auth = useAuthStore()
+  // owner 是“这份内存数据属于谁”的唯一事实：读写都锁定它，账号一变就整桶换掉
+  const owner = ref(currentOwner())
+  const chats = ref(loadScoped(STORAGE_KEY, [], owner.value))
   const currentChatId = ref(null)
   const isLoading = ref(false)
   const pendingImage = ref(null)
@@ -41,10 +45,33 @@ export const useChatStore = defineStore('chat', () => {
   )
 
   function persistChats() {
-    saveToStorage(STORAGE_KEY, chats.value)
+    // anon 不是账号：登出后的过渡态不得在浏览器里留下任何缓存（包括一个空壳“新对话”）
+    if (owner.value === ANON_OWNER) return
+    saveScoped(STORAGE_KEY, chats.value, owner.value)
   }
 
+  /**
+   * 账号变了就整桶换掉：先锁定新 owner 再加载，保证任何写入都不会落回上一个账号的桶。
+   * 退到未登录态时直接清空内存：读取端立刻什么都没有，比“换到一个新桶”更严格。
+   */
+  function ensureOwner() {
+    const next = currentOwner()
+    if (next === owner.value) return
+    owner.value = next
+    if (next === ANON_OWNER) {
+      chats.value = []
+      currentChatId.value = null
+      return
+    }
+    chats.value = loadScoped(STORAGE_KEY, [], next)
+    init()
+  }
+
+  // 同页内登录 / 登出 / 切号：读取端立刻换桶，不等到下一次写入
+  watch(() => auth.userId, () => ensureOwner())
+
   function createNewChat() {
+    ensureOwner()
     const newChat = {
       id: generateUUID(),
       title: '新对话',
@@ -59,10 +86,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function switchChat(chatId) {
+    ensureOwner()
     currentChatId.value = chatId
   }
 
   function addMessage(chatId, message) {
+    ensureOwner()
     const chat = chats.value.find(c => c.id === chatId)
     if (!chat) return null
 
@@ -86,6 +115,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function updateMessage(chatId, messageId, updates, options = {}) {
+    ensureOwner()
     const chat = chats.value.find(c => c.id === chatId)
     if (!chat) return
 
@@ -97,6 +127,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function deleteChat(chatId) {
+    ensureOwner()
     const index = chats.value.findIndex(c => c.id === chatId)
     if (index !== -1) {
       chats.value.splice(index, 1)
@@ -112,6 +143,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function renameChat(chatId, title) {
+    ensureOwner()
     const chat = chats.value.find(c => c.id === chatId)
     if (chat && title.trim()) {
       chat.title = title.trim()
@@ -121,6 +153,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function clearChat(chatId) {
+    ensureOwner()
     const index = chats.value.findIndex(c => c.id === chatId)
     if (index === -1) return
     chats.value.splice(index, 1)
@@ -144,6 +177,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function loadServerChat(chatId) {
+    ensureOwner()
     const data = unwrapChat(await getChatSession(chatId))
     const mapped = (data.messages || []).map(message => ({
       id: `sql-${message.id}`,
@@ -161,6 +195,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function syncFromServer() {
+    ensureOwner()
     const rows = unwrapChat(await listChatSessions()) || []
     for (const row of rows) {
       const existing = chats.value.find(item => item.id === row.id)
@@ -173,6 +208,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setTutorMode(chatId, mode) {
+    ensureOwner()
     const chat = chats.value.find(item => item.id === chatId)
     if (chat) { chat.defaultTutorMode = normalizeTutorMode(mode); persistChats(); updateChatSession(chatId, { default_tutor_mode: chat.defaultTutorMode }).catch(() => {}) }
   }
