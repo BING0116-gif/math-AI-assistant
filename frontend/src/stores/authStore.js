@@ -82,17 +82,32 @@ export const useAuthStore = defineStore('auth', () => {
    *
    * 顺序不能换：收尾钩子需要当前 access token 仍有效。以前是先 clearSession()，
    * 等路由跳走才触发学习时长的结束上报，那时已无 Authorization，401 被静默吃掉。
+   *
+   * 重复调用复用同一个进行中的任务（而不是直接返回）：调用方通常是
+   * `await logout()` 再 `router.replace('/login')`，早退会让第二次点击在会话还没清完时
+   * 就去跳登录页，被 /login 的 guestOnly 守卫弹回首页。
+   *
+   * 这里不管“正在退出”的 UI 态：那个周期包含路由跳转，属于登出流程，住在 uiStore.signingOut。
    */
+  let logoutTask = null
   async function logout() {
-    await runLogoutFlushes()
-    try {
-      await api.post('/auth/logout', {
-        refresh_token: refreshToken.value,
-      })
-    } catch {
-      // 后端 logout 失败时，本地 session 仍要清理
-    }
-    clearSession()
+    if (logoutTask) return logoutTask
+    logoutTask = (async () => {
+      try {
+        await runLogoutFlushes()
+        try {
+          await api.post('/auth/logout', {
+            refresh_token: refreshToken.value,
+          })
+        } catch {
+          // 后端 logout 失败时，本地 session 仍要清理
+        }
+        clearSession()
+      } finally {
+        logoutTask = null
+      }
+    })()
+    return logoutTask
   }
 
   /**

@@ -108,4 +108,25 @@ describe('登出收尾钩子', () => {
     expect(auth.isAuthenticated).toBe(false)
     expect(localStorage.getItem('auth_token')).toBeNull()
   })
+
+  it('登出进行中的重复调用复用同一任务：/auth/logout 只发一次，后一个 await 也在会话清完后才返回', async () => {
+    const auth = useAuthStore()
+    auth.accessToken = 'at'
+    auth.refreshToken = 'rt'
+    let release
+    apiMock.post.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+
+    const first = auth.logout()
+    const second = auth.logout()
+    await Promise.resolve()
+    // 进行中的那一次还没清完会话：早退会让调用方拿着有效会话去跳 /login，被 guestOnly 弹回
+    expect(auth.isAuthenticated).toBe(true)
+
+    release({ data: { status: 'success' } })
+    await Promise.all([first, second])
+
+    expect(apiMock.post).toHaveBeenCalledTimes(1)
+    expect(apiMock.post).toHaveBeenCalledWith('/auth/logout', { refresh_token: 'rt' })
+    expect(auth.isAuthenticated).toBe(false)
+  })
 })

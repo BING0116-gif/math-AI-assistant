@@ -22,6 +22,10 @@ export const useUiStore = defineStore('ui', () => {
   const sidebarCollapsed = ref(loadFromStorage(SIDEBAR_KEY, false))
   const inspectorOpen = ref(false)
   const mobileDrawerOpen = ref(false)
+  // 登出流程进行中：由 useSignOut 置位，**导航落到登录页之后**才撤销。
+  // 不能拿“/auth/logout 返回”当终点：那一刻会话已清、路由还没换，旧壳会闪一帧
+  // 用户名空白、按钮回到空闲态的“半空壳”（实测约 160ms，本地环境可观测）。
+  const signingOut = ref(false)
 
   function resolveTheme(t: ThemePreference): 'light' | 'dark' {
     if (t === 'system') return systemDarkQuery?.matches ? 'dark' : 'light'
@@ -68,6 +72,7 @@ export const useUiStore = defineStore('ui', () => {
     sidebarCollapsed,
     inspectorOpen,
     mobileDrawerOpen,
+    signingOut,
     init,
     toggleTheme,
     toggleSidebar,

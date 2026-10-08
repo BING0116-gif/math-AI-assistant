@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useLearningActivity } from '@/composables/useLearningActivity'
 import ReminderBell from '@/components/shell/ReminderBell.vue'
+import SignOutButton from '@/components/shell/SignOutButton.vue'
+import SignOutOverlay from '@/components/shell/SignOutOverlay.vue'
 import {
   Plus, Search, LayoutDashboard, UserRound, Network, FileText, Target, BookX,
   PanelLeftClose, PanelLeftOpen, Sun, Moon, Menu, X, Trash2, ShieldCheck,
@@ -79,11 +81,6 @@ function isActive(to: string) {
 function startNewChat() {
   chatStore.createNewChat()
   router.push('/')
-}
-
-async function switchAccount() {
-  await authStore.logout()
-  await router.replace('/login')
 }
 
 function openChat(chatId: string) {
@@ -252,7 +249,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <small>{{ userRoleLabel }}</small>
           </span>
         </RouterLink>
-        <button type="button" class="account-switch" @click="switchAccount">切换账号</button>
+        <SignOutButton class="account-switch" />
       </div>
     </aside>
 
@@ -347,11 +344,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <Sun v-else :size="15" :stroke-width="1.75" />
               {{ themeLabel }}
             </button>
-            <button class="mobile-drawer__account" type="button" @click="switchAccount">切换账号</button>
+            <SignOutButton class="mobile-drawer__account" />
           </div>
         </aside>
       </div>
     </Teleport>
+
+    <!-- 登出期间的遮罩：收尾上报与后端 logout 的往返里给出明确反馈，并挡住旧壳上的误点 -->
+    <SignOutOverlay />
   </div>
 </template>
 
@@ -682,6 +682,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   font-weight: 600;
 }
 
+/* 退出登录：此前这个 class 在样式表里根本没有定义，侧栏那颗按钮一直是浏览器默认样式；
+   现在跟抽屉里同一个动作（.mobile-drawer__account）对齐同一套 tokens。 */
+.account-switch {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px var(--space-2);
+  border: 0;
+  border-radius: var(--r-s);
+  color: var(--accent-text);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-switch:hover { background: var(--brand-soft); }
+.account-switch:disabled {
+  opacity: 0.6;
+  cursor: default;
+  background: transparent;
+}
+
 /* ============ 主工作区 ============ */
 .shell-main {
   display: flex;
@@ -909,6 +935,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
   .sidebar .side-foot {
     align-items: center;
+  }
+  /* rail 宽 68px，正文只剩 48px：缩小字号居中，避免“退出登录”撑破容器 */
+  .sidebar .account-switch {
+    font-size: 11px;
+    padding-inline: 0;
+    text-align: center;
   }
 }
 
