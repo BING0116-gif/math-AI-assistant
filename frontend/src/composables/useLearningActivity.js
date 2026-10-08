@@ -1,6 +1,7 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { registerLogoutFlush } from '@/utils/logoutFlush'
 import { endLearningActivity, heartbeatLearningActivity, startLearningActivity } from '@/api/learning'
 
 const routeContext = (path) => {
@@ -22,7 +23,9 @@ export function useLearningActivity() {
     timer = null
     const id = activityId
     activityId = null
-    if (id) await endLearningActivity(id).catch(() => {})
+    // 会话已经清掉就不再上报：该端点要鉴权，空 Authorization 只会得到一个被吃掉的 401
+    if (!id || !auth.isAuthenticated) return
+    await endLearningActivity(id).catch(() => {})
   }
   const start = async () => {
     await stop()
@@ -38,7 +41,16 @@ export function useLearningActivity() {
       if (document.visibilityState === 'visible' && activityId) heartbeatLearningActivity(activityId, new Date().toISOString()).catch(() => {})
     }, 30000)
   }
-  onMounted(start)
+  // 注册为登出收尾：authStore.logout() 会在 clearSession() 之前调用 stop，结束上报因此
+  // 还能用上有效 token；路由跳转后的那一次 stop 已经是空 ID，不会重复发请求。
+  let unregisterLogoutFlush = () => {}
+  onMounted(() => {
+    unregisterLogoutFlush = registerLogoutFlush(stop)
+    start()
+  })
   watch(() => route.fullPath, start)
-  onBeforeUnmount(stop)
+  onBeforeUnmount(() => {
+    unregisterLogoutFlush()
+    stop()
+  })
 }

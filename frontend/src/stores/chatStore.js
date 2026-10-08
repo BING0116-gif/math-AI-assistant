@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { generateUUID } from '@/utils/helpers'
+import { nowIso, timestampMs } from '@/utils/dateTime'
 import { SCOPED_KEYS, ANON_OWNER, currentOwner, loadScoped, saveScoped } from '@/utils/scopedStorage'
 import { getChatSession, listChatSessions, unwrapChat, updateChatSession } from '@/api/chat'
 import { DEFAULT_TUTOR_MODE, normalizeTutorMode } from '@/utils/tutorModes'
@@ -13,7 +14,7 @@ function createWelcomeMessage() {
     id: generateUUID(),
     content: '你好！我是你的数学AI助手，有什么我可以帮助你的吗？',
     sender: 'ai',
-    timestamp: new Date().toLocaleString(),
+    timestamp: nowIso(),
     type: 'text',
     system: true, // 系统欢迎语，不应被加入错题本
     errorBookStatus: 'pending',
@@ -38,9 +39,12 @@ export const useChatStore = defineStore('chat', () => {
     currentChat.value?.messages || []
   )
 
+  // 排序必须对脏值免疫：历史桶里可能存在非时间字符串（旧版占位符把提示文案写进了
+  // timestamp），new Date() 得到 NaN 会让比较器返回 NaN、整个列表顺序变成实现相关。
+  // timestampMs 对不可解析值统一返回 0，这类会话固定排在最后。
   const sortedChats = computed(() =>
     [...chats.value].sort((a, b) =>
-      new Date(b.lastMessageTime) - new Date(a.lastMessageTime)
+      timestampMs(b.lastMessageTime) - timestampMs(a.lastMessageTime)
     )
   )
 
@@ -75,7 +79,7 @@ export const useChatStore = defineStore('chat', () => {
     const newChat = {
       id: generateUUID(),
       title: '新对话',
-      lastMessageTime: new Date().toLocaleString(),
+      lastMessageTime: nowIso(),
       messages: [createWelcomeMessage()],
       defaultTutorMode: DEFAULT_TUTOR_MODE
     }
@@ -103,7 +107,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     chat.messages.push(newMessage)
-    chat.lastMessageTime = newMessage.timestamp || new Date().toLocaleString()
+    chat.lastMessageTime = newMessage.timestamp || nowIso()
 
     if (message.sender === 'user' && chat.messages.filter(m => m.sender === 'user').length === 1) {
       const content = (message.type === 'text' && message.content) ? message.content : ''
@@ -202,7 +206,7 @@ export const useChatStore = defineStore('chat', () => {
       const shell = { id: row.id, title: row.title || '新对话', lastMessageTime: row.updated_at, messages: existing?.messages || [], defaultTutorMode: normalizeTutorMode(row.default_tutor_mode), context: row.context || {} }
       if (existing) Object.assign(existing, shell); else chats.value.push(shell)
     }
-    chats.value.sort((a,b)=>new Date(b.lastMessageTime)-new Date(a.lastMessageTime))
+    chats.value.sort((a,b)=>timestampMs(b.lastMessageTime)-timestampMs(a.lastMessageTime))
     if (currentChatId.value && rows.some(row=>row.id===currentChatId.value)) await loadServerChat(currentChatId.value)
     persistChats(); return rows
   }

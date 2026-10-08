@@ -486,7 +486,9 @@ async function handleTextSend(text: string) {
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text', agentSteps: [] }
+  // 占位消息的 timestamp 必须是真正的时间戳：它会被写进 chat.lastMessageTime 参与排序。
+  // “正在生成”的提示态由 streaming + streamingMessageId 驱动，不靠时间字段承载。
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [] }
   store.addMessage(chatId, placeholder)
 
   await streamAgentReply(
@@ -510,7 +512,9 @@ async function handleClarificationSubmit({ answer }: { answer: string; optionLab
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: '正在生成...', type: 'text', agentSteps: [] }
+  // 占位消息的 timestamp 必须是真正的时间戳：它会被写进 chat.lastMessageTime 参与排序。
+  // “正在生成”的提示态由 streaming + streamingMessageId 驱动，不靠时间字段承载。
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [] }
   store.addMessage(chatId, placeholder)
 
   await streamAgentReply(
@@ -548,7 +552,7 @@ async function handleSendWithImage(text: string, imageData: string) {
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: '正在识别...', type: 'text', agentSteps: [] })
+  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [] })
 
   streaming.value = true
   streamingMessageId.value = msgId

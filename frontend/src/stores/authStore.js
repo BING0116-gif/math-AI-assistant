@@ -14,6 +14,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/api'
 import { describeAuthError } from '@/api/authErrors'
+import { runLogoutFlushes } from '@/utils/logoutFlush'
 
 export const useAuthStore = defineStore('auth', () => {
   // ============================================================
@@ -77,9 +78,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 退出登录：调用后端 logout，清除本地 session。
+   * 退出登录：先跑完依赖会话的收尾上报，再调后端 logout，最后清除本地 session。
+   *
+   * 顺序不能换：收尾钩子需要当前 access token 仍有效。以前是先 clearSession()，
+   * 等路由跳走才触发学习时长的结束上报，那时已无 Authorization，401 被静默吃掉。
    */
   async function logout() {
+    await runLogoutFlushes()
     try {
       await api.post('/auth/logout', {
         refresh_token: refreshToken.value,

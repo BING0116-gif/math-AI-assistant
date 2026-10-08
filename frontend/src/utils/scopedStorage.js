@@ -8,9 +8,10 @@
  *
  * key 约定沿用 errorBookDismissals 已有的格式：`${base}:${owner}`，owner 缺失时用 'anon'。
  *
- * 关于旧的无后缀 key：**不迁移**。把一份无主数据归给"碰巧先登录"的账号是错误归属，
+ * 关于旧的无后缀 key：**不迁移**。把一份无主数据归给“碰巧先登录”的账号是错误归属，
  * 而这些数据在服务端本来就有权威副本；store 一律不再读写旧 key。
- * api/migrations.js 的 legacy 上传链路仍按原样读取旧 key，那是有意的历史兼容路径，不受影响。
+ * api/migrations.js 仍会读旧 key 做一次性历史上传，但它自己的“已处理”标记也按账号分桶，
+ * 并用一个全局标记保证无主数据不会被两个账号各自领走。
  */
 import { loadFromStorage, saveToStorage } from './storage'
 
@@ -20,6 +21,7 @@ export const ANON_OWNER = 'anon'
 export const SCOPED_KEYS = {
   chats: 'math_ai_chats',
   errorBook: 'math_ai_error_book',
+  legacyMigration: 'legacy_client_migration_batch',
 }
 
 let ownerGetter = null
