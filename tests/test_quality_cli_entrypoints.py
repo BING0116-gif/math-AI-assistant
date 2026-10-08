@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,7 +52,16 @@ def test_v2_offline_audit_never_calls_live_model():
     assert completed.returncode == 0
     payload = json.loads(completed.stdout)
     assert payload["status"] == "offline_safe"
-    assert payload["case_count"] == 61
-    assert payload["offline_case_count"] == 61
+    # 用例数不写硬编码字面量：1-E 把矩阵从 61 扩到 95 后，写死的数字立刻变成
+    # 假失败。manifest 是数据集的声明源，这里拿它跟 CLI 实际计数对撞，
+    # 既能校验配额与条数一致，也能抓住“用例文件被删但 manifest 未同步”的反向漂移。
+    manifest = yaml.safe_load(
+        (ROOT / "evaluations" / "model_quality" / "v2" / "manifest.yaml").read_text(encoding="utf-8")
+    )
+    expected = len(manifest["cases"])
+    assert expected == sum(manifest["category_quotas"].values())
+    assert payload["case_count"] == expected
+    # 真实不变量：全部用例都必须在离线安全模式下跑完，零线上模型调用。
+    assert payload["offline_case_count"] == payload["case_count"]
     assert payload["live_calls"] == 0
     assert payload["model_quality_claim"] is False

@@ -56,6 +56,9 @@ logs/*.log
 
 # 根目录一次性调试日志与 API dump（曾随构建上下文被 COPY 进镜像）
 /*.txt
+# requirements.txt 同样命中上面的 /*.txt；不放行则 Dockerfile 的
+# `COPY requirements.txt .` 在 buildkit 里直接 "not found"，web 镜像无法构建。
+!requirements.txt
 /*_tmp.json
 
 # OS
