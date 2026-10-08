@@ -19,6 +19,10 @@ const error = ref('')
 const form = reactive({ username: '', password: '' })
 
 const isLogin = computed(() => mode.value === 'login')
+// 会话是服务端判死的（401 → refresh 失败），不是用户自己退的：必须说清楚，
+// 否则“表单凭空变空 + 刚才的页面没了”会被当成又一次登录失败。
+// 这是一次性标记：登录成功后 router.replace(safeRedirect()) 会把 query 一并带走。
+const expiredNotice = computed(() => route.query.expired === '1')
 const canSubmit = computed(() => !submitting.value && !coolingDown.value)
 const submitLabel = computed(() => {
   if (submitting.value) return isLogin.value ? '正在登录…' : '正在创建账号…'
@@ -126,6 +130,7 @@ async function submit() {
             </button>
           </div>
         </div>
+        <p v-if="expiredNotice" class="form-notice" role="status">登录已过期，重新登录后会回到刚才的页面</p>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
         <p v-if="coolingDown" class="form-cooldown" role="status">请 {{ countdownText }} 后可再次提交</p>
         <button class="submit-button" type="submit" :disabled="!canSubmit">
@@ -323,6 +328,8 @@ async function submit() {
 .password-toggle { position: absolute; top: 50%; right: 7px; width: 34px; height: 34px; display: grid; place-items: center; transform: translateY(-50%); border: 0; border-radius: 8px; color: rgba(255, 255, 255, .5); background: transparent; cursor: pointer; transition: color .2s ease, background .2s ease; }
 .password-toggle:hover { color: #FAC775; background: rgba(255, 255, 255, .08); }
 .form-error { margin: -4px 0 0; color: #F08088; font-size: 12.5px; line-height: 1.5; }
+/* 过期提示不是错误（用户什么都没做错），用背景那抹翠青压阵色而非告警红 */
+.form-notice { margin: -4px 0 0; color: rgba(122, 200, 172, .9); font-size: 12.5px; line-height: 1.5; }
 .form-cooldown { margin: -4px 0 0; color: rgba(250, 199, 117, .8); font-size: 12.5px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 
 .submit-button {

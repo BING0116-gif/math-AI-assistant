@@ -57,10 +57,12 @@ api.interceptors.request.use(
  * 行为：
  * 1. 401 时尝试刷新 token
  * 2. 若 refresh 成功，重放原始请求
- * 3. 若 refresh 失败，清理 session
+ * 3. 若 refresh 失败，走会话失效的唯一出口 clearSessionOnce()（重置 store + 本地缓存）
  * 4. 避免 refresh 请求本身进入 refresh 循环
  * 5. 多个并发 401 只发起一次 refresh
  * 6. 登录/注册自身的 401 不刷新、不重放；423/429 不是 401，天然不进入刷新分支
+ * 7. 确认会话已死时只清本地态，**不在这里跳转路由**：被动过期的落地交给
+ *    composables/useSessionExpiry.js 统一处理，与主动登出同样只依赖 store 态变化
  */
 api.interceptors.response.use(
   (response) => response,
@@ -75,7 +77,7 @@ api.interceptors.response.use(
     // 已经是 refresh 请求本身失败 → 不再重试，清理 session
     const requestUrl = String(originalRequest.url || '')
     if (originalRequest._isRefreshRequest || /(^|\/)auth\/refresh(?:$|\?)/.test(requestUrl)) {
-      clearLocalSession()
+      await clearSessionOnce()
       return Promise.reject(error)
     }
 
@@ -139,10 +141,25 @@ api.interceptors.response.use(
   }
 )
 
-function clearLocalSession() {
-  localStorage.removeItem('auth_token')
-  localStorage.removeItem('refresh_token')
-  localStorage.removeItem('current_user')
+/**
+ * 会话失效的唯一出口：一律走 authStore.clearSession()。
+ *
+ * 以前这里自己 removeItem 三个 key，与 store 的实现不等价：它不重置
+ * accessToken / refreshToken / currentUser，于是存在第三种壳态——storage 已空、
+ * `isAuthenticated` 仍为 true：路由守卫不拦、页面继续打必 401 的请求，本地对话列表
+ * 还会因为 owner 变空而被清掉，学生看到的是“应用莫名空了”而不是“登录过期”。
+ *
+ * 极端情况下（Pinia 尚未就绪）退回直接删 key：至少不会留下“半认证”状态。
+ */
+async function clearSessionOnce() {
+  try {
+    const { useAuthStore } = await import('@/stores/authStore')
+    useAuthStore().clearSession()
+  } catch {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('refresh_token')
+    localStorage.removeItem('current_user')
+  }
 }
 
 export default api

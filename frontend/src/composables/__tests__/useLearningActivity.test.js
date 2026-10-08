@@ -124,14 +124,17 @@ describe('学习时长上报与登出时序', () => {
     expect(mocks.endLearningActivity).toHaveBeenCalledTimes(1)
   })
 
-  it('会话已被清理（token 过期路径）时不再发无鉴权的结束请求', async () => {
+  it('会话已被清理（被动过期路径）时不再发无鉴权的结束请求', async () => {
     const auth = login()
     await mountAt('/chat/s-1')
 
-    // 模拟响应拦截器的 clearLocalSession：本地会话没了，但组件还没卸载
+    // 被动过期：拦截器现在也走 store 的 clearSession（会话失效只有一个出口），组件还没卸载
     auth.clearSession()
     await navigate('/knowledge/graph')
 
+    // 契约（不是巧合）：此刻 access token 已死，end 必 401，发一条被吃掉的 401 只会把
+    // “时长丢了”伪装成“网络抽风”。心跳已按间隔落库，丢失上限就是一个心跳间隔；
+    // 本轮明确选择**不跨登录补报**（要补得改服务端语义）。
     expect(mocks.endLearningActivity).not.toHaveBeenCalled()
     // 未登录状态也不该再开新的 activity
     expect(mocks.startLearningActivity).toHaveBeenCalledTimes(1)

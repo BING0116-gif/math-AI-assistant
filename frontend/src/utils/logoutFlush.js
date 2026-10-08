@@ -23,7 +23,9 @@ export function registerLogoutFlush(flush) {
 
 /**
  * 并发执行所有收尾钩子；单个钩子抛错不影响其它钩子，也不阻塞登出。
- * 只在用户主动登出 / 切换账号路径调用：token 过期导致的 clearSession() 再发请求同样会 401。
+ * 只在用户主动点「退出登录」这条路调用。被动过期（token 已死）不走这里：
+ * 那时任何依赖会话的上报都只会得到一个被吃掉的 401，所以不发；丢失上限已由
+ * 心跳间隔压住（契约见 composables/__tests__/useLearningActivity.test.js）。
  */
 export async function runLogoutFlushes(timeoutMs = LOGOUT_FLUSH_TIMEOUT_MS) {
   const tasks = [...flushers].map((flush) => Promise.resolve().then(flush).catch(() => null))

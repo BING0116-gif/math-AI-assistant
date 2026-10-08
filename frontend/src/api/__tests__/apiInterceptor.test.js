@@ -4,7 +4,7 @@
  * 覆盖：
  * - Authorization header 统一注入（request interceptor）
  * - 401 → refresh 成功 → 重放原请求（response interceptor）
- * - 401 → refresh 失败 → clearSession（response interceptor）
+ * - 401 → refresh 失败 → 通过会话失效的唯一出口清理（不在本文件里自己删 key）
  * - 非 401 错误不触发 refresh
  * - refresh 请求本身 401 不循环
  */
@@ -17,6 +17,7 @@ const { mockStore, mockAxiosInstance } = vi.hoisted(() => {
   const mockStore = {
     getAccessToken: vi.fn().mockReturnValue(''),
     refresh: vi.fn(),
+    clearSession: vi.fn(),
   }
 
   const mockAxiosInstance = Object.assign(
@@ -77,6 +78,7 @@ describe('API Interceptor', () => {
     // 重置 mock store
     mockStore.getAccessToken.mockReturnValue('')
     mockStore.refresh.mockReset()
+    mockStore.clearSession.mockReset()
     // 重置 mock 实例
     mockAxiosInstance.mockClear()
     mockAxiosInstance.mockResolvedValue({ data: 'retried-ok' })
@@ -198,7 +200,7 @@ describe('API Interceptor', () => {
       expect(mockAxiosInstance).not.toHaveBeenCalled()
     })
 
-    it('should not loop when auth refresh request itself gets 401', async () => {
+    it('refresh 请求自身 401 时走同一个会话出口，而不是自己删 localStorage', async () => {
       localStorage.setItem('auth_token', 'old-token')
       localStorage.setItem('refresh_token', 'old-rt')
 
@@ -211,9 +213,28 @@ describe('API Interceptor', () => {
 
       // 不触发 refresh
       expect(mockStore.refresh).not.toHaveBeenCalled()
-      // session 被清理
+      // 会话失效的语义只有一份：必须重置 store 里的 accessToken/currentUser。
+      // 以前这个分支只 removeItem 三个 key，于是会出现「storage 已空、
+      // isAuthenticated 仍为 true」的第三种壳态：守卫不拦、页面继续打必 401 的请求。
+      expect(mockStore.clearSession).toHaveBeenCalledTimes(1)
+    })
+
+    it('store 不可达时退回直接删 key，不留半认证态', async () => {
+      localStorage.setItem('auth_token', 'old-token')
+      localStorage.setItem('refresh_token', 'old-rt')
+      localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
+      mockStore.clearSession.mockImplementation(() => { throw new Error('pinia not ready') })
+
+      const error = {
+        config: { headers: {}, url: '/api/auth/refresh', _isRefreshRequest: true },
+        response: { status: 401 },
+      }
+
+      await expect(responseErrorHandler(error)).rejects.toThrow()
+
       expect(localStorage.getItem('auth_token')).toBeNull()
       expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(localStorage.getItem('current_user')).toBeNull()
     })
 
     it('should detect the refresh endpoint even when the caller marker is missing', async () => {
