@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import TypeVar, Generic, List, Optional, Dict, Any, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete, and_, or_
@@ -115,6 +116,29 @@ class UserRepository(BaseRepository[User]):
             update(User)
             .where(User.id == user_id)
             .values(failed_login_count=User.failed_login_count + 1)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+    async def lock_account(self, user_id: str, until: datetime) -> None:
+        """写入 ``locked_until`` 并清零失败计数（锁定即处罚，解锁后重新计数）。
+
+        此前只有 increment/reset 两个方法，没有任何入口能真正写 ``locked_until``，
+        因此该字段是死列；口令校验路径（``authenticate_user_detailed``）现在开始使用它。
+        """
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(locked_until=until, failed_login_count=0)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+    async def unlock_account(self, user_id: str) -> None:
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(locked_until=None, failed_login_count=0)
         )
         await self.session.execute(stmt)
         await self.session.flush()

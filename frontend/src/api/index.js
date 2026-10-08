@@ -60,6 +60,7 @@ api.interceptors.request.use(
  * 3. 若 refresh 失败，清理 session
  * 4. 避免 refresh 请求本身进入 refresh 循环
  * 5. 多个并发 401 只发起一次 refresh
+ * 6. 登录/注册自身的 401 不刷新、不重放；423/429 不是 401，天然不进入刷新分支
  */
 api.interceptors.response.use(
   (response) => response,
@@ -75,6 +76,12 @@ api.interceptors.response.use(
     const requestUrl = String(originalRequest.url || '')
     if (originalRequest._isRefreshRequest || /(^|\/)auth\/refresh(?:$|\?)/.test(requestUrl)) {
       clearLocalSession()
+      return Promise.reject(error)
+    }
+
+    // 登录/提交的凭据错误就是业务结果：既不该拿旧 refresh token 去换，
+    // 也不该把同一个错误密码的请求重放一次；更不该清掉其它账号已有的会话。
+    if (/(^|\/)auth\/(login|register)(?:$|\?)/.test(requestUrl)) {
       return Promise.reject(error)
     }
 

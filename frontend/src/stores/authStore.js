@@ -13,6 +13,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/api'
+import { describeAuthError } from '@/api/authErrors'
 
 export const useAuthStore = defineStore('auth', () => {
   // ============================================================
@@ -22,6 +23,9 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshToken = ref(localStorage.getItem('refresh_token') || '')
   const currentUser = ref(loadUser())
   const restoring = ref(true) // 启动时恢复会话期间为 true
+  // 最近一次登录/注册失败的归一化描述（{code, message, retryAfterSeconds}）。
+  // 仅供页面展示与倒计时使用；原始错误仍原样抛出，保持调用方既有 catch 语义。
+  const lastAuthError = ref(null)
 
   // ============================================================
   // Getters
@@ -39,7 +43,15 @@ export const useAuthStore = defineStore('auth', () => {
    * 登录：调用 /api/auth/login，存储 tokens 和用户信息。
    */
   async function login(credentials) {
-    const { data } = await api.post('/auth/login', credentials)
+    let data
+    try {
+      ;({ data } = await api.post('/auth/login', credentials))
+    } catch (err) {
+      // 401 INVALID_CREDENTIALS / 423 ACCOUNT_LOCKED / 429 限流都归一化后再抛出
+      lastAuthError.value = describeAuthError(err)
+      throw err
+    }
+    lastAuthError.value = null
     const { access_token, refresh_token, user_id, username: uname, role: userRole } = data.data
     saveTokens(access_token, refresh_token)
     saveUser({ user_id, username: uname, role: userRole || 'student' })
@@ -54,7 +66,12 @@ export const useAuthStore = defineStore('auth', () => {
    * 注册：调用 /api/auth/register，然后自动登录。
    */
   async function register(credentials) {
-    await api.post('/auth/register', credentials)
+    try {
+      await api.post('/auth/register', credentials)
+    } catch (err) {
+      lastAuthError.value = describeAuthError(err)
+      throw err
+    }
     // 注册成功后自动登录
     return login(credentials)
   }
@@ -149,6 +166,7 @@ export const useAuthStore = defineStore('auth', () => {
     accessToken.value = ''
     refreshToken.value = ''
     currentUser.value = null
+    lastAuthError.value = null
   }
 
   /**
@@ -194,6 +212,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     currentUser,
     restoring,
+    lastAuthError,
     // getters
     isAuthenticated,
     username,

@@ -235,6 +235,18 @@ class Settings(BaseSettings):
         default=30, alias="JWT_REFRESH_TOKEN_EXPIRE_DAYS"
     )
 
+    # ── 登录与限流安全 ──
+    # 账户锁定按 user_id 维度累计；限流预算按 IP 维度控制爆破频次，两者分离，
+    # 避免共享出口 IP（宿舍/机房）的多个学生被连带误锁。
+    LOGIN_MAX_FAILED_ATTEMPTS: int = Field(default=5, alias="LOGIN_MAX_FAILED_ATTEMPTS")
+    LOGIN_LOCK_MINUTES: int = Field(default=15, alias="LOGIN_LOCK_MINUTES")
+    # 仅当 socket 对端命中下列 CIDR 时，才采信 X-Forwarded-For 作为客户端 IP。
+    # 生产拓扑里 frontend nginx 走 docker bridge（172.16.0.0/12）。
+    # 逗号分隔字符串而非 List，避免 pydantic-settings 对 env 值做 JSON 解析。
+    TRUSTED_PROXY_CIDRS: str = Field(
+        default="172.16.0.0/12,127.0.0.1", alias="TRUSTED_PROXY_CIDRS"
+    )
+
     # ── AI 能力开关 ──
     AI_ENABLED: bool = Field(default=True, alias="AI_ENABLED")
 

@@ -104,6 +104,22 @@ VARIANT_SESSIONS = Counter(
     ["status"],
 )
 
+# 登录安全与限流可观测性。标签只允许低基数枚举，绝不携带用户名、IP 或口令。
+RATE_LIMIT_REJECTIONS = Counter(
+    "mathai_rate_limit_rejections_total",
+    "Requests rejected by rate limiting",
+    ["bucket"],
+)
+LOGIN_FAILURES = Counter(
+    "mathai_login_failures_total",
+    "Failed login attempts by reason",
+    ["reason"],
+)
+ACCOUNT_LOCKOUTS = Counter(
+    "mathai_account_lockouts_total",
+    "Accounts temporarily locked after repeated failures",
+)
+
 _SENSITIVE = re.compile(r"(authorization|password|secret|api[_-]?key|token|prompt|answer|content)", re.I)
 
 

@@ -4,10 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Eye, EyeOff, ShieldCheck, Sparkles } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
+import { describeAuthError, shouldCoolDown } from '@/api/authErrors'
+import { useLoginLock } from '@/composables/useLoginLock'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { coolingDown, countdownText, startLock } = useLoginLock()
 
 const mode = ref('login')
 const showPassword = ref(false)
@@ -16,8 +19,10 @@ const error = ref('')
 const form = reactive({ username: '', password: '' })
 
 const isLogin = computed(() => mode.value === 'login')
+const canSubmit = computed(() => !submitting.value && !coolingDown.value)
 const submitLabel = computed(() => {
   if (submitting.value) return isLogin.value ? '正在登录…' : '正在创建账号…'
+  if (coolingDown.value) return '请稍后再试'
   return isLogin.value ? '登录学习账号' : '注册并开始学习'
 })
 
@@ -25,6 +30,8 @@ function switchMode(nextMode) {
   mode.value = nextMode
   error.value = ''
   showPassword.value = false
+  // 倒计时不随登录/注册切换清除：它反映的是服务端锁定/限流事实，
+  // 本地放开只会让学生把同一批重试打在另一个端点上。
 }
 
 function safeRedirect() {
@@ -41,6 +48,7 @@ function safeRedirect() {
 
 async function submit() {
   error.value = ''
+  if (coolingDown.value) return
   const username = form.username.trim()
   if (username.length < 3 || form.password.length < 6) {
     error.value = '用户名至少 3 位，密码至少 6 位。'
@@ -57,7 +65,9 @@ async function submit() {
     ElMessage.success(isLogin.value ? '登录成功' : '注册并登录成功')
     await router.replace(safeRedirect())
   } catch (err) {
-    error.value = err.response?.data?.detail || '操作失败，请检查用户名和密码后重试。'
+    const authError = describeAuthError(err)
+    error.value = authError.message
+    if (shouldCoolDown(authError)) startLock(authError.retryAfterSeconds)
   } finally {
     submitting.value = false
   }
@@ -117,7 +127,8 @@ async function submit() {
           </div>
         </div>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
-        <button class="submit-button" type="submit" :disabled="submitting">
+        <p v-if="coolingDown" class="form-cooldown" role="status">请 {{ countdownText }} 后可再次提交</p>
+        <button class="submit-button" type="submit" :disabled="!canSubmit">
           <span>{{ submitLabel }}</span><ArrowRight :size="16" />
         </button>
       </form>
@@ -312,6 +323,7 @@ async function submit() {
 .password-toggle { position: absolute; top: 50%; right: 7px; width: 34px; height: 34px; display: grid; place-items: center; transform: translateY(-50%); border: 0; border-radius: 8px; color: rgba(255, 255, 255, .5); background: transparent; cursor: pointer; transition: color .2s ease, background .2s ease; }
 .password-toggle:hover { color: #FAC775; background: rgba(255, 255, 255, .08); }
 .form-error { margin: -4px 0 0; color: #F08088; font-size: 12.5px; line-height: 1.5; }
+.form-cooldown { margin: -4px 0 0; color: rgba(250, 199, 117, .8); font-size: 12.5px; line-height: 1.5; font-variant-numeric: tabular-nums; }
 
 .submit-button {
   min-height: 44px;

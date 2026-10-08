@@ -11,7 +11,12 @@ from starlette.responses import JSONResponse
 
 from app.config.settings import settings
 from app.config.middleware_config import middleware_config
-from app.middleware.path_matcher import PathMatcher
+from app.middleware.path_matcher import (
+    BUCKET_AUTH,
+    BUCKET_AUTH_LOGIN,
+    BUCKET_GENERAL,
+    PathMatcher,
+)
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.auth_middleware import AuthenticationMiddleware
@@ -113,6 +118,7 @@ def setup_middleware(app: FastAPI):
         static_paths=middleware_config.STATIC_PATHS,
         skip_paths=list(middleware_config.NO_AUTH_PATHS),
         rate_limit_skip_paths=list(middleware_config.RATE_LIMIT_SKIP_PATHS),
+        rate_limit_always_paths=list(middleware_config.RATE_LIMIT_ALWAYS_PATHS),
     )
 
     app.add_middleware(
@@ -120,11 +126,20 @@ def setup_middleware(app: FastAPI):
         debug=settings.DEBUG,
     )
 
+    # 注意顺序：Starlette 的 add_middleware 是"后注册者为更外层"。下面紧接着注册的
+    # AuthenticationMiddleware 因此位于本中间件的**外层**，请求进入限流时
+    # request.state.user_id 已就绪，限流才能按用户维度计数。
+    # 不要把这两者的顺序对调，也不要给限流加 --proxy-headers 依赖 uvicorn 解析 XFF。
     app.add_middleware(
         RateLimitMiddleware,
         window_seconds=middleware_config.RATE_LIMIT_WINDOW_SECONDS,
         max_requests=middleware_config.RATE_LIMIT_MAX_REQUESTS,
         path_matcher=path_matcher,
+        bucket_limits={
+            BUCKET_GENERAL: middleware_config.RATE_LIMIT_MAX_REQUESTS,
+            BUCKET_AUTH: middleware_config.RATE_LIMIT_AUTH_PER_MINUTE,
+            BUCKET_AUTH_LOGIN: middleware_config.RATE_LIMIT_AUTH_LOGIN_PER_MINUTE,
+        },
     )
 
     app.add_middleware(

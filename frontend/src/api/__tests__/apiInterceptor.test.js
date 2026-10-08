@@ -257,4 +257,58 @@ describe('API Interceptor', () => {
       expect(mockStore.refresh).not.toHaveBeenCalled()
     })
   })
+
+  // ============================================================
+  // 登录安全契约：401/423/429 在登录端点上都是业务结果
+  // ============================================================
+  describe('credential endpoints', () => {
+    it('should not refresh or replay when login itself returns 401', async () => {
+      localStorage.setItem('auth_token', 'other-account-token')
+      localStorage.setItem('refresh_token', 'other-account-rt')
+      mockStore.refresh.mockResolvedValue(true)
+
+      const error = {
+        config: { headers: {}, url: '/auth/login' },
+        response: {
+          status: 401,
+          data: { code: 'INVALID_CREDENTIALS', message: '用户名或密码错误', retry_after_seconds: null },
+        },
+      }
+
+      await expect(responseErrorHandler(error)).rejects.toThrow()
+
+      // 不拿旧 refresh token 去换，也不重放同一个错误密码请求
+      expect(mockStore.refresh).not.toHaveBeenCalled()
+      expect(mockAxiosInstance).not.toHaveBeenCalled()
+      // 其它账号已有的会话不应被一次失败登录清掉
+      expect(localStorage.getItem('auth_token')).toBe('other-account-token')
+    })
+
+    it('should not treat 423 ACCOUNT_LOCKED as a session expiry', async () => {
+      const error = {
+        config: { headers: {}, url: '/api/auth/login' },
+        response: {
+          status: 423,
+          data: { code: 'ACCOUNT_LOCKED', message: '账户已临时锁定，请稍后再试', retry_after_seconds: 640 },
+          headers: { 'retry-after': '640' },
+        },
+      }
+
+      await expect(responseErrorHandler(error)).rejects.toThrow()
+
+      expect(mockStore.refresh).not.toHaveBeenCalled()
+      expect(mockAxiosInstance).not.toHaveBeenCalled()
+    })
+
+    it('should pass 429 through without refresh', async () => {
+      const error = {
+        config: { headers: {}, url: '/auth/login' },
+        response: { status: 429, data: { detail: '请求过于频繁，请稍后再试' }, headers: { 'retry-after': '31' } },
+      }
+
+      await expect(responseErrorHandler(error)).rejects.toThrow()
+
+      expect(mockStore.refresh).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -314,8 +314,11 @@ class TestNonAiEndpoints:
 
     def test_auth_flow(self):
         """认证流程应正常工作（Mock 数据库依赖）。"""
+        from app.middleware.auth import AuthResult, LoginOutcome
+
         mock_user = self.mock_user
-        with patch("app.api.auth.authenticate_user", AsyncMock(return_value=mock_user)), \
+        auth_result = AuthResult(outcome=LoginOutcome.SUCCESS, user=mock_user)
+        with patch("app.api.auth.authenticate_user_detailed", AsyncMock(return_value=auth_result)), \
              patch("app.api.auth.create_token_pair", AsyncMock(return_value=MagicMock(
                  model_dump=MagicMock(return_value={"access_token": "test", "refresh_token": "test", "token_type": "bearer"})
              ))):

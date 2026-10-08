@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+import contextlib
 
 import pytest
 from fastapi import HTTPException
@@ -23,6 +24,31 @@ def _request(user=None, path="/") -> Request:
         request.state.current_user = user
         request.state.user_id = user.id
     return request
+
+
+class _FakeLoginSession:
+    """只满足 ``authenticate_user_detailed`` 用到的会话接口（execute + flush）。"""
+
+    def __init__(self, user):
+        self.user = user
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = self.user
+        return result
+
+    async def flush(self):
+        return None
+
+
+@contextlib.asynccontextmanager
+async def _fake_db_session(user, sink=None):
+    session = _FakeLoginSession(user)
+    if sink is not None:
+        sink.append(session)
+    yield session
 
 
 @pytest.mark.asyncio
@@ -213,65 +239,69 @@ class TestAuthContract:
 
     @pytest.mark.asyncio
     async def test_login_correct_credentials(self):
-        """正确凭据应返回用户。"""
+        """正确凭据应返回用户（兼容入口仍为 Optional[DBUser]）。"""
         from app.middleware.auth import authenticate_user
 
-        mock_user = MagicMock()
-        mock_user.is_active = True
+        mock_user = SimpleNamespace(
+            id="user-1",
+            username="testuser",
+            is_active=True,
+            password_hash="salt$digest",
+            failed_login_count=2,
+            locked_until=None,
+        )
 
-        with patch("app.middleware.auth.get_db_session") as mock_get_db:
-            mock_session = MagicMock()
-            mock_cm = MagicMock()
-            mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_get_db.return_value = mock_cm
-
-            mock_result = MagicMock()
-            mock_result.scalar_one_or_none.return_value = mock_user
-            mock_session.execute = AsyncMock(return_value=mock_result)
-
+        with patch(
+            "app.middleware.auth.get_db_session",
+            lambda: _fake_db_session(mock_user),
+        ):
             with patch("app.middleware.auth._verify_password", return_value=True):
                 user = await authenticate_user("testuser", "correctpass")
-                assert user is not None
+                assert user is mock_user
 
     @pytest.mark.asyncio
     async def test_login_wrong_password(self):
-        """错误密码应返回 None。"""
+        """错误密码应返回 None，并且真的写下失败计数（原实现从不写）。"""
         from app.middleware.auth import authenticate_user
 
-        mock_user = MagicMock()
-        mock_user.is_active = True
+        mock_user = SimpleNamespace(
+            id="user-1",
+            username="testuser",
+            is_active=True,
+            password_hash="salt$digest",
+            failed_login_count=1,
+            locked_until=None,
+        )
+        sessions = []
 
-        with patch("app.middleware.auth.get_db_session") as mock_get_db:
-            mock_session = MagicMock()
-            mock_cm = MagicMock()
-            mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_get_db.return_value = mock_cm
-
-            mock_result = MagicMock()
-            mock_result.scalar_one_or_none.return_value = mock_user
-            mock_session.execute = AsyncMock(return_value=mock_result)
-
+        with patch(
+            "app.middleware.auth.get_db_session",
+            lambda: _fake_db_session(mock_user, sessions),
+        ):
             with patch("app.middleware.auth._verify_password", return_value=False):
                 user = await authenticate_user("testuser", "wrongpass")
                 assert user is None
 
+        assert len(sessions) == 1
+        # 第一条是 select，第二条是 failed_login_count 的 update
+        assert len(sessions[0].statements) == 2
+        assert "UPDATE users" in str(sessions[0].statements[1])
+
     @pytest.mark.asyncio
     async def test_login_unknown_user(self):
-        """未知用户应返回 None。"""
+        """未知用户应返回 None，且不产生任何写入（不给攻击者留下探测面）。"""
         from app.middleware.auth import authenticate_user
 
-        with patch("app.middleware.auth.get_db_session") as mock_get_db:
-            mock_session = MagicMock()
-            mock_cm = MagicMock()
-            mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_get_db.return_value = mock_cm
-
-            mock_result = MagicMock()
-            mock_result.scalar_one_or_none.return_value = None
-            mock_session.execute = AsyncMock(return_value=mock_result)
-
+        sessions = []
+        with patch(
+            "app.middleware.auth.get_db_session",
+            lambda: _fake_db_session(None, sessions),
+        ):
             user = await authenticate_user("unknown", "password")
             assert user is None
+
+        assert len(sessions) == 1
+        assert len(sessions[0].statements) == 1  # 只有 select
 
     # ---- Refresh ----
 

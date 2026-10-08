@@ -9,6 +9,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'
+import { useLoginLock } from '@/composables/useLoginLock'
+import { describeAuthError, shouldCoolDown } from '@/api/authErrors'
 import BaseDialog from '@/components/ui/BaseDialog.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 
@@ -28,9 +30,11 @@ const internalVisible = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const form = reactive({ username: '', password: '' })
+const { coolingDown, countdownText, startLock } = useLoginLock()
 
 const isLogin = computed(() => props.mode === 'login')
 const title = computed(() => isLogin.value ? '登录学习账号' : '创建学习账号')
+const canSubmit = computed(() => !submitting.value && !coolingDown.value)
 
 watch(() => props.visible, (val) => {
   internalVisible.value = val
@@ -76,6 +80,7 @@ async function redirectAfterAuth() {
 
 async function submit() {
   error.value = ''
+  if (coolingDown.value) return
   if (form.username.length < 3 || form.password.length < 6) {
     error.value = '用户名至少 3 位，密码至少 6 位。'
     return
@@ -92,7 +97,9 @@ async function submit() {
     ElMessage.success(isLogin.value ? '登录成功' : '注册并登录成功')
     await redirectAfterAuth()
   } catch (err) {
-    error.value = err.response?.data?.detail || '操作失败，请检查用户名和密码后重试。'
+    const authError = describeAuthError(err)
+    error.value = authError.message
+    if (shouldCoolDown(authError)) startLock(authError.retryAfterSeconds)
   } finally {
     submitting.value = false
   }
@@ -134,8 +141,9 @@ async function submit() {
         />
       </div>
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
-      <BaseButton type="submit" variant="primary" size="lg" class="auth-submit" :loading="submitting">
-        {{ submitting ? '处理中…' : (isLogin ? '登录' : '注册并登录') }}
+      <p v-if="coolingDown" class="auth-cooldown" role="status">请 {{ countdownText }} 后可再次提交</p>
+      <BaseButton type="submit" variant="primary" size="lg" class="auth-submit" :loading="submitting" :disabled="!canSubmit">
+        {{ submitting ? '处理中…' : (coolingDown ? '请稍后再试' : (isLogin ? '登录' : '注册并登录')) }}
       </BaseButton>
     </form>
     <template #footer>
@@ -187,6 +195,12 @@ async function submit() {
   font-size: var(--type-sm);
   color: var(--rose);
   margin: 0;
+}
+.auth-cooldown {
+  font-size: var(--type-sm);
+  color: var(--amber);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 .auth-submit {
   width: 100%;

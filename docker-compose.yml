@@ -28,6 +28,15 @@ services:
       # compose environment 是严格白名单：不透传则容器内用代码默认值 30，
       # .env 里改 RATE_LIMIT_PER_MINUTE 不会生效。
       - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-300}
+      # 登录/注册等口令端点的独立预算与账户锁定阈值（B1/B2）。
+      # 同样必须显式透传，否则 .env 调参在容器内无效。
+      - RATE_LIMIT_AUTH_PER_MINUTE=${RATE_LIMIT_AUTH_PER_MINUTE:-10}
+      - RATE_LIMIT_AUTH_LOGIN_PER_MINUTE=${RATE_LIMIT_AUTH_LOGIN_PER_MINUTE:-5}
+      - LOGIN_MAX_FAILED_ATTEMPTS=${LOGIN_MAX_FAILED_ATTEMPTS:-5}
+      - LOGIN_LOCK_MINUTES=${LOGIN_LOCK_MINUTES:-15}
+      # 仅当 socket 对端命中这些 CIDR 才采信 X-Forwarded-For；
+      # 配错会让限流被伪造头绕过，或把共享出口 IP 的用户群误封。
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-172.16.0.0/12,127.0.0.1}
       - APP_ENV=${APP_ENV:-production}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - JSON_LOGS=${JSON_LOGS:-true}
