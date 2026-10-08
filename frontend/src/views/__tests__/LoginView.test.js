@@ -3,7 +3,8 @@
  *
  * 被动过期跳过来时，会话是服务端判死的，不是用户自己退的，也不是他密码输错。
  * 不写清楚的话，凭空变空的表单 + 突然消失的原页面会被读成又一次登录失败。
- * 这条提示是一次性的：只认 ?expired=1，直接访问 /login 不该显示它。
+ * 提示有两个来源：URL 上的一次性 ?expired=1，以及 store 记着的“会话曾被判死”（后者
+ * 补的是路由守卫兜到 /login 的那条路：守卫只会带 redirect，不带 expired）。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -18,6 +19,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ replace }),
 }))
 
+const { useAuthStore } = await import('@/stores/authStore')
 const LoginView = (await import('@/views/LoginView.vue')).default
 
 function mountLogin(query = {}) {
@@ -47,5 +49,14 @@ describe('LoginView 过期提示', () => {
   it('直接访问登录页不显示过期提示', () => {
     const wrapper = mountLogin({})
     expect(wrapper.find('.form-notice').exists()).toBe(false)
+  })
+
+  it('无 ?expired 但 store 记着“会话曾被判死”时也要显示：守卫兜回登录页的那条路不带 expired', () => {
+    useAuthStore().sessionExpired = true
+
+    const notice = mountLogin({ redirect: '/dashboard' }).find('[role="status"].form-notice')
+
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('登录已过期')
   })
 })

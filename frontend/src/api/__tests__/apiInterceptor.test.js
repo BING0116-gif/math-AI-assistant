@@ -217,6 +217,9 @@ describe('API Interceptor', () => {
       // 以前这个分支只 removeItem 三个 key，于是会出现「storage 已空、
       // isAuthenticated 仍为 true」的第三种壳态：守卫不拦、页面继续打必 401 的请求。
       expect(mockStore.clearSession).toHaveBeenCalledTimes(1)
+      // 还要带上“是服务端判死的”这个理由：登录页的提示有两条来源，守卫兜回 /login
+      // 的那条只带 redirect，不标这个就只能靠 URL，而那条路永远不提示。
+      expect(mockStore.clearSession).toHaveBeenCalledWith({ reason: 'expired' })
     })
 
     it('store 不可达时退回直接删 key，不留半认证态', async () => {

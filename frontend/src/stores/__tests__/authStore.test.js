@@ -269,4 +269,73 @@ describe('authStore', () => {
       expect(localStorage.getItem('current_user')).toBeNull()
     })
   })
+
+  // 会话“被判死”与“被主动退出”必须是两个不同的事实：前者需要告诉用户为什么
+  // 表单凭空变空，后者不该被错标成过期。这个标记住在 store 而不是 URL：守卫兜到
+  // /login 时只会带 redirect，不带 expired。
+  describe('sessionExpired（服务端判死的标记）', () => {
+    const seedSession = () => {
+      localStorage.setItem('auth_token', 'old-at')
+      localStorage.setItem('refresh_token', 'expired-rt')
+      localStorage.setItem('current_user', JSON.stringify({ user_id: 'u1', username: 'u1' }))
+    }
+
+    it('refresh 被服务端拒绝：标为过期', async () => {
+      const store = useAuthStore()
+      seedSession()
+      store.restoreSession()
+      api.post.mockRejectedValue(new Error('Invalid refresh token'))
+
+      await expect(store.refresh()).resolves.toBe(false)
+
+      expect(store.sessionExpired).toBe(true)
+      expect(store.isAuthenticated).toBe(false)
+    })
+
+    it('游客没有 refresh token 时不算过期：否则公开页上一个普通 401 会伪装成“登录已过期”', async () => {
+      const store = useAuthStore()
+
+      await expect(store.refresh()).resolves.toBe(false)
+
+      expect(store.sessionExpired).toBe(false)
+    })
+
+    it('主动退出登录不标过期', async () => {
+      const store = useAuthStore()
+      seedSession()
+      store.restoreSession()
+      api.post.mockResolvedValue({ data: { status: 'success' } })
+
+      await store.logout()
+
+      expect(store.sessionExpired).toBe(false)
+      expect(store.isAuthenticated).toBe(false)
+    })
+
+    it('单纯 clearSession（启动时本地态残缺那种清理）不标过期', () => {
+      const store = useAuthStore()
+      seedSession()
+      store.restoreSession()
+
+      store.clearSession()
+
+      expect(store.sessionExpired).toBe(false)
+    })
+
+    it('重新登录成功即消费掉标记：提示不能赖在登录页上', async () => {
+      const store = useAuthStore()
+      seedSession()
+      store.restoreSession()
+      api.post.mockRejectedValue(new Error('Invalid refresh token'))
+      await store.refresh()
+      expect(store.sessionExpired).toBe(true)
+
+      api.post.mockResolvedValue({
+        data: { status: 'success', data: { access_token: 'new-at', refresh_token: 'new-rt', user_id: 'u1', username: 'u1', role: 'student' } },
+      })
+      await store.login({ username: 'u1', password: 'pw' })
+
+      expect(store.sessionExpired).toBe(false)
+    })
+  })
 })

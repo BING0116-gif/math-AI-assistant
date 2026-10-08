@@ -57,7 +57,7 @@ api.interceptors.request.use(
  * 行为：
  * 1. 401 时尝试刷新 token
  * 2. 若 refresh 成功，重放原始请求
- * 3. 若 refresh 失败，走会话失效的唯一出口 clearSessionOnce()（重置 store + 本地缓存）
+ * 3. 若 refresh 失败，走会话失效的唯一出口 clearSessionOnce()（标记判死 + 重置 store + 本地缓存）
  * 4. 避免 refresh 请求本身进入 refresh 循环
  * 5. 多个并发 401 只发起一次 refresh
  * 6. 登录/注册自身的 401 不刷新、不重放；423/429 不是 401，天然不进入刷新分支
@@ -142,19 +142,26 @@ api.interceptors.response.use(
 )
 
 /**
- * 会话失效的唯一出口：一律走 authStore.clearSession()。
+ * 会话失效的唯一出口：`authStore.clearSession({ reason: 'expired' })`。
  *
  * 以前这里自己 removeItem 三个 key，与 store 的实现不等价：它不重置
  * accessToken / refreshToken / currentUser，于是存在第三种壳态——storage 已空、
  * `isAuthenticated` 仍为 true：路由守卫不拦、页面继续打必 401 的请求，本地对话列表
  * 还会因为 owner 变空而被清掉，学生看到的是“应用莫名空了”而不是“登录过期”。
  *
- * 极端情况下（Pinia 尚未就绪）退回直接删 key：至少不会留下“半认证”状态。
+ * 为什么还要带上 reason：被动过期有两条落地路——useSessionExpiry 自己跳（带 ?expired=1）
+ * 与路由守卫兜回登录页（只带 redirect）。只看 URL 的话后一条永远不提示，而那条恰恰是
+ * 会话在 watcher 建立前就判死时走的那条。标记与清理必须是同一次调用：分成两步就会
+ * 留下“标了没清”或“清了没标”这种可命中的中间态。
+ *
+ * 极端情况下（Pinia 尚未就绪）退回直接删 key：至少不会留下“半认证”状态。这种
+ * 降级下记不了标记（refs 不存在），登录页会退化成无提示——比留下壳态轻得多，接受。
  */
 async function clearSessionOnce() {
   try {
     const { useAuthStore } = await import('@/stores/authStore')
-    useAuthStore().clearSession()
+    const auth = useAuthStore()
+    auth.clearSession({ reason: 'expired' })
   } catch {
     localStorage.removeItem('auth_token')
     localStorage.removeItem('refresh_token')

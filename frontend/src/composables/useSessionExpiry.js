@@ -77,4 +77,12 @@ export function useSessionExpiry() {
   watch(() => `${route.fullPath}#${route.matched?.length ?? 1}`, () => {
     if (pending) settle()
   })
+
+  // 边沿可能已经过去了：会话在 watcher 建立之前就被判死（main.js 那条链跑得比 mount 快），
+  // 那一刻根本不存在 true→false 可抓。store 上那份“曾被判死”的记录就是补这一次的证据：
+  // 本处补闩能自己带 expired 跳时最好，抢不过守卫时至少 LoginView 会读同一个标记。
+  if (auth.sessionExpired) {
+    pending = true
+    settle()
+  }
 }

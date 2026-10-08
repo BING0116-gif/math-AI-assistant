@@ -24,6 +24,10 @@ export const useAuthStore = defineStore('auth', () => {
   const refreshToken = ref(localStorage.getItem('refresh_token') || '')
   const currentUser = ref(loadUser())
   const restoring = ref(true) // 启动时恢复会话期间为 true
+  // 会话是被服务端判死的（401 → refresh 也失效），不是用户自己退的。这个标记存内存而不
+  // 是存 URL：被动过期有两条落地路，一条是 useSessionExpiry 主动跳（带 ?expired=1），另一条是
+  // 路由守卫兜到 /login（只带 redirect）；只看 URL 的话后一条永远不提示。登录成功即消费。
+  const sessionExpired = ref(false)
   // 最近一次登录/注册失败的归一化描述（{code, message, retryAfterSeconds}）。
   // 仅供页面展示与倒计时使用；原始错误仍原样抛出，保持调用方既有 catch 语义。
   const lastAuthError = ref(null)
@@ -53,6 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
       throw err
     }
     lastAuthError.value = null
+    sessionExpired.value = false
     const { access_token, refresh_token, user_id, username: uname, role: userRole } = data.data
     saveTokens(access_token, refresh_token)
     saveUser({ user_id, username: uname, role: userRole || 'student' })
@@ -129,7 +134,9 @@ export const useAuthStore = defineStore('auth', () => {
       refreshToken.value = newRefresh
       return true
     } catch {
-      clearSession()
+      // 只有真被服务端拒绝才算判死：无 refresh token 的早退分支不走到这里，
+      // 否则游客在公开页上碰一个普通 401 也会被当成“登录已过期”。
+      clearSession({ reason: 'expired' })
       return false
     }
   }
@@ -177,9 +184,21 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 清理所有认证状态（本地）。
+   * 记下“会话是被判死的”。不对外暴露：只能由 clearSession({ reason: 'expired' })
+   * 顺便设上，否则“标了没清”与“清了没标”都会变成一个可命中的中间态。
    */
-  function clearSession() {
+  function markSessionExpired() {
+    sessionExpired.value = true
+  }
+
+  /**
+   * 清理所有认证状态（本地）。
+   *
+   * `reason` 只影响一个事实：这次清理能不能被当成“登录已过期”。
+   * 默认 `local`：主动退出登录、启动时本地态残缺那种清理都走这一条，不能标过期。
+   * `expired`：服务端已经拒掉本会话（refresh 也失效），登录页据此提示。
+   */
+  function clearSession({ reason = 'local' } = {}) {
     localStorage.removeItem('auth_token')
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('current_user')
@@ -187,6 +206,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken.value = ''
     currentUser.value = null
     lastAuthError.value = null
+    if (reason === 'expired') markSessionExpired()
   }
 
   /**
@@ -233,6 +253,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     restoring,
     lastAuthError,
+    sessionExpired,
     // getters
     isAuthenticated,
     username,

@@ -21,8 +21,9 @@ const form = reactive({ username: '', password: '' })
 const isLogin = computed(() => mode.value === 'login')
 // 会话是服务端判死的（401 → refresh 失败），不是用户自己退的：必须说清楚，
 // 否则“表单凭空变空 + 刚才的页面没了”会被当成又一次登录失败。
-// 这是一次性标记：登录成功后 router.replace(safeRedirect()) 会把 query 一并带走。
-const expiredNotice = computed(() => route.query.expired === '1')
+// 两个来源：URL 上的一次性 ?expired=1（useSessionExpiry 自己跳的那条），以及 store 记着的
+// “曾被判死”（路由守卫兜回登录页的那条只带 redirect，不记一下就没法提示）。
+const expiredNotice = computed(() => route.query.expired === '1' || authStore.sessionExpired)
 const canSubmit = computed(() => !submitting.value && !coolingDown.value)
 const submitLabel = computed(() => {
   if (submitting.value) return isLogin.value ? '正在登录…' : '正在创建账号…'

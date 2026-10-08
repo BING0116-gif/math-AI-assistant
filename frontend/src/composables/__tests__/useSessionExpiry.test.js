@@ -59,7 +59,9 @@ describe('useSessionExpiry', () => {
     const auth = login()
     mount(Subject)
 
-    // 被动路径：401 → refresh 失败 → store 的 clearSession()（没有走过 useSignOut）
+    // 被动路径：401 → refresh 失败 → store 的 clearSession()（没有走过 useSignOut）。
+    // 这里不带 reason：本文件测的是 true→false 边沿与 pending 补判；“错过边沿靠标记补上”
+    // 那一条在 useSessionExpiryBoot.test.js 里用真路由覆盖。
     auth.clearSession()
     await nextTick()
     await flushPromises()
