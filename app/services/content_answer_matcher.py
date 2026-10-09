@@ -251,12 +251,6 @@ class ContentAnswerMatcher:
 
 
 # ── 各类 roster 解析 ──
-def _guess_expected_max(roster_numbers) -> int:
-    # 期望为 1..N 连续自然数；取 roster 最大序号，供完整性校验
-    nums = [int(n) for n in roster_numbers if isinstance(n, str) and n.isdigit()]
-    return max(nums) if nums else 0
-
-
 def _complete_and_valid(by_number: Dict[str, str]) -> bool:
     nums = [int(n) for n in by_number if n.isdigit()]
     if not nums:

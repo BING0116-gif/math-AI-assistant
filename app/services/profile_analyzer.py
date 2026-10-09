@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from collections import defaultdict
 import statistics
 import logging
 
-from sqlalchemy import select, func, and_, Integer, desc, extract, cast, case, Float
+from sqlalchemy import select, func, and_, desc, extract, cast, case, Float
 
-from app.data.models import LearningRecord, ChatSession
+from app.data.models import LearningRecord
 
 logger = logging.getLogger(__name__)
 

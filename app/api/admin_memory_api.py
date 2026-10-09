@@ -11,7 +11,7 @@
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 
 from app.security.access_control import require_admin_role
 from app.services.memory_store import get_memory_store

@@ -9,7 +9,6 @@ ThoughtRecorder — 思维过程记录器。
 
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from typing import Any, Dict, List, Optional

@@ -1,4 +1,3 @@
-import os
 from typing import Any, List
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator

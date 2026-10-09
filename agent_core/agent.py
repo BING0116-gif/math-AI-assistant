@@ -40,6 +40,16 @@ from prompts.dynamic_params import (
 )
 from tools import get_registry, ToolRegistry, BaseTool, ToolInput
 from tools.tool_description import ToolDescriptionGenerator
+from tools.tool_ledger import (
+    TRACE_ENABLED_KEY,
+    close_running,
+    drain_events,
+    drain_trace_events,
+    ensure_ledger,
+    public_summary,
+    public_trace,
+    strip_process_text,
+)
 from agent_core.memory_persistence import MemoryPersistenceFacade, UserProfile
 from app.services.behavior_tracker import LearningBehaviorTracker
 from app.services.memory_application import MemoryApplicationService
@@ -461,6 +471,12 @@ class MathAgent:
             "original_user_input": user_input,
             "animations": [],
         }
+        # 台账列表必须在创建请求上下文时就挂上去：Pydantic 会复制 ToolInput.context，
+        # 只有共享的列表对象能让注册表直连调用（识图）的回执回到本轮时间线。
+        ensure_ledger(context)
+        # 思考过程纪要只在自由问答模式采集：模式守卫只守最终正文，拦不住逐轮过述，
+        # 因此受限模式从源头关掉整个轮次/摘要采集（时间线不受影响）。
+        context[TRACE_ENABLED_KEY] = canonical_mode == "tutor_free"
         if tutor_context is not None:
             from app.services.tutor_service import tutor_instruction
             context["tutor_context"] = tutor_context
@@ -1075,16 +1091,44 @@ class MathAgent:
         # 透传策略级 run 终态(completed/timeout/budget_exceeded)，供 SSE 层记指标与落库
         self._last_run_status = str(getattr(strategy, "_last_run_status", "") or "completed")
 
+        # 过程解说只属于思考面板：正文连着落库的话，刷新后历史回看会把解说
+        # 又在答案里显示一遍（流式阶段的搬迁只改了内存缓冲）。
+        full_response = strip_process_text(context, full_response)
+
         history.add_ai_message(full_response)
         public_animations = list(context.get("animations") or [])
+        # 本轮工具调用轨迹（只含工具名/状态/耗时等低基数字段）随消息落库，
+        # 历史会话重加载时能还原“调了哪个工具、是否成功”的时间线。
+        close_running(context)
+        tool_calls = public_summary(context)
+        # 思考纪要：受限模式（trace_enabled=False）下台账不会采轮次，这里自然为空。
+        trace = public_trace(context)
+        public_visualizations = list(context.get("visualizations") or [])
+        persist_metadata: Dict[str, Any] = {}
+        if public_animations:
+            persist_metadata["animations"] = public_animations
+        # 图像也是本轮产物：不随消息落库的话，刷新页面后图就丢了。
+        if public_visualizations:
+            persist_metadata["visualizations"] = public_visualizations
+        if tool_calls:
+            persist_metadata["tool_calls"] = tool_calls
+        if trace:
+            persist_metadata["agent_trace"] = trace
+        # 面板只该跟着「这条回答自己的模式」走：切换选择器不应把历史自由对话的纪要藏起来，
+        # 也不能把受限模式的消息误判成可展开。模式枚举低基数，不含学生内容。
+        persist_metadata["tutor_mode"] = canonical_mode
+        # 本进程内再留一份给“展开全文”按需拉取；SSE 不承载超长文本，落库仍是唯一事实源。
+        self._cache_session_trace(strategy, strategy_session, trace)
         await self._persist_chat_message(
             user_id, sid, "assistant", full_response,
-            metadata={"animations": public_animations} if public_animations else None,
+            metadata=persist_metadata or None,
         )
         self._last_run_metadata = {
             "model": self._model,
             "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
             "tool_names": sorted(getattr(strategy, "_last_used_tools", set()) or []),
+            "tool_calls": tool_calls,
+            "agent_trace": trace,
             "token_usage": getattr(strategy, "_last_token_usage", None) or None,
             "estimated_cost": self._estimate_run_cost(strategy),
             "tutor_mode": canonical_mode,
@@ -1150,6 +1194,13 @@ class MathAgent:
         )
 
         result = await self._registry.execute_safe("vision_tool", input_data)
+
+        # 注册表直连调用同样写台账：不论成功还是失败，时间线都要拿到真实终态。
+        for activity in drain_events(context):
+            yield activity
+        # 识图在模型开轮之前，工具摘要归 round 0，与文本路径的时间线保持一致。
+        for activity in drain_trace_events(context):
+            yield activity
 
         if not result.success:
             yield f"**【图片识别失败】**: {result.error}\n\n"
@@ -1232,6 +1283,12 @@ class MathAgent:
 
         result = await self._registry.execute_safe("vision_tool", input_data)
 
+        # 直连的识图调用也要在时间线可见，失败时不能只留一行 markdown。
+        for activity in drain_events(context):
+            yield activity
+        for activity in drain_trace_events(context):
+            yield activity
+
         if not result.success:
             yield f"**【图片识别失败】**: {result.error}\n\n"
             return
@@ -1278,9 +1335,29 @@ class MathAgent:
                 )
                 full_response = guard_result.text
                 yield full_response
+            # 与文本路径同口径：过程解说归面板，落库正文只留答案。
+            full_response = strip_process_text(context, full_response)
             history.add_ai_message(full_response)
+            close_running(context)
+            tool_calls = public_summary(context)
+            trace = public_trace(context)
+            persist_metadata: Dict[str, Any] = {}
+            if tool_calls:
+                persist_metadata["tool_calls"] = tool_calls
+            if trace:
+                persist_metadata["agent_trace"] = trace
+                self._cache_session_trace(strategy, strategy_session, trace)
+            # 与文本路径同口径：每条回答自带模式，历史回看时面板不会跟着当前选择器跑。
+            persist_metadata["tutor_mode"] = canonical_mode
+            if context.get("visualizations"):
+                persist_metadata["visualizations"] = list(context["visualizations"])
+            if context.get("animations"):
+                persist_metadata["animations"] = list(context["animations"])
             await self._persist_chat_message(user_id, sid, "user", combined_input)
-            await self._persist_chat_message(user_id, sid, "assistant", full_response)
+            await self._persist_chat_message(
+                user_id, sid, "assistant", full_response,
+                metadata=persist_metadata or None,
+            )
             strategy_usage = dict(getattr(strategy, "_last_token_usage", None) or {})
             vision_usage = dict((result.metadata or {}).get("token_usage") or {})
             token_usage = {
@@ -1292,6 +1369,10 @@ class MathAgent:
                 "model": self._model,
                 "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
                 "tool_names": sorted(set(getattr(strategy, "_last_used_tools", set()) or []) | {"vision_tool"}),
+                "tool_calls": tool_calls,
+                "agent_trace": trace,
+                "visualizations": list(context.get("visualizations") or []),
+                "animations": list(context.get("animations") or []),
                 "token_usage": token_usage if token_usage["total_tokens"] else None,
                 "estimated_cost": self._estimate_run_cost(strategy),
                 "tutor_mode": canonical_mode,
@@ -1341,11 +1422,47 @@ class MathAgent:
         if hasattr(self._strategy, "clear_user_data"):
             self._strategy.clear_user_data(user_id)
 
-    def get_thought_recorder(self):
-        """获取思维记录器。"""
-        if hasattr(self._strategy, 'thought_recorder'):
-            return self._strategy.thought_recorder
+    def get_thought_recorder(self, session_id: Optional[str] = None):
+        """获取思维记录器；给了会话键时返回该会话自己的记录器。
+
+        真实 run 的记录器按 "{user_id}:{session_id}" 建立，统一取默认记录器
+        会让 /api/agent/thought 永远空→ 404。
+        """
+        strategy = self._strategy
+        if session_id and hasattr(strategy, "get_thought_recorder"):
+            return strategy.get_thought_recorder(str(session_id))
+        if hasattr(strategy, "thought_recorder"):
+            return strategy.thought_recorder
         raise RuntimeError("当前策略不支持思维记录")
+
+    def get_session_trace(self, session_key: str) -> List[Dict[str, Any]]:
+        """按需取回本会话最近一轮的思考纪要（/api/agent/thought 的展开通道）。
+
+        纪要本体已随消息落库，这里只是当前进程内的快捷副本：服务重启或非
+        LangChain 策略时返回空列表，调用方回退到历史消息的 metadata。
+        """
+        getter = getattr(self._strategy, "get_session_trace", None)
+        if not callable(getter):
+            return []
+        try:
+            return list(getter(session_key) or [])
+        except Exception:
+            return []
+
+    @staticmethod
+    def _cache_session_trace(
+        strategy: Any,
+        strategy_session: str,
+        trace: List[Dict[str, Any]],
+    ) -> None:
+        """把本轮纪要交给策略的会话级缓存；不支持的策略自然跳过。"""
+        cache = getattr(strategy, "cache_session_trace", None)
+        if not callable(cache):
+            return
+        try:
+            cache(strategy_session, trace)
+        except Exception as exc:
+            logger.debug(f"思考纪要会话缓存失败（已忽略）: {exc}")
 
     @property
     def registry(self) -> ToolRegistry:

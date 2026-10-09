@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -163,7 +162,7 @@ class SkillAggregator:
         self, user_id: str, limit: int = 50
     ) -> List[Dict[str, Any]]:
         from sqlalchemy import select
-        from app.data.models import KnowledgePoint, UserKnowledgeState
+        from app.data.models import KnowledgePoint
 
         async with self._session_factory() as db:
             states = sorted(await read_learning_states(db, user_id),

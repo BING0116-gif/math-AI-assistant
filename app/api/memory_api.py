@@ -2,21 +2,17 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Request, Depends, Query, Body
+from fastapi import APIRouter, HTTPException, Request, Query, Body
 from pydantic import BaseModel, Field
 
 from app.data.database import get_db_session
-from app.data.repositories import LearningRecordRepository, QuestionRepository
+from app.data.repositories import LearningRecordRepository
 from app.services.memory import (
     ShortTermMemory,
     LongTermMemory,
-    MemoryRetrievalEngine,
-    MemoryItem,
-    RetrievalResult,
 )
 from app.services.cache import get_cache_manager
 from app.security.audit import get_audit_logger
-from app.security.access_control import require_permission, Permission
 
 router = APIRouter(prefix="/api/memory", tags=["记忆系统"])
 
@@ -34,6 +30,12 @@ def _get_or_create_short_term(user_id: str, session_id: str) -> ShortTermMemory:
     if key not in _short_term_store:
         _short_term_store[key] = ShortTermMemory()
     return _short_term_store[key]
+
+
+def _get_error_book_sync_service():
+    from app.services.error_book_sync import get_error_book_sync_service
+
+    return get_error_book_sync_service()
 
 
 def clear_user_short_term_memory(user_id: str) -> None:
@@ -233,8 +235,7 @@ async def sync_error_book_to_skills(
     if not user_id:
         raise HTTPException(status_code=401, detail="未认证")
 
-    from app.services.error_book_sync import ErrorBookSkillSyncService
-    sync_service = ErrorBookSkillSyncService()
+    sync_service = _get_error_book_sync_service()
 
     if error_entry:
         result = await sync_service.on_error_added(user_id, error_entry)
@@ -260,8 +261,7 @@ async def toggle_error_mastery(
     if not error_id:
         raise HTTPException(status_code=400, detail="error_id is required")
 
-    from app.services.error_book_sync import ErrorBookSkillSyncService
-    sync_service = ErrorBookSkillSyncService()
+    sync_service = _get_error_book_sync_service()
     result = await sync_service.on_error_mastery_toggled(
         user_id, str(error_id), bool(is_mastered)
     )
@@ -278,8 +278,7 @@ async def batch_sync_error_book(
     if not user_id:
         raise HTTPException(status_code=401, detail="未认证")
 
-    from app.services.error_book_sync import ErrorBookSkillSyncService
-    sync_service = ErrorBookSkillSyncService()
+    sync_service = _get_error_book_sync_service()
     result = await sync_service.batch_sync(user_id, entries)
 
     return {"success": True, **result}
@@ -291,8 +290,7 @@ async def get_skill_impact_summary(request: Request):
     if not user_id:
         raise HTTPException(status_code=401, detail="未认证")
 
-    from app.services.error_book_sync import ErrorBookSkillSyncService
-    sync_service = ErrorBookSkillSyncService()
+    sync_service = _get_error_book_sync_service()
     summary = await sync_service.get_skill_impact_summary(user_id)
 
     return summary

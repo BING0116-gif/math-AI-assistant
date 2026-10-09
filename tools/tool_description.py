@@ -7,10 +7,9 @@ ToolDescriptionGenerator — 增强版工具描述生成器。
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from tools.base_tool import BaseTool, ToolCapability
+from tools.base_tool import BaseTool
 
 
 class ToolDescriptionGenerator:

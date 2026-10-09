@@ -11,7 +11,6 @@ from typing import Callable, Sequence
 from app.config.settings import settings
 from app.services.animation_service import AnimationServiceError
 from app.services.animation_storage import ValidatedArtifact, storage_root, validate_and_publish_video
-from ops.math_animator_poc.tracer.models import MathAnimationSpec
 from ops.math_animator_poc.tracer.registry import TEMPLATES, verify_trusted_source
 
 Executor = Callable[[Sequence[str], float], subprocess.CompletedProcess[str]]

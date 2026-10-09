@@ -53,10 +53,6 @@ def _get_database_url() -> str:
     return url
 
 
-def _get_sync_database_url() -> str:
-    return DATABASE_URL or "sqlite:///./data/math_ai.db"
-
-
 async def _run_alembic_migration(db_url: str) -> None:
     """使用 Alembic 执行数据库迁移。
 

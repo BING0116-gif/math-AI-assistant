@@ -391,8 +391,9 @@ async def _build_skill_profile_response(user_id: str) -> dict:
         facade = await _get_facade()
         snapshot = await facade.get_profile_snapshot(user_id)
         skills = snapshot.skills
-        error_patterns = snapshot.error_pattern_list or await SkillAggregator().get_error_patterns(user_id)
-        cognitive_style = snapshot.cognitive_style or await SkillAggregator().get_cognitive_style(user_id)
+        aggregator = SkillAggregator()
+        error_patterns = snapshot.error_pattern_list or await aggregator.get_error_patterns(user_id)
+        cognitive_style = snapshot.cognitive_style or await aggregator.get_cognitive_style(user_id)
 
         dag = MathSkillDAG()
         mastered_codes = {

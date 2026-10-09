@@ -55,21 +55,15 @@ AI_PROVIDER_PARSE_FAILED = "AI_PROVIDER_PARSE_FAILED"
 PARTIAL_REASON_TRUNCATED = "model_output_truncated"
 PARTIAL_REASON_PARSE_RECOVERED = "heuristic_json_recovery"
 
+# 与 content_import.SUPPORTED_TYPES 保持一致的自动判题支持题型集合。
+# provider 不再用这个集合强制回退题型，但结果校验仍需拒绝未知题型。
+from app.services.content_import import SUPPORTED_TYPES as _SUPPORTED_TYPES
+
 
 @dataclass(frozen=True)
 class _ContentAIChatResponse:
     content: str
     finish_reason: Optional[str] = None
-
-# 与 content_import.SUPPORTED_TYPES 保持一致的自动判题支持题型集合。
-# 为简化用户流程，AI provider 不再把不在此集合的题型强制回退为 choice：
-# 真实 AI 可返回任意题型，仅 answer_spec / draft 阶段做兜底处理。
-from app.services.content_import import SUPPORTED_TYPES as _SUPPORTED_TYPES
-
-
-def _is_supported_type(qtype: Optional[str]) -> bool:
-    return (qtype or "") in _SUPPORTED_TYPES
-
 
 def _strict_bool(value: Any, default: bool = False) -> bool:
     """严格解析 AI 返回的布尔字段；非法/缺失一律失败关闭（False），杜绝 bool("false")==True 陷阱。"""

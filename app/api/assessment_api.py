@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.api.student_contracts import STUDENT_API_RESPONSES, StudentOperationEnvelope
 from app.services.assessment_service import (

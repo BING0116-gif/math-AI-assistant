@@ -17,7 +17,7 @@ ask_student 工具 — 苏格拉底式结构化反问（T03）。
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput
 

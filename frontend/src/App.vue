@@ -15,7 +15,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { onMounted } from 'vue'
 import { useUiStore } from '@/stores/uiStore'
 import { useLoginDialog } from '@/composables/useLoginDialog'

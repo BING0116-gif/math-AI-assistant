@@ -7,7 +7,7 @@ AgentStrategy — Agent 执行策略抽象基类。
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict
 
 
 class AgentStrategy(ABC):

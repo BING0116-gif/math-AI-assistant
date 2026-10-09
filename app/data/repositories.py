@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import TypeVar, Generic, List, Optional, Dict, Any, Sequence
+from typing import TypeVar, Generic, List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, update, delete, and_, or_
+from sqlalchemy import select, func, update, and_
 from sqlalchemy.orm import DeclarativeBase
 
 from app.data.models import (

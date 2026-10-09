@@ -5,7 +5,7 @@
 所有上层业务（记忆写入、画像生成、推荐排序）只依赖此抽象接口。
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 class BaseQuestionSystemAdapter:

@@ -6,7 +6,7 @@ import inspect
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, Mapping, Optional
+from typing import Any, Awaitable, Callable, Iterable, Optional
 
 logger = logging.getLogger(__name__)
 

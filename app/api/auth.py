@@ -5,7 +5,6 @@ from typing import Optional
 
 from app.middleware.auth import (
     register_user,
-    authenticate_user,
     authenticate_user_detailed,
     LoginOutcome,
     create_token_pair,

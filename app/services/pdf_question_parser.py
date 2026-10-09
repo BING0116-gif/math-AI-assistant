@@ -515,7 +515,6 @@ class PDFQuestionParser:
                 answers[qnum] = {"answer": ans_text}
             else:
                 # 已有则追加到分析
-                existing = answers[qnum].get("answer", "")
                 answers[qnum]["analysis"] = ans_text
         
         # 策略2：匹配子题答案 "(1) xxx"
@@ -587,7 +586,7 @@ class PDFQuestionParser:
         dicts = []
         base_id = f"PDF_{uuid.uuid4().hex[:6].upper()}"
         
-        for idx, q in enumerate(parse_result.questions):
+        for q in parse_result.questions:
             qid = f"{base_id}_{q.number:03d}"
             
             # 构建选项 JSON

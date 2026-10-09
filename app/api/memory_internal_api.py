@@ -8,9 +8,9 @@
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 
 from app.services.memory_retrieval import get_retrieval_engine
 from app.services.memory_store import get_memory_store

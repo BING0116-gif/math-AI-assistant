@@ -1,8 +1,6 @@
-import json
 import csv
 import io
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse

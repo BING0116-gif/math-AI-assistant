@@ -13,9 +13,8 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from app.config.settings import settings
 from app.services.memory_store import (
     MemoryStore,
     get_memory_store,
@@ -120,18 +119,20 @@ class MemoryRetrievalEngine:
         Returns:
             RetrievalResponse: 检索结果
         """
+        min_importance = self._normalize_min_importance(min_importance)
+
         # 提取元信息
         categories = self._extract_categories(query_text)
 
         # 并行执行三级召回
         level1_task = self._retrieve_short_term(
-            short_term_memories or [], query_text, categories
+            short_term_memories or [], query_text, categories, min_importance
         )
         level2_task = self._retrieve_vector(
-            user_id, query_text, memory_types, high_category
+            user_id, query_text, memory_types, high_category, min_importance
         )
         level3_task = self._retrieve_sql(
-            user_id, categories, memory_types, high_category
+            user_id, categories, memory_types, high_category, min_importance
         )
 
         level1_results, level2_results, level3_results = await asyncio.gather(
@@ -201,6 +202,7 @@ class MemoryRetrievalEngine:
         short_term_memories: List[Dict[str, Any]],
         query_text: str,
         categories: List[str],
+        min_importance: float = 0.0,
     ) -> List[RetrievedMemory]:
         """第一级：从短期记忆中召回（最多 8 条）。"""
         results = []
@@ -208,6 +210,10 @@ class MemoryRetrievalEngine:
         query_words = set(query_lower.split())
 
         for item in short_term_memories[:8]:
+            importance = self._coerce_importance(item.get("importance", 0.5))
+            if importance < min_importance:
+                continue
+
             content = item.get("content", "")
             content_lower = content.lower()
             content_words = set(content_lower.split())
@@ -231,7 +237,7 @@ class MemoryRetrievalEngine:
                     high_category=item.get("high_category", ""),
                     category=item.get("category", ""),
                     summary=content[:200],
-                    importance=item.get("importance", 0.5),
+                    importance=importance,
                     memory_strength=item.get("memory_strength", 0.6),
                     difficulty=item.get("difficulty"),
                     created_at=item.get("created_at", 0),
@@ -251,6 +257,7 @@ class MemoryRetrievalEngine:
         query_text: str,
         memory_types: Optional[List[str]] = None,
         high_category: Optional[str] = None,
+        min_importance: float = 0.0,
     ) -> List[RetrievedMemory]:
         """第二级：Qdrant 向量语义召回（Top-20）。"""
         store = await self._get_store()
@@ -261,17 +268,22 @@ class MemoryRetrievalEngine:
             memory_types=memory_types,
             high_category=high_category,
             min_score=QDRANT_MIN_SCORE,
+            min_importance=min_importance,
         )
 
         retrieved = []
         for r in results:
+            importance = self._coerce_importance(r.get("importance", 0.5))
+            if importance < min_importance:
+                continue
+
             retrieved.append(RetrievedMemory(
                 id=r.get("memory_id", 0),
                 memory_type=r.get("memory_type", ""),
                 high_category=r.get("high_category", ""),
                 category=r.get("category", ""),
                 summary=r.get("summary", ""),
-                importance=r.get("importance", 0.5),
+                importance=importance,
                 memory_strength=r.get("memory_strength", 0.5),
                 difficulty=r.get("difficulty"),
                 created_at=r.get("created_at", 0),
@@ -293,6 +305,7 @@ class MemoryRetrievalEngine:
         categories: List[str],
         memory_types: Optional[List[str]] = None,
         high_category: Optional[str] = None,
+        min_importance: float = 0.0,
     ) -> List[RetrievedMemory]:
         """第三级：SQL 精确匹配（关键词/错题标签，最多 10 条）。"""
         store = await self._get_store()
@@ -305,6 +318,10 @@ class MemoryRetrievalEngine:
 
         results = []
         for mem in memories:
+            importance = self._coerce_importance(mem.get("importance", 0.5))
+            if importance < min_importance:
+                continue
+
             score = 0.0
 
             # 知识点匹配
@@ -337,7 +354,7 @@ class MemoryRetrievalEngine:
                     high_category=mem.get("high_category", ""),
                     category=mem.get("category", ""),
                     summary=mem.get("embedding_summary", "")[:200],
-                    importance=float(mem.get("importance", 0.5)),
+                    importance=importance,
                     memory_strength=float(mem.get("memory_strength", 0.5)),
                     difficulty=mem.get("difficulty"),
                     created_at=int(mem.get("created_at", 0)),
@@ -428,6 +445,27 @@ class MemoryRetrievalEngine:
     # ========================================================================
     # 工具方法
     # ========================================================================
+
+    @staticmethod
+    def _normalize_min_importance(value: Any) -> float:
+        """规范化外部传入的最低重要度，保持无效输入的旧兼容行为。"""
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+        if not math.isfinite(normalized):
+            return 0.0
+        return max(0.0, min(1.0, normalized))
+
+    @staticmethod
+    def _coerce_importance(value: Any) -> float:
+        """读取历史或外部记忆数据时，避免异常重要度破坏检索流程。"""
+        try:
+            importance = float(value)
+        except (TypeError, ValueError):
+            return 0.5
+        return importance if math.isfinite(importance) else 0.5
 
     def _extract_categories(self, text: str) -> List[str]:
         """从文本中提取知识点分类。"""

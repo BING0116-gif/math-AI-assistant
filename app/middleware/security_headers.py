@@ -1,7 +1,3 @@
-from typing import Callable
-
-from starlette.requests import Request
-from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config.settings import settings

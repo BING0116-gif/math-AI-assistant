@@ -34,7 +34,6 @@ class SkillProfileTool(BaseTool):
         try:
             from agent_core.memory_persistence import MemoryPersistenceFacade
             from app.services.skill_aggregator import SkillAggregator
-            from app.services.difficulty_estimator import DifficultyEstimator
 
             user_id = input_data.context.get("user_id", "anonymous")
             facade = MemoryPersistenceFacade()

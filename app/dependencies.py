@@ -18,8 +18,6 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-from fastapi import HTTPException
-
 from app.config.settings import settings
 from app.services.ai_capability import is_ai_available, raise_ai_unavailable
 

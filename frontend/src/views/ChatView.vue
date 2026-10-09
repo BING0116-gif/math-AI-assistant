@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream, cancelChatStream } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID, chatErrorSourceId } from '@/utils/helpers'
+import { applyAgentStep, applyTraceEvent, isTraceEvent, retractFromAnswer } from '@/utils/toolActivity'
 import { markSkippedSourceId, clearSkippedSourceId, listSkippedSourceIds } from '@/utils/errorBookDismissals'
 import { DEFAULT_TUTOR_MODE, TUTOR_MODES, normalizeTutorMode } from '@/utils/tutorModes'
 import { useAiCapability } from '@/composables/useAiCapability'
@@ -214,6 +215,8 @@ function processTyping(msgId: string) {
 // SSE 事件处理（命名事件：follow_up / ask_student）
 // Track A 9.6:agent_step 高频事件按 50ms 窗口合并,统一 flush 进 store,
 // 长推导(>100 事件)不再逐条触发响应式更新与滚动
+// 思考纪要与工具时间线走同一条 agent_step 通道，在 flush 时按 event_type 分流：
+// 纪要面板不参与打字机，到了就直接渲染
 const pendingAgentStepBatches = new Map<string, any[]>()
 let agentStepFlushTimer: number | null = null
 
@@ -226,22 +229,25 @@ function queueAgentStep(data: any, messageId: string) {
   }
 }
 
-function applyAgentStep(steps: any[], data: any): any[] {
-  const next = [...steps]
-  if ((data.event_type === 'tool_end' || data.event_type === 'tool_error') && data.tool) {
-    const active = [...next].reverse().find(item => item.tool === data.tool && item.status === 'running')
-    if (active) active.status = data.event_type === 'tool_error' ? 'error' : 'done'
-  } else {
-    next.push({
-      type: data.event_type || 'thinking',
-      tool: data.tool || '',
-      label: data.message || '正在处理',
-      status: data.event_type === 'tool_start'
-        ? 'running'
-        : (data.event_type === 'tool_error' ? 'error' : 'done'),
-    })
-  }
-  return next
+// 打字机的渲染源是 rawContentBuffer，抽回过程轮文本后必须立即重绘一次，
+// 否则正文会把“先取点再画图”这类解说一直挂到下一个字符到达
+function renderStreamNow(msgId: string) {
+  const el = document.getElementById('msg-' + msgId)
+  const contentDiv = el?.querySelector('.msg-content') as HTMLElement | null
+  if (!contentDiv) return
+  contentDiv.innerHTML = formatStreamText(rawContentBuffer)
+  lastRenderedLength = rawContentBuffer.length
+}
+
+// 过程轮解说从正文移入思考面板（先试尾部，再看中间），两处都定位不到就保持原文（宁可重复不可丢字）
+function retractProcessNarration(msgId: string, retractedText: string) {
+  if (!retractedText || !streaming.value || streamingMessageId.value !== msgId) return
+  const raw = retractFromAnswer(rawContentBuffer, retractedText)
+  if (!raw.removed) return
+  rawContentBuffer = raw.text
+  const typed = retractFromAnswer(typingBuffer, retractedText)
+  if (typed.removed) typingBuffer = typed.text
+  renderStreamNow(msgId)
 }
 
 function flushAgentSteps() {
@@ -258,10 +264,24 @@ function flushAgentSteps() {
     const message = store.currentMessages.find(item => item.id === messageId)
     if (!message) continue
     let steps = [...(message.agentSteps || [])]
+    let trace = [...(message.trace || [])]
+    let stepsChanged = false
+    let traceChanged = false
     for (const data of events) {
-      steps = applyAgentStep(steps, data)
+      if (isTraceEvent(data.event_type)) {
+        trace = applyTraceEvent(trace, data)
+        traceChanged = true
+        if (data.event_type === 'round_process') retractProcessNarration(messageId, data.text)
+      } else {
+        steps = applyAgentStep(steps, data)
+        stepsChanged = true
+      }
     }
-    store.updateMessage(store.currentChatId, messageId, { agentSteps: steps }, { persist: false })
+    const updates: Record<string, any> = {}
+    if (stepsChanged) updates.agentSteps = steps
+    if (traceChanged) updates.trace = trace
+    if (!Object.keys(updates).length) continue
+    store.updateMessage(store.currentChatId, messageId, updates, { persist: false })
     touched = true
   }
   if (touched) nextTick(() => scrollToBottom())
@@ -425,7 +445,7 @@ async function streamAgentReply(
             rawContentBuffer = ''
             // Track A 9.6：同步丢弃该消息尚未 flush 的 agent_step 队列，避免旧事件在重置后回填
             pendingAgentStepBatches.delete(msgId)
-            store.updateMessage(chatId, msgId, { content: '', agentSteps: [] })
+            store.updateMessage(chatId, msgId, { content: '', agentSteps: [], trace: [] })
           }
           handleEvent(eventType, data, msgId)
         },
@@ -488,7 +508,7 @@ async function handleTextSend(text: string) {
   const msgId = generateUUID()
   // 占位消息的 timestamp 必须是真正的时间戳：它会被写进 chat.lastMessageTime 参与排序。
   // “正在生成”的提示态由 streaming + streamingMessageId 驱动，不靠时间字段承载。
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [] }
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [], trace: [], tutorMode: tutorMode.value }
   store.addMessage(chatId, placeholder)
 
   await streamAgentReply(
@@ -514,7 +534,7 @@ async function handleClarificationSubmit({ answer }: { answer: string; optionLab
   const msgId = generateUUID()
   // 占位消息的 timestamp 必须是真正的时间戳：它会被写进 chat.lastMessageTime 参与排序。
   // “正在生成”的提示态由 streaming + streamingMessageId 驱动，不靠时间字段承载。
-  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [] }
+  const placeholder = { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [], trace: [], tutorMode: tutorMode.value }
   store.addMessage(chatId, placeholder)
 
   await streamAgentReply(
@@ -552,7 +572,7 @@ async function handleSendWithImage(text: string, imageData: string) {
   nextTick(() => scrollToBottom())
 
   const msgId = generateUUID()
-  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [] })
+  store.addMessage(chatId, { id: msgId, content: '', sender: 'ai', timestamp: new Date().toISOString(), type: 'text', agentSteps: [], trace: [], tutorMode: tutorMode.value })
 
   streaming.value = true
   streamingMessageId.value = msgId
@@ -584,6 +604,7 @@ async function handleSendWithImage(text: string, imageData: string) {
     }
 
     const handleDone = () => {
+      flushAgentSteps()
       streaming.value = false
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
@@ -594,6 +615,7 @@ async function handleSendWithImage(text: string, imageData: string) {
     }
 
     const handleError = () => {
+      flushAgentSteps()
       streaming.value = false
       streamingMessageId.value = null
       store.updateMessage(chatId, msgId, {
@@ -749,6 +771,7 @@ function handleSkip(msgId: string) {
             :key="msg.id"
             :message="msg"
             :is-streaming="streaming && msg.id === streamingMessageId"
+            :tutor-mode="msg.tutorMode || tutorMode"
             @add-to-error-book="openErrorBookDialog"
             @skip-error-book="handleSkip"
           />

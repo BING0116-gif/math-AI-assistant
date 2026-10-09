@@ -146,7 +146,7 @@ async def get_mastery(request: Request, course_id: str = Query(...)):
 
     from sqlalchemy import select
 
-    from app.data.models import KnowledgePoint, UserKnowledgeState
+    from app.data.models import KnowledgePoint
 
     async with get_db_session() as session:
         codes = list((await session.execute(

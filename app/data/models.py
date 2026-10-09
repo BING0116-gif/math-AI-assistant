@@ -12,7 +12,6 @@ from sqlalchemy import (
     Index,
     UniqueConstraint,
     CheckConstraint,
-    func,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 from datetime import datetime, timezone

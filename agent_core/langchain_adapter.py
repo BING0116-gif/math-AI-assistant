@@ -22,6 +22,18 @@ from pydantic import BaseModel, Field, create_model
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
 from tools.execution_guard import ToolExecutionGuard, default_guard_policy
+from tools.tool_ledger import (
+    STATUS_ABORTED,
+    STATUS_DENIED,
+    STATUS_ERROR,
+    STATUS_SUCCESS,
+    begin_call,
+    finish_call,
+    record_tool_io,
+    status_for_error_code as _status_for_error_code,
+    summarize_parameters,
+    summarize_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +88,11 @@ class LangChainToolConverter:
         except Exception:
             pass
 
+    @staticmethod
+    def _terminal_status_for(error_code: str) -> str:
+        """把 guard 错误码映射成展示用终态，与指标口径保持一致。"""
+        return _status_for_error_code(error_code)
+
     def convert(self, custom_tool: BaseTool) -> StructuredTool:
         if custom_tool.name in self._conversion_cache:
             return self._conversion_cache[custom_tool.name]
@@ -85,14 +102,6 @@ class LangChainToolConverter:
         async def _execute_async(query: str, **kwargs) -> str:
             start_time = time.time()
 
-            # ===== 强制输出：验证LangChain工具调用链 =====
-            tool_name = getattr(custom_tool, 'name', '?')
-            print(f"\n[LANGCHAIN_ADAPTER] 工具被调用: name={tool_name}, query={repr(query[:80])}", flush=True)
-            print(f"[LANGCHAIN_ADAPTER] kwargs keys={list(kwargs.keys())}", flush=True)
-            if 'category' in kwargs:
-                print(f"[LANGCHAIN_ADAPTER] kwargs.category={repr(kwargs.get('category'))}", flush=True)
-            # ============================================
-
             try:
                 from app.services.mode_gating import is_tool_allowed, tool_denied_payload
 
@@ -101,6 +110,8 @@ class LangChainToolConverter:
                 # 不混入 Markdown，也不会跨学生会话共享。
                 current_context.setdefault("visualizations", [])
                 current_context.setdefault("animations", [])
+                # 工具调用台账同样按请求隔离，供时间线显示“调了哪个工具、是否成功”。
+                begin_call(current_context, custom_tool.name, source="langchain_agent")
                 mode = current_context.get("tutor_mode", "tutor_free")
                 try:
                     allowed = is_tool_allowed(mode, custom_tool.name)
@@ -115,11 +126,33 @@ class LangChainToolConverter:
                     if payload not in denials:
                         denials.append(payload)
                     logger.warning(
-                        "LangChain 模式工具调用被拒绝: mode=%s tool=%s",
+                        "LangChain 模式工具调用被拒绝: mode=%s tool=%s code=%s",
                         payload["mode"],
                         custom_tool.name,
+                        payload["code"],
+                    )
+                    finish_call(
+                        current_context,
+                        custom_tool.name,
+                        STATUS_DENIED,
+                        code=payload["code"],
+                        elapsed_ms=(time.time() - start_time) * 1000,
+                    )
+                    # 拒绝分支不执行工具：参数里可能是题文，一律不记，只留稳定错误码。
+                    record_tool_io(
+                        current_context,
+                        custom_tool.name,
+                        output_summary=f"code={payload['code']}",
                     )
                     return "[MODE_TOOL_DENIED] " + json.dumps(payload, ensure_ascii=False)
+
+                # 输入摘要只取白名单结构事实（类型/数量），不带 query 与题目文本；
+                # 在执行前先登记，即使工具挂死或被取消，面板也能看出“它想做什么”。
+                record_tool_io(
+                    current_context,
+                    custom_tool.name,
+                    input_summary=summarize_parameters(kwargs),
+                )
 
                 input_data = ToolInput(
                     query=query,
@@ -131,18 +164,34 @@ class LangChainToolConverter:
                 )
 
                 try:
-                    from app.config.settings import settings
-                    guard_enabled = settings.AGENT_TOOL_GUARD_ENABLED
-                except Exception:
-                    guard_enabled = True
-                if guard_enabled:
-                    result = await self._execution_guard.run(
+                    try:
+                        from app.config.settings import settings
+                        guard_enabled = settings.AGENT_TOOL_GUARD_ENABLED
+                    except Exception:
+                        guard_enabled = True
+                    if guard_enabled:
+                        result = await self._execution_guard.run(
+                            custom_tool.name,
+                            lambda: custom_tool.execute(input_data),
+                            retryable=self._tool_is_retryable(custom_tool),
+                        )
+                    else:
+                        result = await custom_tool.execute(input_data)
+                except asyncio.CancelledError:
+                    # 取消不是 Exception 派生的终态；不登记就会让时间线永远停在“进行中”。
+                    finish_call(
+                        current_context,
                         custom_tool.name,
-                        lambda: custom_tool.execute(input_data),
-                        retryable=self._tool_is_retryable(custom_tool),
+                        STATUS_ABORTED,
+                        code="TOOL_CANCELLED",
+                        elapsed_ms=(time.time() - start_time) * 1000,
                     )
-                else:
-                    result = await custom_tool.execute(input_data)
+                    record_tool_io(
+                        current_context,
+                        custom_tool.name,
+                        output_summary="code=TOOL_CANCELLED",
+                    )
+                    raise
 
                 elapsed_ms = (time.time() - start_time) * 1000
 
@@ -152,15 +201,39 @@ class LangChainToolConverter:
                         f"({elapsed_ms:.1f}ms)"
                     )
                     self._record_tool_status(custom_tool.name, "success")
+                    finish_call(
+                        current_context,
+                        custom_tool.name,
+                        STATUS_SUCCESS,
+                        elapsed_ms=elapsed_ms,
+                    )
+                    record_tool_io(
+                        current_context,
+                        custom_tool.name,
+                        output_summary=summarize_result(result),
+                    )
                     return str(result.result) if result.result else "执行成功"
                 else:
                     # 终态指标单一漏斗：guard 归一化的 timeout/unavailable 在此可见；
                     # 策略层只记 started，避免把失败结果计成 success。
                     error_code = str((result.metadata or {}).get("error_code") or "TOOL_ERROR")
-                    status = {"TOOL_TIMEOUT": "timeout", "TOOL_UNAVAILABLE": "unavailable"}.get(error_code, "error")
+                    status = self._terminal_status_for(error_code)
                     self._record_tool_status(custom_tool.name, status)
                     logger.warning(
                         f"[{custom_tool.name}] 执行失败: {result.error}"
+                    )
+                    finish_call(
+                        current_context,
+                        custom_tool.name,
+                        status,
+                        code=error_code,
+                        elapsed_ms=elapsed_ms,
+                    )
+                    # 失败只摘结果里的状态与错误码，不带 result.error 正文（可能含题文/堆栈）。
+                    record_tool_io(
+                        current_context,
+                        custom_tool.name,
+                        output_summary=summarize_result(result) or f"code={error_code}",
                     )
                     return f"[错误] {result.error}"
 
@@ -169,6 +242,18 @@ class LangChainToolConverter:
                 logger.error(
                     f"[{custom_tool.name}] 执行异常 ({elapsed_ms:.1f}ms): {e}\n"
                     f"{traceback.format_exc()}"
+                )
+                finish_call(
+                    self._get_context(),
+                    custom_tool.name,
+                    STATUS_ERROR,
+                    code="TOOL_EXCEPTION",
+                    elapsed_ms=elapsed_ms,
+                )
+                record_tool_io(
+                    self._get_context(),
+                    custom_tool.name,
+                    output_summary="code=TOOL_EXCEPTION",
                 )
                 return f"[异常] {type(e).__name__}: {str(e)}"
 

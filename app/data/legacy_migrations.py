@@ -1,20 +1,16 @@
 import json
-import os
 import logging
 import asyncio
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.data.database import init_db, get_db_session, engine
-from app.data.models import User, LearningRecord, Question, ChatSession, ChatMessage
+from app.data.database import init_db, get_db_session
 from app.data.repositories import (
     UserRepository,
     LearningRecordRepository,
     QuestionRepository,
-    ChatSessionRepository,
-    ChatMessageRepository,
 )
 from app.security.encryption import DataEncryption
 
@@ -101,7 +97,6 @@ class DataMigrator:
 
         async with get_db_session() as db:
             question_repo = QuestionRepository(db)
-            record_repo = LearningRecordRepository(db)
 
             for idx, item in enumerate(error_items):
                 try:

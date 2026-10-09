@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 
 from app.data.database import get_db_session
 from app.data.models import ChatMessage, ChatSession, Memory, MemoryAccessLog

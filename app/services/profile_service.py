@@ -13,6 +13,7 @@
 """
 
 import logging
+import asyncio
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -25,13 +26,23 @@ class ProfileService:
     user_profiles 仅是 materialized snapshot（可重建），不是事实来源。
     """
 
-    async def _get_facade(self):
-        from agent_core.memory_persistence import MemoryPersistenceFacade
-        return MemoryPersistenceFacade()
+    def __init__(self):
+        self._facade = None
+        self._facade_loop = None
+
+    def _get_facade(self):
+        """在当前事件循环内复用 Facade，避免每次请求重复初始化整套画像栈。"""
+        loop = asyncio.get_running_loop()
+        if self._facade is None or self._facade_loop is not loop:
+            from agent_core.memory_persistence import MemoryPersistenceFacade
+
+            self._facade = MemoryPersistenceFacade()
+            self._facade_loop = loop
+        return self._facade
 
     async def get_profile(self, user_id: str) -> Dict[str, Any]:
         """获取用户画像（旧版 dict 结构，仅供旧调用方兼容）。"""
-        facade = await self._get_facade()
+        facade = self._get_facade()
         snapshot = await facade.get_profile_snapshot(user_id)
         return {
             "summary_text": snapshot.summary_text,
@@ -42,7 +53,7 @@ class ProfileService:
 
     async def get_profile_summary(self, user_id: str) -> str:
         """获取画像摘要文本（用于注入 Prompt）。"""
-        facade = await self._get_facade()
+        facade = self._get_facade()
         snapshot = await facade.get_profile_snapshot(user_id)
         return snapshot.summary_text
 
@@ -61,7 +72,7 @@ class ProfileService:
         - 仅使画像快照缓存失效，下次读取由 Facade 从事实层重建
         """
         try:
-            facade = await self._get_facade()
+            facade = self._get_facade()
             await facade.invalidate_profile_snapshot(user_id)
             logger.debug(
                 f"[画像服务] 增量更新(已降级为快照失效): user={user_id}, category={category}"
@@ -74,7 +85,7 @@ class ProfileService:
     async def full_refresh(self, user_id: str) -> bool:
         """全量更新画像（从事实层完整重建快照）。"""
         try:
-            facade = await self._get_facade()
+            facade = self._get_facade()
             await facade.refresh_profile_snapshot(user_id)
             logger.info(f"[画像服务] 全量更新完成: user={user_id}")
             return True

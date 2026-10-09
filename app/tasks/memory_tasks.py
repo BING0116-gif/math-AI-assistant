@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.config.settings import settings
 from app.services.memory_store import MemoryStore, get_memory_store

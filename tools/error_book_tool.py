@@ -32,10 +32,10 @@ class ErrorBookTool(BaseTool):
 
     async def execute(self, input_data: ToolInput) -> ToolOutput:
         try:
-            from app.services.error_book_sync import ErrorBookSkillSyncService
+            from app.services.error_book_sync import get_error_book_sync_service
 
             user_id = input_data.context.get("user_id", "anonymous")
-            service = ErrorBookSkillSyncService()
+            service = get_error_book_sync_service()
             summary = await service.get_skill_impact_summary(user_id)
 
             if summary["total_error_records"] == 0:

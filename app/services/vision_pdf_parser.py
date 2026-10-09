@@ -11,14 +11,12 @@
 """
 
 import base64
-import io
 import json
 import logging
 import os
 import re
 import sys
-import tempfile
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 if sys.platform == 'win32':

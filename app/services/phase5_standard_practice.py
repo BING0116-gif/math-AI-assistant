@@ -3,8 +3,8 @@
 The underlying teaching statements are the project-authored Phase 5 standard
 lessons.  Each point receives the same five-item shape as ``phase5_practice``:
 two basic, two standard, and one advanced deterministic choice question.
-Distractors come from neighbouring points in the curated catalogue, keeping
-the set maintainable while ensuring every option is meaningful mathematics.
+Distractors come from neighbouring points in the curated catalogue, keeping the
+set maintainable while ensuring every option is meaningful mathematics.
 """
 
 from __future__ import annotations
@@ -61,4 +61,3 @@ def _items_for(code: str) -> list[tuple[str, int, str, list[tuple[str, str]], st
 
 
 PRACTICE = {code: _items_for(code) for code in _CODES}
-

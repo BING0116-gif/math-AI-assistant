@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive, watch } from 'vue'
-import { generateUUID } from '@/utils/helpers'
 import { SCOPED_KEYS, ANON_OWNER, currentOwner, loadScoped, saveScoped } from '@/utils/scopedStorage'
 import * as errorBookApi from '@/api/errorBook'
 import { useAuthStore } from '@/stores/authStore'

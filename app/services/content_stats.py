@@ -35,7 +35,6 @@ from app.data.models import (
     KnowledgePoint,
     Question,
     QuestionKnowledgePoint,
-    SourceDocument,
 )
 from app.services.content_import import SUPPORTED_TYPES
 from app.services.content_review import (

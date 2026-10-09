@@ -12,7 +12,6 @@ from app.services.memory import (
     LongTermMemory,
     MemoryRetrievalEngine,
     ShortTermMemory,
-    MemoryItem,
 )
 from app.services.event_buffer import EnhancedEventBuffer
 from app.services.profile_application import (
@@ -128,6 +127,8 @@ class MemoryPersistenceFacade:
             skill_aggregator=self._skill_aggregator,
             db_session_factory=self._session_factory,
         )
+        self._profile_analyzer = None
+        self._context_retriever = None
 
         # ── P2：事件缓冲 + 自动重计算 ──
         self._last_recalc_time: Dict[str, float] = {}
@@ -230,12 +231,12 @@ class MemoryPersistenceFacade:
         limit: int = 10,
         min_score: float = 0.3,
     ) -> List[Dict[str, Any]]:
-        short_term = ShortTermMemory()
-        engine = MemoryRetrievalEngine(
-            short_term_memory=short_term,
-            long_term_memory=self._long_term,
-        )
-        results = await engine.retrieve(
+        if self._context_retriever is None:
+            self._context_retriever = MemoryRetrievalEngine(
+                short_term_memory=ShortTermMemory(),
+                long_term_memory=self._long_term,
+            )
+        results = await self._context_retriever.retrieve(
             query=query, user_id=user_id, top_k=limit, min_score=min_score
         )
         return [
@@ -397,10 +398,11 @@ class MemoryPersistenceFacade:
         # 行为 / 错误 / 进度 / 偏好 / 推荐（UserProfileAnalyzer 作为内部组件）
         analyzer_data: Dict[str, Any] = {}
         try:
-            from app.services.profile_analyzer import UserProfileAnalyzer
+            if self._profile_analyzer is None:
+                from app.services.profile_analyzer import UserProfileAnalyzer
 
-            analyzer = UserProfileAnalyzer(self._session_factory)
-            analyzed = await analyzer.analyze(user_id)
+                self._profile_analyzer = UserProfileAnalyzer(self._session_factory)
+            analyzed = await self._profile_analyzer.analyze(user_id)
             analyzer_data.update(analyzed)
         except Exception as e:
             logger.warning(f"画像深度分析失败（使用基础统计）: {e}")

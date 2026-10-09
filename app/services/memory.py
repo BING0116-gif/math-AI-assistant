@@ -149,14 +149,10 @@ class LongTermMemory:
         self._session_factory = db_session_factory
 
     async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
-        from app.data.repositories import LearningRecordRepository
         from app.data.models import LearningRecord
-        from sqlalchemy import select, func, and_, Integer
-        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy import select, func, and_
 
         async with self._session_factory() as db:
-            repo = LearningRecordRepository(db)
-
             total_result = await db.execute(
                 select(func.count()).select_from(LearningRecord).where(
                     LearningRecord.user_id == user_id

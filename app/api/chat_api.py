@@ -5,7 +5,7 @@
 """
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 from typing import Annotated, Any, Literal
 
@@ -22,6 +22,7 @@ from app.middleware.security import (
 )
 from app.models.ai_unavailable import AIUnavailableResponse
 from app.services.ai_capability import get_ai_capability, is_ai_available
+from app.services.memory_application import MemoryApplicationService
 from app.services.mode_gating import normalize_tutor_mode
 from app.services.stream_handler import (
     stream_agent_response,
@@ -32,6 +33,7 @@ from app.services.stream_handler import (
 from app.services.sse_replay import get_sse_replay_buffer
 
 router = APIRouter(tags=["chat"])
+_chat_memory_service = MemoryApplicationService()
 
 TutorMode = Annotated[
     Literal["tutor_free", "hint_only", "guided", "review"],
@@ -418,21 +420,18 @@ async def answer_clarification(request: ClarificationAnswerRequest, http_request
 
 @router.get("/api/chat/sessions", response_model=ChatSessionListEnvelope, responses=STUDENT_API_RESPONSES)
 async def list_chat_sessions(http_request: Request):
-    from app.services.memory_application import MemoryApplicationService
-    return {"code": 0, "data": await MemoryApplicationService().list_chat_sessions(_user_id(http_request))}
+    return {"code": 0, "data": await _chat_memory_service.list_chat_sessions(_user_id(http_request))}
 
 
 @router.get("/api/chat/sessions/{session_id}", response_model=ChatSessionEnvelope, responses=STUDENT_API_RESPONSES)
 async def get_chat_session(session_id: str, http_request: Request):
-    from app.services.memory_application import MemoryApplicationService
-    data = await MemoryApplicationService().get_chat_session(_user_id(http_request), session_id)
+    data = await _chat_memory_service.get_chat_session(_user_id(http_request), session_id)
     if data is None: raise HTTPException(status_code=404, detail={"code": "CHAT_SESSION_NOT_FOUND", "message": "对话不存在"})
     return {"code": 0, "data": data}
 
 
 @router.patch("/api/chat/sessions/{session_id}", response_model=ChatSessionEnvelope, responses=STUDENT_API_RESPONSES)
 async def update_chat_session(session_id: str, body: UpdateChatSessionRequest, http_request: Request):
-    from app.services.memory_application import MemoryApplicationService
-    try: data = await MemoryApplicationService().update_chat_session(_user_id(http_request), session_id, title=body.title, default_tutor_mode=body.default_tutor_mode, archive=body.archive)
+    try: data = await _chat_memory_service.update_chat_session(_user_id(http_request), session_id, title=body.title, default_tutor_mode=body.default_tutor_mode, archive=body.archive)
     except LookupError: raise HTTPException(status_code=404, detail={"code": "CHAT_SESSION_NOT_FOUND", "message": "对话不存在"})
     return {"code": 0, "data": data}

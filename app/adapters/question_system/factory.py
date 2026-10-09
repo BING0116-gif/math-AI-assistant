@@ -12,7 +12,6 @@ from typing import Optional
 
 from app.adapters.question_system.base import BaseQuestionSystemAdapter
 from app.adapters.question_system.mock_impl import MockQuestionSystemAdapter
-from app.adapters.question_system.remote_impl import RemoteQuestionSystemAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +33,8 @@ def get_question_system_adapter() -> BaseQuestionSystemAdapter:
     mode = os.getenv("QUESTION_SYSTEM_MODE", "mock").lower()
 
     if mode == "remote":
+        from app.adapters.question_system.remote_impl import RemoteQuestionSystemAdapter
+
         api_key = os.getenv("QUESTION_SYSTEM_API_KEY", "")
         base_url = os.getenv("QUESTION_SYSTEM_BASE_URL", "")
         _adapter_instance = RemoteQuestionSystemAdapter(

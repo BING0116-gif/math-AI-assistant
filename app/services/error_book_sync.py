@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.data.database import get_db_session
@@ -22,6 +22,18 @@ class ErrorBookSkillSyncService:
     def __init__(self):
         self._skill_aggregator = None
         self._behavior_tracker = None
+        self._facade = None
+        self._facade_loop = None
+
+    def _get_facade(self):
+        """在当前事件循环内复用持久化 Facade，避免重复初始化。"""
+        loop = asyncio.get_running_loop()
+        if self._facade is None or self._facade_loop is not loop:
+            from agent_core.memory_persistence import MemoryPersistenceFacade
+
+            self._facade = MemoryPersistenceFacade()
+            self._facade_loop = loop
+        return self._facade
 
     def _get_skill_aggregator(self):
         if not self._skill_aggregator:
@@ -41,8 +53,7 @@ class ErrorBookSkillSyncService:
         tracker = self._get_behavior_tracker()
         event = tracker.from_error_book_entry(user_id, error_entry)
 
-        from agent_core.memory_persistence import MemoryPersistenceFacade
-        facade = MemoryPersistenceFacade()
+        facade = self._get_facade()
 
         success = await facade.record_event(user_id, event)
 
@@ -103,9 +114,7 @@ class ErrorBookSkillSyncService:
         self, user_id: str, error_entries: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         tracker = self._get_behavior_tracker()
-        from agent_core.memory_persistence import MemoryPersistenceFacade
-
-        facade = MemoryPersistenceFacade()
+        facade = self._get_facade()
 
         synced = 0
         categories_seen = set()
@@ -170,3 +179,14 @@ class ErrorBookSkillSyncService:
             "unmastered_errors": row[2] if row else 0,
             "weak_categories": weak_categories,
         }
+
+
+_sync_service_instance: Optional[ErrorBookSkillSyncService] = None
+
+
+def get_error_book_sync_service() -> ErrorBookSkillSyncService:
+    """返回进程级同步服务；其异步 Facade 按事件循环自动隔离。"""
+    global _sync_service_instance
+    if _sync_service_instance is None:
+        _sync_service_instance = ErrorBookSkillSyncService()
+    return _sync_service_instance

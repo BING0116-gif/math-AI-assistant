@@ -10,8 +10,8 @@
 
 import asyncio
 import logging
+import math
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -22,8 +22,6 @@ from app.services.memory_store import (
     MemoryStore,
     get_memory_store,
     MEMORY_TYPE_ERROR,
-    MEMORY_TYPE_CONVERSATION,
-    MEMORY_TYPE_MILESTONE,
     MEMORY_TYPE_PROFILE,
     STATUS_ACTIVE,
     DECAY_LAMBDA,
@@ -104,7 +102,7 @@ class MemoryScheduledTasks:
                     decay_lambda = DECAY_LAMBDA.get(memory_type, 0.0045)
 
                     # 计算衰减后强度
-                    new_strength = strength * math_exp(-decay_lambda)
+                    new_strength = strength * math.exp(-decay_lambda)
                     new_strength = max(0.0, min(1.0, new_strength))
 
                     # 更新强度
@@ -343,7 +341,7 @@ class MemoryScheduledTasks:
 
         # 阶段六 8.4:灰度护栏自动回缩,每 10 分钟评估一次
         self._scheduler.add_job(
-            self._run_async(self.evaluate_flag_guardrails()),
+            self._run_async(self.evaluate_flag_guardrails),
             "interval",
             minutes=10,
             id="evaluate_flag_guardrails",
@@ -374,23 +372,16 @@ class MemoryScheduledTasks:
             logger.info("[定时任务] 调度器已停止")
 
     @staticmethod
-    def _run_async(coro):
-        """包装异步协程为同步函数。"""
+    def _run_async(async_fn):
+        """将异步函数包装为同步函数，并为每次执行创建新的协程。"""
         def wrapper(*args, **kwargs):
             loop = asyncio.new_event_loop()
             try:
                 asyncio.set_event_loop(loop)
-                return loop.run_until_complete(coro)
+                return loop.run_until_complete(async_fn(*args, **kwargs))
             finally:
                 loop.close()
         return wrapper
-
-
-# 辅助函数
-def math_exp(x: float) -> float:
-    """计算 e^x。"""
-    import math
-    return math.exp(x)
 
 
 # 全局单例

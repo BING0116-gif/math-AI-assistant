@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from app.config.settings import settings
 from app.data.database import get_db_session
-from app.schemas.animation import AnimationJobResponse, CreateAnimationJobRequest
+from app.schemas.animation import CreateAnimationJobRequest
 from app.services.animation_service import (
     AnimationServiceError,
     animation_job_response,

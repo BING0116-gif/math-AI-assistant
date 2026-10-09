@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.data.database import get_db_session
-from app.data.models import PracticeAttempt, PracticeDiagnosticEvent, PracticeSession
+from app.data.models import PracticeDiagnosticEvent, PracticeSession
 from app.services.practice_service import PracticeError
 
 

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Set, Optional
+from typing import Optional
 from functools import wraps
 from fastapi import HTTPException, Request
 

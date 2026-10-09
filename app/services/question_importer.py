@@ -23,7 +23,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy import bindparam as sa_bind
 
 from app.data.database import get_db_session
-from app.data.models import Course, KnowledgeGraphVersion, KnowledgePoint, Question, QuestionKnowledgePoint
+from app.data.models import Question, QuestionKnowledgePoint
 from app.services.vector_store import VectorStoreManager
 
 logger = logging.getLogger(__name__)

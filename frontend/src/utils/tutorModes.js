@@ -18,3 +18,13 @@ export function normalizeTutorMode(mode) {
     ? normalized
     : DEFAULT_TUTOR_MODE
 }
+
+/**
+ * 思考过程面板只对自由对话开放。
+ *
+ * 模式守卫只守最终正文，拦不住逐轮过述；hint_only / guided / review 下
+ * 连面板都不渲染，未知模式一律按最保守的默认值处理。
+ */
+export function isFreeTutorMode(mode) {
+  return normalizeTutorMode(mode) === 'tutor_free'
+}

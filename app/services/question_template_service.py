@@ -293,7 +293,7 @@ async def materialize_pool(
 
 # ── admin CRUD / 状态机 ──
 async def create_template(admin_user_id: str, payload: dict[str, Any]) -> QuestionTemplate:
-    from app.data.models import Course, KnowledgeGraphVersion
+    from app.data.models import KnowledgeGraphVersion
     name = str(payload.get("name") or "").strip()
     if not name or len(name) > 120:
         raise QuestionTemplateError("VALIDATION_FAILED", "name 必须为 1..120 字符")

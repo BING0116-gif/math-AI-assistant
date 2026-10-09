@@ -5,6 +5,7 @@ import { nowIso, timestampMs } from '@/utils/dateTime'
 import { SCOPED_KEYS, ANON_OWNER, currentOwner, loadScoped, saveScoped } from '@/utils/scopedStorage'
 import { getChatSession, listChatSessions, unwrapChat, updateChatSession } from '@/api/chat'
 import { DEFAULT_TUTOR_MODE, normalizeTutorMode } from '@/utils/tutorModes'
+import { stepsFromToolCalls, traceFromMetadata } from '@/utils/toolActivity'
 import { useAuthStore } from '@/stores/authStore'
 
 const STORAGE_KEY = SCOPED_KEYS.chats
@@ -183,15 +184,29 @@ export const useChatStore = defineStore('chat', () => {
   async function loadServerChat(chatId) {
     ensureOwner()
     const data = unwrapChat(await getChatSession(chatId))
-    const mapped = (data.messages || []).map(message => ({
-      id: `sql-${message.id}`,
-      content: message.content,
-      sender: message.role === 'assistant' ? 'ai' : message.role,
-      timestamp: message.created_at,
-      type: 'text',
-      errorBookStatus: message.role === 'assistant' ? 'pending' : undefined,
-      animation: message.metadata?.animations?.[0] || null,
-    }))
+    const mapped = (data.messages || []).map(message => {
+      // 图形与动画同属本轮产物：只接 SSE 事件不读 metadata 的话，刷新页面图就丢了
+      const visual = (message.metadata?.visualizations || [])[0] || null
+      return {
+        id: `sql-${message.id}`,
+        content: message.content,
+        sender: message.role === 'assistant' ? 'ai' : message.role,
+        timestamp: message.created_at,
+        type: 'text',
+        errorBookStatus: message.role === 'assistant' ? 'pending' : undefined,
+        animation: message.metadata?.animations?.[0] || null,
+        visualization: visual?.spec || null,
+        visualizationStatus: visual ? visual.visualization_status || 'failed' : null,
+        visualizationVerification: visual?.verification || null,
+        // 重开历史会话也要看得到“调了哪个工具、是否成功”
+        agentSteps: stepsFromToolCalls(message.metadata?.tool_calls),
+        // 思考纪要：只有自由对话的回答会带 agent_trace，其他消息自然为空
+        trace: traceFromMetadata(message.metadata?.agent_trace),
+        // 这条回答自己的模式：面板不能跟着当前选择器走，否则同一会话里切一下模式，
+        // 上一轮自由对话的思考过程就凭空消失了（旧数据没这字段时为空，由调用方兜底）。
+        tutorMode: message.metadata?.tutor_mode || '',
+      }
+    })
     const existing = chats.value.find(item => item.id === chatId)
     const chat = { id: data.id, title: data.title || '新对话', lastMessageTime: data.messages?.at(-1)?.created_at || new Date().toISOString(), messages: mapped.length ? mapped : [createWelcomeMessage()], defaultTutorMode: normalizeTutorMode(data.default_tutor_mode), context: data.context || {} }
     if (existing) Object.assign(existing, chat); else chats.value.push(chat)

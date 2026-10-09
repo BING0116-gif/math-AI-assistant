@@ -18,7 +18,6 @@ import asyncio
 import logging
 import os
 import tempfile
-import time
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
@@ -31,7 +30,6 @@ from app.services.rag_recommender import (
 )
 from app.services.vector_store import get_vector_store
 from app.services.llm_service import get_llm_service
-from app.config.settings import settings
 from app.security.access_control import require_admin_role
 
 logger = logging.getLogger(__name__)
@@ -307,9 +305,13 @@ async def import_pdf_questions(
             q_path = q_tmp.name
 
         a_path = None
-        if answer_file and await answer_file.read():
+        if answer_file:
+            answer_content = await answer_file.read()
+        else:
+            answer_content = b""
+        if answer_content:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as a_tmp:
-                a_tmp.write(await answer_file.read())
+                a_tmp.write(answer_content)
                 a_path = a_tmp.name
 
         try:

@@ -4,13 +4,41 @@
     <div v-if="message.sender === 'ai'" class="msg-ai-wrap">
       <span class="ai-avatar" aria-hidden="true">∑</span>
       <div class="ai-body">
+        <!-- 思考过程：只在自由辅导模式渲染，面板不走打字机，直接呈现已确定的轮次纪要 -->
+        <details v-if="showTrace" class="agent-thinking" :open="isStreaming">
+          <summary>
+            <span class="agent-thinking__title">{{ traceTitle }}</span>
+            <span class="agent-thinking__count">（{{ traceRounds.length }} 轮）</span>
+          </summary>
+          <p class="agent-thinking__note">以下为 Agent 实际执行与决策纪要</p>
+          <div
+            v-for="round in traceRounds"
+            :key="`round-${round.round}`"
+            class="thinking-round"
+            :class="{ 'thinking-round--draft': !round.kind }"
+          >
+            <div class="thinking-round__head">
+              <span class="thinking-round__label">{{ labelOfTraceRound(round) }}</span>
+              <span v-if="elapsedText(round.elapsedMs)" class="thinking-round__time">{{ elapsedText(round.elapsedMs) }}</span>
+            </div>
+            <p v-if="textOfTraceRound(round)" class="thinking-round__text" v-text="textOfTraceRound(round)"></p>
+            <p v-else-if="isDraftRound(round)" class="thinking-round__draft">思考中，本轮文本定性后归档为纪要。</p>
+            <div v-for="(tool, toolIndex) in round.tools" :key="`tool-${tool.tool}-${toolIndex}`" class="thinking-tool" :class="`thinking-tool--${stepState(tool.status)}`">
+              <span class="thinking-tool__name" v-text="tool.label"></span>
+              <span v-if="tool.status" class="thinking-tool__status" v-text="toolRowStatusText(tool.status)"></span>
+              <span v-if="tool.inputSummary" class="thinking-tool__io" v-text="tool.inputSummary"></span>
+              <span v-if="tool.outputSummary" class="thinking-tool__io thinking-tool__io--out" v-text="tool.outputSummary"></span>
+            </div>
+            <p v-if="round.truncated" class="thinking-round__cut">该轮纪要过长，已截断。</p>
+          </div>
+        </details>
         <details v-if="message.agentSteps?.length" class="agent-timeline" :open="isStreaming">
           <summary>Agent 执行过程 · {{ message.agentSteps.length }} 步</summary>
-          <div v-for="(step, index) in message.agentSteps" :key="`${step.type}-${step.tool}-${index}`" class="agent-step" :class="`agent-step--${step.status}`">
-            <span class="agent-step__icon" :class="{ 'agent-step__icon--tool': step.type === 'tool_start' || step.type === 'tool_end' || step.type === 'tool_error', 'agent-step__icon--error': step.status === 'error' }" aria-hidden="true"></span>
+          <div v-for="(step, index) in message.agentSteps" :key="`${step.type}-${step.tool}-${index}`" class="agent-step" :class="`agent-step--${stateOfStep(step)}`">
+            <span class="agent-step__icon" :class="{ 'agent-step__icon--tool': step.type === 'tool_start' || step.type === 'tool_end' || step.type === 'tool_error', 'agent-step__icon--error': stateOfStep(step) === 'failed' }" aria-hidden="true"></span>
             <span class="agent-step__label">{{ step.label }}</span>
-            <span v-if="step.status === 'running'" class="agent-step__spinner" aria-label="进行中"></span>
-            <span v-else class="agent-step__status">{{ step.status === 'error' ? '失败' : '完成' }}</span>
+            <span v-if="stateOfStep(step) === 'running'" class="agent-step__spinner" :aria-label="textOfStep(step)"></span>
+            <span v-else-if="textOfStep(step)" class="agent-step__status">{{ textOfStep(step) }}</span>
           </div>
         </details>
         <div v-if="message.type === 'image'" class="msg-image-wrap">
@@ -85,15 +113,44 @@
 import { computed } from 'vue'
 import { ShieldCheck } from 'lucide-vue-next'
 import { renderMarkdown } from '@/utils/markdown'
+import {
+  isDraftRound,
+  labelOfTraceRound,
+  stateOfStep,
+  stepState,
+  textOfStep,
+  textOfTraceRound,
+  toolRowStatusText,
+  traceSeconds,
+  visibleTraceRounds,
+} from '@/utils/toolActivity'
+import { isFreeTutorMode } from '@/utils/tutorModes'
 import MathVisualCard from '@/components/math/MathVisualCard.vue'
 import MathAnimationCard from '@/components/math/MathAnimationCard.vue'
 
 const props = defineProps({
   message: { type: Object, required: true },
-  isStreaming: { type: Boolean, default: false }
+  isStreaming: { type: Boolean, default: false },
+  // 当前会话的辅导方式：只有自由对话允许看思考面板，工具时间线四种模式照旧
+  tutorMode: { type: String, default: '' }
 })
 
 defineEmits(['addToErrorBook', 'skipErrorBook'])
+
+const traceRounds = computed(() => visibleTraceRounds(props.message.trace))
+const showTrace = computed(
+  () => isFreeTutorMode(props.tutorMode) && traceRounds.value.length > 0,
+)
+const traceElapsed = computed(() => traceSeconds(props.message.trace))
+// 没带耗时（旧数据、只有工具行的轮次）时不拼一个假的「· 0s」。
+const traceTitle = computed(() =>
+  traceElapsed.value > 0 ? `思考过程 · ${traceElapsed.value}s` : '思考过程',
+)
+
+function elapsedText(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)}s`
+}
 
 const renderedContent = computed(() => {
   if (props.message.sender === 'ai') {
@@ -163,12 +220,89 @@ const criticTitle = computed(() => {
 .agent-step__icon--tool::after { inset: 4px 5px; border-radius: 2px; transform: rotate(45deg); }
 .agent-step__label { flex: 1; min-width: 0; }
 .agent-step__status { color: var(--ink-3); font-size: 11px; }
-.agent-step--error .agent-step__status { color: var(--danger, #d14b4b); }
+.agent-step--done .agent-step__status { color: var(--green, #1E9E6A); }
+.agent-step--failed .agent-step__status { color: var(--danger, #d14b4b); }
 .agent-step__icon--error { background: color-mix(in srgb, var(--danger, #d14b4b) 16%, transparent); }
 .agent-step__icon--error::after { border-color: var(--danger, #d14b4b); }
 .agent-step__spinner { width: 10px; height: 10px; border: 1.5px solid var(--border-strong); border-top-color: var(--brand); border-radius: 50%; animation: agentSpin .8s linear infinite; }
 @keyframes agentSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .agent-step__spinner { animation: none; } }
+
+/* ---- 思考过程纪要（仅自由辅导模式） ---- */
+.agent-thinking {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.agent-thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--ink-1);
+  font-weight: 650;
+  min-height: 24px;
+}
+.agent-thinking summary::marker { color: var(--brand); }
+.agent-thinking__count { color: var(--ink-3); font-size: 11px; font-weight: 500; }
+.agent-thinking__note { margin: 0; color: var(--ink-3); font-size: 11px; }
+.thinking-round { display: grid; gap: 5px; padding: 7px 0 8px; border-top: 1px dashed var(--border); }
+.thinking-round:first-of-type { border-top: none; padding-top: 0; }
+.thinking-round__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.thinking-round__label { color: var(--ink-1); font-size: 11.5px; font-weight: 600; }
+.thinking-round__time { color: var(--ink-3); font-family: var(--font-mono); font-size: 11px; }
+.thinking-round__text {
+  margin: 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--border-strong);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.thinking-round__cut { margin: 0; color: var(--amber, #b6802b); font-size: 11px; }
+/* 尚未定性的轮：文本还是临时增量，淡一点，和已归档的过程轮区分开。 */
+.thinking-round--draft .thinking-round__label { color: var(--ink-3); font-weight: 550; }
+.thinking-round--draft .thinking-round__text {
+  border-left-color: var(--border);
+  color: var(--ink-3);
+}
+.thinking-round__draft { margin: 0; color: var(--ink-3); font-size: 11.5px; }
+.thinking-tool {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow-x: auto;
+}
+.thinking-tool__name { flex: none; color: var(--ink-1); font-size: 11.5px; font-weight: 600; }
+/* 终态文案：面板里的工具行也要能看出“调用失败”，不能只摆个工具名。 */
+.thinking-tool__status { flex: none; color: var(--ink-3); font-size: 11px; }
+.thinking-tool--failed .thinking-tool__status { color: var(--danger, #c2413a); }
+.thinking-tool--running .thinking-tool__status { color: var(--ink-3); font-style: italic; }
+.thinking-tool__io {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.thinking-tool__io--out { background: var(--brand-soft); color: var(--brand-text); }
 .ai-avatar {
   width: 30px;
   height: 30px;
@@ -462,6 +596,28 @@ const criticTitle = computed(() => {
   }
   .msg-image {
     max-width: 220px;
+  }
+}
+
+@media (max-width: 480px) {
+  .agent-thinking {
+    padding: 9px 10px;
+    font-size: 11.5px;
+  }
+  .thinking-round__text {
+    font-size: 12px;
+    line-height: 1.65;
+  }
+  /* 窄屏不横滚终端条：摘要换行，宁可高一点也要可读 */
+  .thinking-tool {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    overflow-x: visible;
+  }
+  .thinking-tool__io {
+    flex: 1 1 auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

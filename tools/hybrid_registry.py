@@ -15,6 +15,7 @@ HybridToolRegistry — 混合工具注册中心。
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import traceback
@@ -23,6 +24,19 @@ from typing import Any, Dict, List, Optional
 
 from tools.base_tool import BaseTool, ToolInput, ToolOutput, ToolCapability
 from tools.execution_guard import ToolExecutionGuard, default_guard_policy
+from tools.tool_ledger import (
+    LEDGER_KEY,
+    STATUS_ABORTED,
+    STATUS_DENIED,
+    STATUS_ERROR,
+    STATUS_SUCCESS,
+    begin_call,
+    finish_call,
+    record_tool_io,
+    status_for_error_code as _terminal_status_for,
+    summarize_parameters,
+    summarize_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +367,15 @@ class HybridToolRegistry:
         """
         start_time = time.time()
         execution_id = str(uuid.uuid4())[:8]
+        # 直连入口（多模态识图等）也走同一条台账，保证任何封装工具的调用都可显示。
+        ledger_context = input_data.context if isinstance(input_data.context, dict) else None
+        if ledger_context is not None and LEDGER_KEY not in ledger_context:
+            # ToolInput 会复制 context 字典：调用方没预先挂上台账列表时，本次记录
+            # 只会留在副本里，时间线看不到。留一条警告，避免静默失效。
+            logger.warning(
+                "工具 %s 的请求上下文缺少台账，本次调用可能不会出现在对话时间线", tool_name
+            )
+        begin_call(ledger_context, tool_name, source="registry")
 
         # T06 执行时硬门控：即使提示注入猜到未暴露的工具名，也不能绕过。
         from app.services.mode_gating import (
@@ -377,6 +400,17 @@ class HybridToolRegistry:
                 tool_name,
                 MODE_TOOL_DENIED_CODE,
             )
+            finish_call(
+                ledger_context,
+                tool_name,
+                STATUS_DENIED,
+                code=payload["code"],
+                elapsed_ms=0,
+            )
+            # 拒绝分支不执行工具：参数里可能是题文，一律不记，只留稳定错误码。
+            record_tool_io(
+                ledger_context, tool_name, output_summary=f"code={payload['code']}"
+            )
             return ToolOutput(
                 success=False,
                 error=payload["message"],
@@ -388,6 +422,12 @@ class HybridToolRegistry:
         try:
             tool = self.get_tool(tool_name)
         except ToolNotFoundError:
+            finish_call(
+                ledger_context, tool_name, STATUS_ERROR, code="TOOL_NOT_FOUND", elapsed_ms=0
+            )
+            record_tool_io(
+                ledger_context, tool_name, output_summary="code=TOOL_NOT_FOUND"
+            )
             return ToolOutput(
                 success=False,
                 error=f"工具未注册: '{tool_name}'",
@@ -398,6 +438,17 @@ class HybridToolRegistry:
         validation_error = tool.validate_input(input_data)
         if validation_error:
             elapsed = (time.time() - start_time) * 1000
+            finish_call(
+                ledger_context,
+                tool_name,
+                STATUS_ERROR,
+                code="INPUT_INVALID",
+                elapsed_ms=elapsed,
+            )
+            # 校验失败文本会引用参数值，面板只留稳定错误码。
+            record_tool_io(
+                ledger_context, tool_name, output_summary="code=INPUT_INVALID"
+            )
             return ToolOutput(
                 success=False,
                 error=f"输入校验失败: {validation_error}",
@@ -410,22 +461,58 @@ class HybridToolRegistry:
                 f"[{execution_id}] 开始执行工具: [{tool_name}] "
                 f"query={input_data.query[:50]}..."
             )
+            # 与 LangChain 适配器同一口径：输入摘要只取白名单结构事实，不带 query 原文。
+            record_tool_io(
+                ledger_context,
+                tool_name,
+                input_summary=summarize_parameters(input_data.parameters),
+            )
             try:
                 from app.config.settings import settings
                 guard_enabled = settings.AGENT_TOOL_GUARD_ENABLED
             except Exception:
                 guard_enabled = True
-            if guard_enabled:
-                result = await self._execution_guard.run(
+            try:
+                if guard_enabled:
+                    result = await self._execution_guard.run(
+                        tool_name,
+                        lambda: tool.execute(input_data),
+                        retryable=ToolCapability.ERROR_BOOK_MANAGEMENT not in tool.capabilities,
+                    )
+                else:
+                    result = await tool.execute(input_data)
+            except asyncio.CancelledError:
+                finish_call(
+                    ledger_context,
                     tool_name,
-                    lambda: tool.execute(input_data),
-                    retryable=ToolCapability.ERROR_BOOK_MANAGEMENT not in tool.capabilities,
+                    STATUS_ABORTED,
+                    code="TOOL_CANCELLED",
+                    elapsed_ms=(time.time() - start_time) * 1000,
                 )
-            else:
-                result = await tool.execute(input_data)
+                record_tool_io(
+                    ledger_context, tool_name, output_summary="code=TOOL_CANCELLED"
+                )
+                raise
             elapsed = (time.time() - start_time) * 1000
             result.execution_time_ms = elapsed
             result.tool_name = tool_name
+
+            if result.success:
+                finish_call(ledger_context, tool_name, STATUS_SUCCESS, elapsed_ms=elapsed)
+            else:
+                error_code = str((result.metadata or {}).get("error_code") or "TOOL_ERROR")
+                finish_call(
+                    ledger_context,
+                    tool_name,
+                    _terminal_status_for(error_code),
+                    code=error_code,
+                    elapsed_ms=elapsed,
+                )
+            record_tool_io(
+                ledger_context,
+                tool_name,
+                output_summary=summarize_result(result),
+            )
 
             self._record_execution(
                 execution_id=execution_id,
@@ -444,6 +531,12 @@ class HybridToolRegistry:
         except Exception as e:
             elapsed = (time.time() - start_time) * 1000
             error_msg = f"{type(e).__name__}: {str(e)}"
+            finish_call(
+                ledger_context, tool_name, STATUS_ERROR, code="TOOL_EXCEPTION", elapsed_ms=elapsed
+            )
+            record_tool_io(
+                ledger_context, tool_name, output_summary="code=TOOL_EXCEPTION"
+            )
             logger.error(
                 f"[{execution_id}] 工具执行异常: [{tool_name}] {error_msg}\n"
                 f"{traceback.format_exc()}"

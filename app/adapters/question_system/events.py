@@ -9,10 +9,7 @@
 """
 
 import logging
-import time
-from typing import Any, Dict, Optional
-
-from app.adapters.question_system.factory import get_question_system_adapter
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +60,9 @@ class EventDispatcher:
 
         if is_correct:
             # 答对：更新知识点权重（异步处理）
-            from app.services.memory_store import MemoryStore
+            from app.services.memory_store import get_memory_store
 
-            store = MemoryStore()
+            store = get_memory_store()
             await store.update_mastery_weight(
                 user_id=user_id,
                 high_category=data.get("high_category", ""),
@@ -75,9 +72,9 @@ class EventDispatcher:
             return {"code": 0, "message": "知识点权重已更新", "memory_id": None}
 
         # 答错：生成错题记忆
-        from app.services.memory_store import MemoryStore
+        from app.services.memory_store import get_memory_store
 
-        store = MemoryStore()
+        store = get_memory_store()
         memory_id = await store.create_error_memory(
             user_id=user_id,
             question_id=question_id,
@@ -105,9 +102,9 @@ class EventDispatcher:
         if not user_id or not category:
             return {"code": 1001, "message": "缺少必要参数"}
 
-        from app.services.profile_service import ProfileService
+        from app.services.profile_service import get_profile_service
 
-        profile_service = ProfileService()
+        profile_service = get_profile_service()
         await profile_service.incremental_update(
             user_id=user_id,
             high_category=data.get("high_category", ""),
@@ -120,9 +117,9 @@ class EventDispatcher:
         old_mastery = data.get("old_mastery_score", 0.0)
         new_mastery = data.get("mastery_score", 0.0)
         if old_mastery < 0.4 and new_mastery > 0.7:
-            from app.services.memory_store import MemoryStore
+            from app.services.memory_store import get_memory_store
 
-            store = MemoryStore()
+            store = get_memory_store()
             await store.create_milestone_memory(
                 user_id=user_id,
                 milestone_type="mastery_improvement",
@@ -144,9 +141,9 @@ class EventDispatcher:
         if not user_id or not chapter_name:
             return {"code": 1001, "message": "缺少必要参数"}
 
-        from app.services.memory_store import MemoryStore
+        from app.services.memory_store import get_memory_store
 
-        store = MemoryStore()
+        store = get_memory_store()
         await store.create_milestone_memory(
             user_id=user_id,
             milestone_type="chapter_complete",
@@ -169,9 +166,9 @@ class EventDispatcher:
             return {"code": 1001, "message": "缺少 question_id"}
 
         if change_type == "delete":
-            from app.services.memory_store import MemoryStore
+            from app.services.memory_store import get_memory_store
 
-            store = MemoryStore()
+            store = get_memory_store()
             count = await store.archive_by_source_id(question_id)
             logger.info(f"[事件处理] 题目删除，已归档 {count} 条关联记忆: question_id={question_id}")
 

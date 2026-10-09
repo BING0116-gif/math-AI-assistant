@@ -14,15 +14,13 @@
 
 from __future__ import annotations
 
-import os
-
 import asyncio
 import json
 import logging
 import time
 import traceback
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -47,7 +45,6 @@ try:
         Range,
         QuantizationConfig,
         ScalarQuantization,
-        ScalarQuantizationConfig,
         ScalarType,
     )
     QDRANT_AVAILABLE = True

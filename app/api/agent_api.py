@@ -46,14 +46,27 @@ async def get_thought_history(session_id: str, request: Request):
     if not user_id:
         raise HTTPException(status_code=401, detail="未认证")
     agent = get_agent()
-    recorder = agent.get_thought_recorder()
+    # 记录器本来就按 "{user_id}:{session_id}" 逐会话建立；取默认记录器永远查不到
+    # 拿别人的 session_id 不会命中任何记录器，依旧返回 404。
     session_key = agent.session_key(str(user_id), session_id)
-    processes = recorder.get_session_processes(session_key, limit=10)
-    if not processes:
+    try:
+        recorder = agent.get_thought_recorder(session_key)
+    except TypeError:
+        # 旧式/桩实现的记录器不接受会话键：退回全局记录器，但仍按会话键过滤，
+        # 因此不会读到别人的会话（owner 校验语义不变）。
+        recorder = agent.get_thought_recorder()
+    except RuntimeError:
+        recorder = None
+    processes = recorder.get_session_processes(session_key, limit=10) if recorder else []
+    # 展开全文的按需拉取通道：纪要本体在消息 metadata 里，这里只是本进程的副本。
+    get_trace = getattr(agent, "get_session_trace", None)
+    trace = list(get_trace(session_key) or []) if callable(get_trace) else []
+    if not processes and not trace:
         raise HTTPException(status_code=404, detail="会话不存在")
     return {
         "session_id": session_id,
         "processes": [p.to_dict() for p in processes],
+        "trace": trace,
         "total": len(processes),
     }
 

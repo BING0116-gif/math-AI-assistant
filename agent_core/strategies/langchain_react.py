@@ -24,7 +24,7 @@ import time
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from agent_core.strategies.base import AgentStrategy
@@ -34,9 +34,159 @@ from agent_core.degradation import degradation_text
 from agent_core.model_failover import get_model_failover_coordinator
 from tools.base_tool import BaseTool
 from tools.hybrid_registry import HybridToolRegistry as ToolRegistry
+from tools.tool_ledger import (
+    STATUS_ERROR,
+    STATUS_RUNNING,
+    STATUS_SUCCESS,
+    begin_round,
+    close_if_running,
+    close_open_rounds,
+    close_running,
+    drain_events,
+    drain_trace_events,
+    has_tool,
+    mark_round_final,
+    mark_round_process,
+    mark_start_emitted,
+    record_text,
+    round_for_run,
+    tool_label,
+)
 from app.services.mode_gating import filter_tools_for_mode, normalize_tutor_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _content_text(content: Any) -> str:
+    """把流式 chunk 的 content 变成纯文本，仅用于轮次纪要登记。
+
+    供应商偶尔返回内容块列表，这里只取文本块；取不到就返回空串——纪要宁可少记，
+    也不能把结构体的字符串表示塞进面板。
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: List[str] = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") in ("text", "output_text"):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return ""
+
+
+def _start_event(tool_name: str) -> Dict[str, Any]:
+    return {
+        "__agent_event__": True,
+        "event_type": "tool_start",
+        "tool": tool_name,
+        "label": tool_label(tool_name),
+        "status": STATUS_RUNNING,
+        "message": f"正在调用：{tool_label(tool_name)}",
+    }
+
+
+def _tool_activity_events(
+    context: Dict[str, Any],
+    *,
+    phase: str,
+    tool_name: str,
+    fallback_message: str,
+) -> List[Dict[str, Any]]:
+    """输出本次工具调用的时间线事件：台账为准，台账不认识时退回旧直发事件。
+
+    phase="start" 只取出尚未广播的开始事件；"end"/"error" 先把仍挂在“进行中”的
+    记录按 LangChain 回调结果补上终态（参数校验失败等不会进入我们的转换器），
+    再抽取事件。前端因此能区分“调用成功”和“调用失败”，不再把任何返回都当成成功。
+    """
+    if phase == "start":
+        events = drain_events(context)
+        if any(
+            event.get("tool") == tool_name and event.get("event_type") == "tool_start"
+            for event in events
+        ):
+            return events
+        # LangChain 回调早于工具协程，台账还没记录：先占位再发开始事件，
+        # 否则终态抽取会补发第二条“正在调用”，时间线出现重复行。
+        if not mark_start_emitted(context, tool_name):
+            return events
+        # 本次调用在台账里序号最大，排在已排空事件之后才符合发生顺序。
+        events.append(_start_event(tool_name))
+        return events
+
+    close_if_running(
+        context,
+        tool_name,
+        STATUS_SUCCESS if phase == "end" else STATUS_ERROR,
+        code="" if phase == "end" else "TOOL_INVOCATION_ERROR",
+    )
+    events = drain_events(context)
+    terminal_types = ("tool_end", "tool_error")
+    if any(
+        event.get("tool") == tool_name and event.get("event_type") in terminal_types
+        for event in events
+    ):
+        return events
+    if has_tool(context, tool_name):
+        # 台账认识这个工具，但这次回调没带出新事件：终态已经广播过（重复回调/迟到回调），
+        # 再补一行会让同一次调用在时间线上出现两次。
+        return events
+    # 台账不认识这次调用（非注册表工具或被 LangChain 提前拦下）：仍补一条终态事件，
+    # 保证“有调用就有显示”，状态沿用回调语义（on_tool_end 即工具正常返回）。
+    events.append(
+        {
+            "__agent_event__": True,
+            "event_type": "tool_end" if phase == "end" else "tool_error",
+            "tool": tool_name,
+            "label": tool_label(tool_name),
+            "status": STATUS_SUCCESS if phase == "end" else STATUS_ERROR,
+            "code": "" if phase == "end" else "TOOL_INVOCATION_ERROR",
+            "message": fallback_message,
+        }
+    )
+    return events
+
+
+def _closing_tool_events(context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """收尾排空：本轮结束时不允许有任何调用停在“进行中”，也不允许漏掉轮次纪要。
+
+    回调丢失（模型提前结束、预算触顶、超时）时，进行中的台账统一判为中断，
+    未定性的轮次统一按答案轮处理（文本已在正文里），连同尚未广播的事件一起输出，
+    前端不会永远转圈也不会漏显示。
+    """
+    close_running(context)
+    close_open_rounds(context)
+    return drain_events(context) + drain_trace_events(context, force=True)
+
+
+def _round_of(context: Dict[str, Any], run_id: Any) -> int:
+    """取这次模型调用对应的轮号；on_chat_model_start 丢失时现场补开一轮。
+
+    受限模式（trace_enabled=False）下台账自己会返回 0，后续记录全部静默。
+    """
+    key = str(run_id or "")
+    index = round_for_run(context, key)
+    return index or begin_round(context, key)
+
+
+def _round_is_process(output: Any) -> bool:
+    """该轮模型输出是否带了工具调用 → 定性为过程轮。
+
+    参数格式错误的 invalid_tool_calls 同样会让 Agent 再转一轮，不能当成答案。
+    拿不到结构时保守归为答案轮（宁可不进面板，不可把答案搬走）。
+    """
+    if output is None:
+        return False
+    for attribute in ("tool_calls", "invalid_tool_calls"):
+        try:
+            if getattr(output, attribute, None) or (
+                isinstance(output, dict) and output.get(attribute)
+            ):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def _budget_setting(name: str, fallback):
@@ -136,6 +286,10 @@ class LangChainReActStrategy(AgentStrategy):
         self._last_run_status: str = "completed"
 
         self._recorders: Dict[str, ThoughtRecordingCallbackHandler] = {}
+        # 有界纪要缓存：只给 /api/agent/thought 做“展开全文”的按需拉取，
+        # 本体已经随消息落库，因此服务重启或淘洗都不影响历史回看。
+        self._trace_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._trace_cache_sessions = 20
 
         self._agent: Any = None
         self._tools: List[Any] = []
@@ -250,9 +404,12 @@ class LangChainReActStrategy(AgentStrategy):
         context: Dict[str, Any],
     ) -> str:
         start_time = time.time()
+        # stream() 同时产出正文片段和 agent_step 事件体：非流式调用只该拿正文。
+        # 事件字典混进 join() 会直接 TypeError，把降级文案一起吞掉。
         chunks = []
         async for chunk in self.stream(user_input, session_id, context):
-            chunks.append(chunk)
+            if isinstance(chunk, str):
+                chunks.append(chunk)
         full_answer = "".join(chunks)
 
         # [P0-01] 自动记忆提取与持久化
@@ -329,6 +486,10 @@ class LangChainReActStrategy(AgentStrategy):
             async for event in event_stream:
                 event_name = event.get("event", "")
 
+                # 轮次归因：一次模型调用 = 一轮。本轮开始即开轮，受限模式下台账自己会静默。
+                if event_name == "on_chat_model_start":
+                    _round_of(context, event.get("run_id"))
+
                 # 追踪工具调用（用于去重检测）
                 if event_name == "on_tool_start":
                     tool_name = event.get("name", "")
@@ -340,7 +501,13 @@ class LangChainReActStrategy(AgentStrategy):
                             AGENT_TOOL_CALLS.labels(tool_name[:80], "started").inc()
                         except Exception:
                             pass
-                        yield {"__agent_event__": True, "event_type": "tool_start", "tool": tool_name, "message": f"正在调用 {tool_name}"}
+                        for activity in _tool_activity_events(
+                            context,
+                            phase="start",
+                            tool_name=tool_name,
+                            fallback_message=f"正在调用：{tool_label(tool_name)}",
+                        ):
+                            yield activity
                         logger.debug(f"[STREAM] 工具调用: {tool_name}")
 
                 if event_name == "on_tool_end":
@@ -354,7 +521,13 @@ class LangChainReActStrategy(AgentStrategy):
                             AGENT_TOOL_LATENCY.labels(tool_name[:80]).observe(elapsed)
                         except Exception:
                             pass
-                        yield {"__agent_event__": True, "event_type": "tool_end", "tool": tool_name, "message": f"{tool_name} 已返回结果"}
+                        for activity in _tool_activity_events(
+                            context,
+                            phase="end",
+                            tool_name=tool_name,
+                            fallback_message=f"{tool_label(tool_name)}：调用成功",
+                        ):
+                            yield activity
 
                 # LangChain 在工具抛出异常时发送 on_tool_error，而不是 on_tool_end。
                 # 必须单独记账，否则成功率会被高估，且前端会一直显示工具运行中。
@@ -369,16 +542,25 @@ class LangChainReActStrategy(AgentStrategy):
                         except Exception:
                             pass
                         # 错误详情可能包含题目内容、凭据或内部路径，日志/事件只传递稳定状态。
-                        yield {
-                            "__agent_event__": True,
-                            "event_type": "tool_error",
-                            "tool": tool_name,
-                            "message": f"{tool_name} 调用失败，正在继续处理",
-                        }
+                        for activity in _tool_activity_events(
+                            context,
+                            phase="error",
+                            tool_name=tool_name,
+                            fallback_message=f"{tool_label(tool_name)}：调用失败，正在继续处理",
+                        ):
+                            yield activity
 
                 # 只传播供应商/LangChain 已返回的 usage，不估算也不改变模型请求。
                 if event_name == "on_chat_model_end":
                     output = event.get("data", {}).get("output")
+                    # 先定性再算预算：预算触顶 break 时这一轮的纪要也必须已经广播。
+                    round_index = _round_of(context, event.get("run_id"))
+                    if _round_is_process(output):
+                        mark_round_process(context, round_index)
+                    else:
+                        mark_round_final(context, round_index)
+                    for activity in drain_trace_events(context, force=True):
+                        yield activity
                     usage = getattr(output, "usage_metadata", None) or {}
                     response_metadata = getattr(output, "response_metadata", None) or {}
                     usage = usage or response_metadata.get("token_usage") or response_metadata.get("usage") or {}
@@ -401,15 +583,29 @@ class LangChainReActStrategy(AgentStrategy):
                 if not content:
                     continue
 
+                # 正文照旧逐字流出（不因为面板而改变答案体验），同时把文本按轮登记，
+                # 供本轮定性为过程轮时整体搬进思考面板。
+                record_text(context, _round_of(context, event.get("run_id")), _content_text(content))
+
                 token_count += 1
                 yield_count += 1
                 _full_output.append(content)
                 logger.debug(f"[STREAM] token#{token_count} yield#{yield_count}: {repr(content[:40])}")
                 yield content
 
+                # 面板实时增长：本轮还没定性，先按「够 400 字或够 200ms」节流广播增量。
+                # 定性成答案轮时前端会把这份临时文本撤掉（正文本身不受影响），
+                # 定性成过程轮则由 round_process 用全文覆盖，不会缺字。
+                for activity in drain_trace_events(context):
+                    yield activity
+
             # 确定性关闭底层事件流：预算触顶 break 时也要收掉 astream_events 生成器，
             # 不留挂起的 LLM 连接；正常结束/异常路径下这是无害的幂等操作。
             await event_stream.aclose()
+
+            # 台账收尾：回调没送达的调用也要在时间线上给出终态。
+            for activity in _closing_tool_events(context):
+                yield activity
 
             # LLM 正常产出 → 清空失败窗口（粘性切换仍由探测计时器回切）。
             if primary_model:
@@ -417,10 +613,6 @@ class LangChainReActStrategy(AgentStrategy):
 
             # 可观测性：记录LLM完整输出和工具使用情况
             _complete = "".join(_full_output)
-            import hashlib as _hl
-            _out_hash = _hl.md5(_complete.encode()).hexdigest()[:8]
-            print(f"\n[OBSERVE] LLM完整输出 | hash={_out_hash} | 长度={len(_complete)}字符 | tokens={token_count}", flush=True)
-            print(f"[OBSERVE] 本次工具调用: {_used_tools or '(无)'}", flush=True)
             # 暴露工具使用记录，供 agent.py 去重检测使用
             self._last_used_tools = _used_tools
             if not _token_usage["total_tokens"]:
@@ -432,10 +624,6 @@ class LangChainReActStrategy(AgentStrategy):
                 AGENT_TOKENS.labels("output").inc(_token_usage["completion_tokens"])
             except Exception:
                 pass
-            # 检测是否包含RAG标记（说明LLM确实展示了推荐结果）
-            _has_rag = "RAG推荐结果" in _complete or "来源:" in _complete
-            print(f"[OBSERVE] RAG内容检测: {'检测到RAG题目展示' if _has_rag else '未检测到RAG内容 — 可能被LLM改写或忽略!'}", flush=True)
-
             logger.info(
                 f"[STREAM] 流式执行完成: session={session_id}, "
                 f"tokens={token_count}, yields={yield_count}"
@@ -464,6 +652,8 @@ class LangChainReActStrategy(AgentStrategy):
         except asyncio.TimeoutError:
             self._last_run_status = "timeout"
             logger.error(f"[STREAM] Agent执行超时 ({self._timeout_seconds}s)")
+            for activity in _closing_tool_events(context):
+                yield activity
             yield degradation_text("timeout")
             recorder.finish_process("[超时终止]")
 
@@ -475,6 +665,8 @@ class LangChainReActStrategy(AgentStrategy):
             if primary_model:
                 failover.record_failure(primary_model)
             self._last_run_status = "failed_l4"
+            for activity in _closing_tool_events(context):
+                yield activity
             yield degradation_text("model_failure")
             recorder.finish_process("[L4 降级]")
 
@@ -543,6 +735,22 @@ class LangChainReActStrategy(AgentStrategy):
     def get_thought_recorder(self, session_id: str) -> ThoughtRecordingCallbackHandler:
         return self._get_recorder(session_id)
 
+    def cache_session_trace(self, session_id: str, trace: List[Dict[str, Any]]) -> None:
+        """按会话缓存最近一轮的思考纪要（已在台账侧截断与脱敏）。"""
+        if not session_id:
+            return
+        if not trace:
+            self._trace_cache.pop(session_id, None)
+            return
+        self._trace_cache[session_id] = list(trace)
+        while len(self._trace_cache) > self._trace_cache_sessions:
+            # 先进先出：丢弃最早的会话，不丢当前会话的可见性。
+            self._trace_cache.pop(next(iter(self._trace_cache)))
+
+    def get_session_trace(self, session_id: str) -> List[Dict[str, Any]]:
+        """取回该会话缓存的纪要；没缓存过就返回空，由调用方回退到 metadata。"""
+        return list(self._trace_cache.get(session_id) or [])
+
     def refresh_tools(self):
         """
         刷新工具列表。
@@ -566,3 +774,5 @@ class LangChainReActStrategy(AgentStrategy):
         prefix = f"{user_id}:"
         for key in [key for key in self._recorders if key.startswith(prefix)]:
             del self._recorders[key]
+        for key in [key for key in self._trace_cache if key.startswith(prefix)]:
+            del self._trace_cache[key]

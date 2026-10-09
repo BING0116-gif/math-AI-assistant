@@ -74,9 +74,6 @@ class RAGRecommender:
 
     async def recommend(self, request: RecommendationRequest) -> RecommendationResult:
         start_time = time.time()
-        print(f"\n{'='*60}", flush=True)
-        print(f"[RAG] ====== 推荐引擎启动 ======", flush=True)
-        print(f"[RAG] 用户={request.user_id} | 目标分类={request.target_category or '自动'} | 模式={request.context}", flush=True)
         logger.info(f"━━━ 推荐引擎启动 ━━━ 用户={request.user_id} 目标分类={request.target_category or '自动'} 模式={request.context}")
 
         try:
@@ -87,7 +84,6 @@ class RAGRecommender:
 
             correct_rate = user_profile.get("correct_rate", 0.5)
             total_q = user_profile.get("total_questions", 0)
-            print(f"[RAG] [第1步-用户画像] 正确率={correct_rate:.0%} | 总答题数={total_q} | 薄弱点={len(user_skills)}个技能", flush=True)
             logger.info(f"  [第1步-用户画像] 正确率={correct_rate:.0%} 总答题数={total_q} 薄弱点={len(user_skills)}个技能")
 
             # ── 第2步：确定目标分类和难度 ──
@@ -112,11 +108,10 @@ class RAGRecommender:
                         profile=user_profile, skill_data=list(user_skills.values()),
                     )
                     if recommended_difficulty != recommended_difficulty_refined:
-                        print(f"[RAG] 难度修正: {recommended_difficulty} → {recommended_difficulty_refined} (基于skill数据)", flush=True)
+                        logger.info(f"  [第2步-难度修正] {recommended_difficulty} → {recommended_difficulty_refined} (基于 skill 数据)")
                         recommended_difficulty = recommended_difficulty_refined
 
             logger.info(f"  [第2步-目标确定] 分类={target_category} 推荐难度={recommended_difficulty}/5 薄弱点={weak_points}")
-            print(f"[RAG] [第2步-目标确定] 分类={target_category} | 推荐难度={recommended_difficulty}/5 | 薄弱点={weak_points} | skill数量={len(user_skills)}", flush=True)
 
             all_exclude = list(set(request.exclude_ids + recently_done))
             if all_exclude:
@@ -153,7 +148,6 @@ class RAGRecommender:
                 kg_suggestions = []
 
             logger.info(f"  [第3步-三路检索] SQL精确={len(sql_results)}题 | 向量语义={len(vector_results)}题 | 知识图谱={len(kg_suggestions)}个建议")
-            print(f"[RAG] [第3步-三路检索] SQL精确={len(sql_results)}题 | 向量语义={len(vector_results)}题 | 知识图谱={len(kg_suggestions)}个建议", flush=True)
 
             # ── 第4步：融合排序 ──
             final_questions = await self._fuse_and_rank(
@@ -162,7 +156,6 @@ class RAGRecommender:
                 difficulty=recommended_difficulty,
             )
             logger.info(f"  [第4步-融合排序] 融合后取前{len(final_questions)}题")
-            print(f"[RAG] [第4步-融合排序] 融合后取前{len(final_questions)}题", flush=True)
 
             # ── 第5步：AI生成个性化分析（可选）──
             ai_analysis = {}
@@ -177,7 +170,6 @@ class RAGRecommender:
                         timeout=15.0,
                     )
                     logger.info(f"  [第5步-AI分析] 已生成（能力评估+推荐理由+学习建议）")
-                    print(f"[RAG] [第5步-AI分析] 已生成（能力评估+推荐理由+学习建议）", flush=True)
                 except asyncio.TimeoutError:
                     logger.warning("  [第5步-AI分析] 超时(>15s)，跳过AI分析")
                     correct_rate = user_profile.get("correct_rate", 0.5)
@@ -206,14 +198,9 @@ class RAGRecommender:
                 processing_time_ms=total_time,
             )
             logger.info(f"━━━ 推荐完成 ━━━ 共{len(result.questions)}题 总耗时{total_time:.0f}ms ━━━")
-            print(f"[RAG] ====== 推荐完成 ====== 共{len(result.questions)}题 | 总耗时{total_time:.0f}ms", flush=True)
-            print(f"{'='*60}\n", flush=True)
             return result
         except Exception as e:
             logger.error(f"━━━ 推荐异常: {e} ━━━", exc_info=True)
-            print(f"[RAG_DIAG] !!! 推荐异常 !!! error={e}", flush=True)
-            import traceback
-            traceback.print_exc()
             fallback = await self._get_fallback_recommendation(request)
             fallback.processing_time_ms = (time.time() - start_time) * 1000
             fallback.meta["error"] = str(e)
@@ -262,7 +249,6 @@ class RAGRecommender:
     async def _sql_retrieval(
         self, category: str, difficulty: int, exclude_ids: List[str], count: int
     ) -> List[Question]:
-        print(f"[RAG_DIAG] SQL检索参数 | category={repr(category)} | difficulty={difficulty} | exclude_count={len(exclude_ids)} | count={count}", flush=True)
         async with self._session_factory() as db:
             query = select(Question).where(
                 and_(Question.category == category, Question.difficulty == difficulty, Question.is_active == True, Question.review_status == "published")
@@ -272,8 +258,6 @@ class RAGRecommender:
             query = query.order_by(Question.usage_count.asc()).limit(count * 2)
             result = await db.execute(query)
             questions = list(result.scalars().all())
-            print(f"[RAG_DIAG] SQL精确匹配返回 {len(questions)} 题", flush=True)
-
             if len(questions) < count:
                 relaxed = select(Question).where(
                     and_(Question.category == category,

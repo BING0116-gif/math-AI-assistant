@@ -9,7 +9,7 @@ import { useAiCapability } from '@/composables/useAiCapability'
 import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
 import { useReminderPolling } from '@/composables/useReminderPolling'
 import { Sparkles, ChevronRight, BookOpen, Route } from 'lucide-vue-next'
-import { nowIso, parseTimestamp } from '@/utils/dateTime'
+import { parseTimestamp } from '@/utils/dateTime'
 
 const router = useRouter()
 const chatStore = useChatStore()

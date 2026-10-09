@@ -1278,6 +1278,7 @@ class MemoryStore:
         memory_types: Optional[List[str]] = None,
         high_category: Optional[str] = None,
         min_score: float = 0.6,
+        min_importance: float = 0.0,
     ) -> List[Dict[str, Any]]:
         """Qdrant 向量语义检索。"""
         if not self._QDRANT_AVAILABLE:
@@ -1307,6 +1308,11 @@ class MemoryStore:
             if high_category:
                 conditions.append(
                     FieldCondition(key="high_category", match=MatchValue(value=high_category))
+                )
+
+            if min_importance > 0:
+                conditions.append(
+                    FieldCondition(key="importance", range=Range(gte=min_importance))
                 )
 
             # 未过期过滤

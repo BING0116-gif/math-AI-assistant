@@ -5,7 +5,7 @@ import AppShell from '@/components/shell/AppShell.vue'
 import { notesApi, unwrapNote } from '@/api/notes'
 import { collectInkPoints, createStroke } from '@/features/handwriting/ink'
 import { renderCanvas } from '@/features/handwriting/renderers/canvas2d'
-import { RevisionSyncController, SyncStatus } from '@/features/handwriting/revisionSync'
+import { RevisionSyncController } from '@/features/handwriting/revisionSync'
 import { loadNoteDraft } from '@/features/handwriting/noteDraftStorage'
 import { useAuthStore } from '@/stores/authStore'
 

@@ -6,7 +6,6 @@ AI 不可用时的统一响应模型。
 """
 
 from pydantic import BaseModel
-from typing import Optional
 
 
 class AIUnavailableResponse(BaseModel):

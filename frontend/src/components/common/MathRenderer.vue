@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed } from 'vue'
 import katex from 'katex'
 
 const props = defineProps({
@@ -28,7 +28,4 @@ const renderedHtml = computed(() => {
   }
 })
 
-watch(() => props.content, () => {
-  // 内容变化时 computed 自动更新 renderedHtml，无需手动重新渲染
-}, { flush: 'post' })
 </script>

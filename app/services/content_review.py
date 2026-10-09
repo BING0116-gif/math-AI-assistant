@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import logging
 import hashlib
-import json
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.data.database import get_db_session
@@ -43,7 +42,6 @@ from app.data.models import (
     QuestionFeedback,
     QuestionKnowledgePoint,
     QuestionRevision,
-    SourceDocument,
 )
 from app.services.content_ai_analysis import MOCK_AI_RESULT_NOT_PUBLISHABLE
 from app.services.content_import import AUTO_GRADING_TYPES, SUPPORTED_TYPES, _strip_confirmed_answer_leak

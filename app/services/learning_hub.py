@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from app.data.database import get_db_session
 from app.data.models import (
     Chapter, KnowledgePoint, LearningActivitySession, PracticeAttempt, Question,
-    QuestionKnowledgePoint, ReviewSchedule, ReviewScheduleAction, UserKnowledgeState,
+    QuestionKnowledgePoint, ReviewSchedule, ReviewScheduleAction,
 )
 
 from app.services.learning_projection import read_learning_states, state_evidence

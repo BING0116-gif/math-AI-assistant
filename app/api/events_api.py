@@ -14,7 +14,7 @@ import time
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Request, Header
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
 from app.adapters.question_system.events import EventDispatcher

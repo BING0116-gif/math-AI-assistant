@@ -81,10 +81,6 @@ def schedule_after_review(item: ErrorItem, *, correct: bool, now: datetime | Non
     item.scheduler_version = SCHEDULER_VERSION
 
 
-def _state_stage(state: str | None) -> int:
-    return _STATE_STAGE.get(state or "new", 0)
-
-
 async def get_due_reviews(
     db: AsyncSession, *, user_id: str, now: datetime | None = None,
     limit: int = 20, include_upcoming: bool = False,

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -25,7 +25,6 @@ from app.data.models import (
     AssessmentBlueprint, PracticeSessionDraftAnswer, Chapter, ErrorItem, KnowledgeGraphVersion,
     KnowledgePoint, LearningRecord, PracticeAttempt, PracticeSession,
     PracticeSessionQuestion, Question, QuestionKnowledgePoint, ReviewSchedule,
-    UserKnowledgeState,
 )
 from app.services.llm_service import LLMResponse
 from app.services.paper_generator import _grade_one

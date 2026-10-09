@@ -197,7 +197,6 @@ def _grade_multi_choice(spec: Dict[str, Any], answer: Any) -> Dict[str, Any]:
     if scoring not in MULTI_CHOICE_SCORINGS:
         scoring = "all_or_nothing"
     hits = len(selected_set & correct_set)
-    misses = len(correct_set - selected_set)
     wrongs = len(selected_set - correct_set)
     if scoring == "all_or_nothing" or not correct_set:
         credit = 1.0 if selected_set == correct_set and correct_set else 0.0

@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_
 
 from app.config.settings import settings
 from app.data.database import get_db_session
@@ -237,11 +237,6 @@ async def extract_problem_features(input_text: str, llm_service: Optional[LLMSer
             f"[FOLLOW_UP] extract LLM成功: category={category}, "
             f"kp={knowledge_points}, type={question_type}"
         )
-        print(
-            f"[FOLLOW_UP] extract | category={category} | "
-            f"kp={knowledge_points} | type={question_type}",
-            flush=True,
-        )
         return ProblemFeatures(
             category=category,
             knowledge_points=knowledge_points,
@@ -249,7 +244,6 @@ async def extract_problem_features(input_text: str, llm_service: Optional[LLMSer
         )
     except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
         logger.warning(f"[FOLLOW_UP] extract LLM失败，使用关键词兜底: {e}")
-        print(f"[FOLLOW_UP] extract fallback | reason={e}", flush=True)
         return fallback
 
 
@@ -324,7 +318,6 @@ class FollowUpRecommender:
             FollowUpResult: 包含 2 道题的推荐结果
         """
         start_time = time.time()
-        print(f"\n[FOLLOW_UP] ====== 跟进推荐启动 ======", flush=True)
         logger.info(f"[FOLLOW_UP] 跟进推荐启动 | user={user_id} | input='{user_input[:50]}...'")
 
         try:
@@ -342,10 +335,6 @@ class FollowUpRecommender:
                 user_id, features.category
             )
             logger.info(f"[FOLLOW_UP] 双难度: Q1={diff_q1}(基础巩固), Q2={diff_q2}(能力提升)")
-            print(
-                f"[FOLLOW_UP] 双难度 | Q1={diff_q1}(基础巩固) | Q2={diff_q2}(能力提升)",
-                flush=True,
-            )
 
             # Step 3: 从题库检索
             questions = await self._retrieve_from_db(
@@ -355,10 +344,6 @@ class FollowUpRecommender:
             if len(questions) >= 2:
                 elapsed = (time.time() - start_time) * 1000
                 logger.info(f"[FOLLOW_UP] 题库检索成功: {len(questions)}题 | {elapsed:.0f}ms")
-                print(
-                    f"[FOLLOW_UP] 题库检索成功 | {len(questions)}题 | {elapsed:.0f}ms",
-                    flush=True,
-                )
                 return FollowUpResult(
                     questions=questions[:2],
                     source="rag",
@@ -373,7 +358,6 @@ class FollowUpRecommender:
 
             # Step 4: 题库不足，LLM 兜底
             logger.info(f"[FOLLOW_UP] 题库不足({len(questions)}题)，切换LLM兜底")
-            print(f"[FOLLOW_UP] 题库不足({len(questions)}题)，切换LLM兜底", flush=True)
             fallback_questions = await self._llm_fallback_generate(
                 features, diff_q1, diff_q2
             )
@@ -394,7 +378,6 @@ class FollowUpRecommender:
         except Exception as e:
             elapsed = (time.time() - start_time) * 1000
             logger.error(f"[FOLLOW_UP] 推荐异常: {e}", exc_info=True)
-            print(f"[FOLLOW_UP] 推荐异常 | error={e}", flush=True)
 
             # 最终兜底：LLM 生成
             try:
@@ -526,11 +509,6 @@ class FollowUpRecommender:
                     f"[FOLLOW_UP] {label}命中: ID={q['id']} | "
                     f"difficulty={q['difficulty']} | source={q.get('source')}"
                 )
-                print(
-                    f"[FOLLOW_UP] {label}命中 | ID={q['id']} | "
-                    f"difficulty={q['difficulty']} | source={q.get('source', '?')}",
-                    flush=True,
-                )
 
         # 兜底：如果只找到1题，尝试跨类别补全
         if len(questions) == 1:
@@ -554,7 +532,6 @@ class FollowUpRecommender:
                 if q:
                     questions.append(q)
                     logger.info(f"[FOLLOW_UP] {missing_label}兜底命中: ID={q['id']} | category={cat}")
-                    print(f"[FOLLOW_UP] {missing_label}兜底命中 | ID={q['id']} | category={cat}", flush=True)
                     break
 
         return questions
@@ -847,12 +824,10 @@ class FollowUpRecommender:
                 })
 
             logger.info(f"[FOLLOW_UP] LLM兜底生成成功: {len(questions)}题")
-            print(f"[FOLLOW_UP] LLM兜底生成成功 | {len(questions)}题", flush=True)
             return questions
 
         except Exception as e:
             logger.error(f"[FOLLOW_UP] LLM兜底生成失败: {e}")
-            print(f"[FOLLOW_UP] LLM兜底生成失败 | error={e}", flush=True)
             return []
 
     @staticmethod

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -613,9 +612,9 @@ class ContentAIAnalysisService:
             provider = latest.provider or "mock"
 
         # 复用 ContentImportService.create_drafts（保持幂等 / provenance / 校验一致）
-        from app.services.content_import import ContentImportService
+        from app.services.content_import import get_content_import_service
 
-        svc = ContentImportService()
+        svc = get_content_import_service()
         result = await svc.create_drafts(
             batch_id,
             [candidate_id],
