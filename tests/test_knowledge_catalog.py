@@ -93,3 +93,51 @@ async def test_startup_seed_never_demotes_released_default():
         course_tree = await get_published_course_tree(session, report["course_id"])
         assert course_tree["version"]["version"] == "1.0"
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_point_resolves_by_code_and_examples_filter_published():
+    """learning/points 接口的 id-or-code 契约 + 学习页例题查询只出 published。"""
+    from app.data.models import KnowledgePoint, Question, QuestionKnowledgePoint
+    from app.services.knowledge_catalog import list_published_point_examples
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    @event.listens_for(engine.sync_engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        course = await seed_phase_one_calculus(session)
+        await session.commit()
+        target = (await session.execute(
+            select(KnowledgePoint).where(KnowledgePoint.code == "function-definition")
+        )).scalars().first()
+
+        # code 兜底：多版本同 code 优先默认发布版本（seed 只有 1.0，直接命中）
+        by_code = await get_published_point(session, "function-definition")
+        assert by_code is not None and by_code["id"] == target.id
+        assert by_code["course"]["id"] == course.id
+
+        # 例题：published 才可见，draft 被滤；按难度升序；limit 生效
+        for i, (status, difficulty) in enumerate(
+            [("published", 2), ("published", 1), ("draft", 1), ("published", 3)]
+        ):
+            session.add(Question(
+                id=f"EX{i:02d}", content=f"例题 {i}", question_type="choice",
+                options=[{"id": "A", "text": "1"}, {"id": "B", "text": "2"}],
+                answer="A", analysis=f"解析 {i}", category="高等数学",
+                difficulty=difficulty, review_status=status, is_active=True,
+            ))
+            session.add(QuestionKnowledgePoint(
+                question_id=f"EX{i:02d}", knowledge_point_id=target.id, is_primary=True,
+            ))
+        await session.commit()
+
+        examples = await list_published_point_examples(session, target.id, limit=3)
+        assert [row["question_id"] for row in examples] == ["EX01", "EX00", "EX03"]
+        assert examples[0]["answer"] == "A" and examples[0]["analysis"] == "解析 1"
+        assert await list_published_point_examples(session, "no-such-point") == []
+    await engine.dispose()

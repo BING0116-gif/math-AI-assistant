@@ -85,6 +85,12 @@ async function submit() {
          避免百分比外溢(bottom:-24% 等)撑高 .login-page 的 scrollHeight,导致正常视口常显滚动条、卡片偏心 -->
     <div class="bg-layer" aria-hidden="true">
       <div class="bg-dots"></div>
+      <svg class="contour-field" viewBox="0 0 960 360" preserveAspectRatio="none">
+        <path class="contour-field__fill" d="M-50 282 C 130 204, 182 42, 366 92 S 600 326, 1010 82 L1010 144 C 652 360, 522 198, 350 144 S 116 286,-50 336 Z" />
+        <path class="contour-field__line contour-field__line--one" d="M-50 282 C 130 204, 182 42, 366 92 S 600 326, 1010 82" />
+        <path class="contour-field__line contour-field__line--two" d="M-50 302 C 128 226, 184 66, 366 112 S 606 342, 1010 106" />
+        <path class="contour-field__line contour-field__line--three" d="M-50 322 C 126 248, 188 90, 366 132 S 612 356, 1010 130" />
+      </svg>
       <div class="glow glow--orange"></div>
       <div class="glow glow--amber"></div>
       <div class="glow glow--emerald"></div>
@@ -164,7 +170,7 @@ async function submit() {
   overflow-x: hidden;
   overflow-y: auto;
   isolation: isolate;
-  background: #131008;
+  background: #17130e;
 }
 
 /* 装饰背景层:独立绝对定位并自身 overflow:hidden,把百分比外溢的光晕/环/符号裁在本层内,
@@ -188,6 +194,39 @@ async function submit() {
   -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 78%);
 }
 
+.contour-field {
+  position: absolute;
+  z-index: 0;
+  top: 13%;
+  right: -6%;
+  width: min(76vw, 940px);
+  height: 320px;
+  overflow: visible;
+  opacity: .28;
+  pointer-events: none;
+  transform: rotate(-3deg);
+  animation: contour-drift 18s ease-in-out infinite alternate;
+}
+
+.contour-field__fill {
+  fill: rgba(244, 87, 10, .06);
+}
+
+.contour-field__line {
+  fill: none;
+  stroke: rgba(250, 199, 117, .32);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.contour-field__line--two {
+  stroke: rgba(159, 225, 203, .22);
+}
+
+.contour-field__line--three {
+  stroke: rgba(250, 199, 117, .16);
+}
+
 .glow {
   position: absolute;
   z-index: 0;
@@ -200,14 +239,14 @@ async function submit() {
   height: min(60vw, 560px);
   right: -12%;
   top: -22%;
-  background: radial-gradient(circle, rgba(244, 87, 10, .5) 0%, rgba(244, 87, 10, .16) 45%, transparent 70%);
+  background: radial-gradient(circle, rgba(244, 87, 10, .38) 0%, rgba(244, 87, 10, .14) 45%, transparent 70%);
 }
 .glow--amber {
   width: min(36vw, 340px);
   height: min(36vw, 340px);
   right: 8%;
   top: 4%;
-  background: radial-gradient(circle, rgba(229, 158, 52, .38) 0%, transparent 68%);
+  background: radial-gradient(circle, rgba(229, 158, 52, .32) 0%, transparent 68%);
   animation-delay: -5s;
 }
 .glow--emerald {
@@ -215,7 +254,7 @@ async function submit() {
   height: min(50vw, 480px);
   left: -14%;
   bottom: -24%;
-  background: radial-gradient(circle, rgba(11, 122, 94, .4) 0%, rgba(11, 122, 94, .12) 48%, transparent 70%);
+  background: radial-gradient(circle, rgba(11, 122, 94, .32) 0%, rgba(11, 122, 94, .1) 48%, transparent 70%);
   animation-delay: -8s;
 }
 
@@ -268,9 +307,9 @@ async function submit() {
   width: min(100% - 40px, 400px);
   padding: 34px 32px 26px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, .07);
-  border: 1px solid rgba(255, 255, 255, .28);
-  box-shadow: 0 24px 70px -24px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .085);
+  border: 1px solid rgba(255, 255, 255, .31);
+  box-shadow: 0 24px 70px -24px rgba(0, 0, 0, .56), inset 0 1px 0 rgba(255, 255, 255, .16);
   backdrop-filter: blur(22px) saturate(1.4);
   -webkit-backdrop-filter: blur(22px) saturate(1.4);
   animation: card-in .6s .05s cubic-bezier(.22, 1, .36, 1) both;
@@ -364,15 +403,16 @@ async function submit() {
 @keyframes glow-drift { from { transform: translate3d(-14px, 10px, 0) scale(.96); } to { transform: translate3d(20px, -16px, 0) scale(1.06); } }
 @keyframes ring-drift { from { transform: translate3d(-8px, 6px, 0) rotate(-3deg); } to { transform: translate3d(12px, -10px, 0) rotate(4deg); } }
 @keyframes sym-float { from { transform: translateY(-6px); } to { transform: translateY(8px); } }
+@keyframes contour-drift { from { transform: translate3d(-10px, 4px, 0) rotate(-3deg); } to { transform: translate3d(12px, -8px, 0) rotate(-1deg); } }
 
 @media (max-width: 560px) {
   .glass-card { padding: 28px 22px 22px; width: min(100% - 32px, 400px); }
-  .ring--two, .math-sym--int { display: none; }
+  .ring--two, .math-sym--int, .contour-field { display: none; }
   .bar-note { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glass-card, .glow, .ring, .math-sym { animation: none; }
+  .glass-card, .glow, .ring, .math-sym, .contour-field { animation: none; }
   .tab-indicator, .field input, .submit-button { transition: none; }
 }
 

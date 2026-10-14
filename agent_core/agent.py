@@ -21,7 +21,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.config.settings import settings
+from app.config.settings import canonical_base_url, canonical_model_name, settings
 from agent_core.strategies import AgentStrategy, LangChainReActStrategy
 from agent_core.orchestrator import MathOrchestrator, CapabilityRoute
 from agent_core.thought import ThoughtRecorder
@@ -63,11 +63,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LLMConfig:
-    """LLM 相关配置（默认跟随 settings：主文本模型 DeepSeek，识图走 vision_tool 千问 VL）。"""
-    model: str = field(default_factory=lambda: settings.LLM_MODEL or "deepseek-chat")
+    """LLM 相关配置（文本与视觉统一 DeepSeek，提示词按场景区分）。"""
+    model: str = field(default_factory=lambda: canonical_model_name(settings.LLM_MODEL) or "deepseek-flash")
     temperature: float = 0
     base_url: str = field(
-        default_factory=lambda: settings.LLM_API_BASE or "https://api.deepseek.com/v1"
+        default_factory=lambda: canonical_base_url(settings.LLM_API_BASE)
     )
 
 
@@ -248,9 +248,9 @@ class MathAgent:
             api_key=api_key,
             registry=registry,
             llm=LLMConfig(
-                model=model or settings.LLM_MODEL or "deepseek-chat",
+                model=canonical_model_name(model or settings.LLM_MODEL) or "deepseek-flash",
                 temperature=temperature,
-                base_url=base_url or settings.LLM_API_BASE or "https://api.deepseek.com/v1",
+                base_url=canonical_base_url(base_url or settings.LLM_API_BASE),
             ),
             strategy=StrategyConfig(
                 max_iterations=max_iterations,
@@ -1601,7 +1601,7 @@ def create_math_agent(
         api_key=api_key,
         registry=registry,
         llm=LLMConfig(
-            model=model or settings.LLM_MODEL or "deepseek-chat",
+            model=canonical_model_name(model or settings.LLM_MODEL) or "deepseek-flash",
             temperature=temperature,
         ),
         strategy=StrategyConfig(

@@ -15,13 +15,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -35,10 +36,13 @@ from app.data.models import (
     SourceDocument,
 )
 from app.services.document_parser import (
+    MODE_AUTO,
+    MODE_LAYOUT_WORKER,
     MODE_MINERU,
     MODE_QUICK,
     ContentParseError,
     DocumentParser,
+    ParserCancelled,
     validate_pdf_page_count,
     validate_pdf_upload,
 )
@@ -49,6 +53,7 @@ from app.services.content_answer_matcher import (
 )
 from app.services.knowledge_seed import COURSE_CODE
 from app.services.question_importer import QuestionImporter
+from app.services.content_task import TaskCancelled
 from app.services.question_splitter import (
     guess_option_letters,
     split_document,
@@ -94,9 +99,22 @@ EDITABLE_CANDIDATE_FIELDS = {
     "original_solution",
     "detected_question_type",
     "suggested_knowledge_point_codes",
+    "suggested_difficulty",
 }
 
 _ANSWER_LEAK_RE = re.compile(r"([）)])([A-Da-d])(?=\s*[A-Da-d]\b)")
+
+
+def _parsed_quality(parsed) -> tuple[bool, str]:
+    """给快速文本提取做保守质量闸门，不猜测数学内容。"""
+    text = "\n".join((b.text or "") for b in (parsed.blocks or []))
+    if not text.strip():
+        return False, "empty_text"
+    if any("\ue000" <= ch <= "\uf8ff" or ch == "�" for ch in text):
+        return False, "unrenderable_glyphs"
+    if len(text.strip()) < 80 and len(parsed.pages or []) > 0:
+        return False, "too_little_text"
+    return True, "ok"
 
 
 def _strip_confirmed_answer_leak(stem: str, answer_letter: str):
@@ -131,7 +149,7 @@ class ContentImportService:
         admin_user_id: str,
         original_filename: str,
         content: bytes,
-        mode: str = MODE_QUICK,
+        mode: str = MODE_AUTO,
         idempotency_key: Optional[str] = None,
     ) -> Tuple[ImportBatch, bool]:
         """创建来源文档与 pending 批次。返回 (batch, created)。
@@ -139,7 +157,7 @@ class ContentImportService:
         幂等：同一 admin + idempotency_key 已存在时返回既有批次（created=False），不重复创建。
         """
         validate_pdf_upload(content, original_filename)
-        if mode not in (MODE_QUICK, MODE_MINERU):
+        if mode not in (MODE_AUTO, MODE_QUICK, MODE_MINERU, MODE_LAYOUT_WORKER):
             raise ContentParseError("PARSE_FAILED", f"未知解析模式: {mode}")
 
         if idempotency_key:
@@ -206,8 +224,15 @@ class ContentImportService:
         return self._storage_root() / key
 
     # ── parse_import ──
-    async def parse_import(self, batch_id: str) -> ImportBatch:
-        """同步解析批次：DocumentParser + Splitter → 持久化 candidates。"""
+    async def parse_import(
+        self,
+        batch_id: str,
+        progress_callback: Optional[Callable[..., Awaitable[None]]] = None,
+    ) -> ImportBatch:
+        """解析批次：DocumentParser + Splitter → 持久化 candidates。
+
+        progress_callback 只承载可观测进度，不参与业务结果判断；回调失败不能破坏解析主链路。
+        """
         async with get_db_session() as db:
             batch = await db.get(ImportBatch, batch_id)
             if batch is None:
@@ -221,16 +246,140 @@ class ContentImportService:
             parser_name_snapshot = batch.parser_name
             storage_path = self._resolve_storage_path(source_doc.storage_key)
 
+        async def emit(**fields: Any) -> None:
+            if progress_callback is None:
+                return
+            try:
+                await progress_callback(**fields)
+            except TaskCancelled:
+                raise
+            except Exception:  # noqa: BLE001
+                logger.warning("解析进度回调失败，继续执行 batch=%s", batch_id_snapshot, exc_info=True)
+
+        async def parse_with_progress(mode: str):
+            """在线程中执行阻塞解析，并把版面 worker 的按页回调桥接回任务表。"""
+            if mode != MODE_LAYOUT_WORKER:
+                return await asyncio.to_thread(self._parser.parse, storage_path, mode)
+
+            loop = asyncio.get_running_loop()
+
+            def on_page(done: int, total: int) -> None:
+                ratio = done / max(total, 1)
+                future = asyncio.run_coroutine_threadsafe(
+                    emit(
+                        stage="extracting",
+                        stage_label=f"版面解析第 {done}/{total} 页",
+                        percent=min(44, 18 + round(ratio * 26)),
+                        pages=done,
+                        total_pages=total,
+                        questions=0,
+                    ),
+                    loop,
+                )
+                # 等待当前进度落库，避免解析完成后前端仍停留在旧百分比。
+                try:
+                    future.result()
+                except TaskCancelled as exc:
+                    raise ParserCancelled() from exc
+
+            return await asyncio.to_thread(self._parser.parse, storage_path, mode, on_page)
+
         try:
-            validate_pdf_page_count(storage_path)
-            parsed = self._parser.parse(storage_path, parser_name_snapshot)
+            await emit(stage="validating", stage_label="校验 PDF", percent=5, pages=0, questions=0)
+            page_count = validate_pdf_page_count(storage_path)
+            await emit(stage="extracting", stage_label="准备提取 PDF 内容", percent=18, pages=0, total_pages=page_count, questions=0)
+            fallback_reason = None
+            requested_mode = parser_name_snapshot
+            initial_parser = MODE_QUICK if requested_mode == MODE_AUTO else requested_mode
+            mineru_available = False
+            mineru_probe = getattr(self._parser, "_mineru_executable", None)
+            if callable(mineru_probe):
+                mineru_available = bool(mineru_probe())
+            layout_worker_available = bool(
+                requested_mode == MODE_LAYOUT_WORKER
+                or (requested_mode == MODE_AUTO and getattr(self._parser, "layout_worker_available", lambda: False)())
+            )
+            try:
+                parsed = await parse_with_progress(initial_parser)
+            except ContentParseError as parse_error:
+                # 用户选择 MinerU 但本机未安装/启动失败时，不能让整个导入停在
+                # 18%。先回退到 PyMuPDF，仍保留明确的降级原因供审核员查看。
+                if initial_parser != MODE_MINERU:
+                    raise
+                fallback_reason = f"mineru_{parse_error.code.lower()}"
+                await emit(
+                    stage="fallback",
+                    stage_label="MinerU 不可用，切换快速解析",
+                    percent=24,
+                    pages=page_count,
+                    questions=0,
+                )
+                parsed = await parse_with_progress(MODE_QUICK)
+                parser_name_snapshot = MODE_QUICK
+            # Phase 0：quick 提取质量不足时自动尝试 MinerU。只有检测到本机
+            # MinerU 可执行文件才触发，失败时保留 quick 结果并把原因写入批次统计。
+            if initial_parser == MODE_QUICK:
+                quality_ok, quality_reason = _parsed_quality(parsed)
+                if not quality_ok and layout_worker_available:
+                    fallback_reason = quality_reason
+                    await emit(
+                        stage="fallback",
+                        stage_label="轻量解析质量不足，转交版面解析 worker",
+                        percent=28,
+                        pages=page_count,
+                        questions=0,
+                    )
+                    try:
+                        worker_parsed = await parse_with_progress(MODE_LAYOUT_WORKER)
+                        worker_ok, _ = _parsed_quality(worker_parsed)
+                        if worker_ok or len(worker_parsed.blocks) > len(parsed.blocks):
+                            parsed = worker_parsed
+                            parser_name_snapshot = MODE_LAYOUT_WORKER
+                    except ContentParseError:
+                        logger.warning(
+                            "layout-worker fallback 失败，继续尝试 MinerU/保留 quick batch=%s",
+                            batch_id_snapshot,
+                            exc_info=True,
+                        )
+                if not quality_ok and parser_name_snapshot == MODE_QUICK and mineru_available:
+                    fallback_reason = quality_reason
+                    await emit(
+                        stage="fallback",
+                        stage_label="快速解析质量不足，尝试 MinerU",
+                        percent=28,
+                        pages=page_count,
+                        questions=0,
+                    )
+                    try:
+                        mineru_parsed = await parse_with_progress(MODE_MINERU)
+                        mineru_ok, _ = _parsed_quality(mineru_parsed)
+                        if mineru_ok or len(mineru_parsed.blocks) > len(parsed.blocks):
+                            parsed = mineru_parsed
+                            parser_name_snapshot = MODE_MINERU
+                    except ContentParseError:
+                        logger.warning(
+                            "quick 解析质量不足且 MinerU fallback 失败，保留 quick 结果 batch=%s",
+                            batch_id_snapshot,
+                            exc_info=True,
+                        )
+            parsed_pages = len(parsed.pages) or max((b.page or 0 for b in parsed.blocks), default=page_count)
+            await emit(stage="splitting", stage_label="识别题目边界", percent=48, pages=parsed_pages, questions=0)
             splits = split_document(parsed)
+            await emit(stage="matching_answers", stage_label="匹配答案与解析", percent=68, pages=parsed_pages, questions=len(splits))
             # C3：确定性答案匹配（答案区 → candidate.original_answer/original_solution）
             matches = ContentAnswerMatcher().match(parsed.blocks, splits)
+            await emit(stage="building_candidates", stage_label="生成候选题", percent=82, pages=parsed_pages, questions=len(splits))
             candidates = [
-                self._build_candidate(sq, idx, batch_id_snapshot, matches.get(sq.identity))
+                self._build_candidate(
+                    sq, idx, batch_id_snapshot, matches.get(sq.identity),
+                    parser_fallback=fallback_reason,
+                )
                 for idx, sq in enumerate(splits, start=1)
             ]
+        except TaskCancelled:
+            raise
+        except ParserCancelled as e:
+            raise TaskCancelled() from e
         except ContentParseError as e:
             await self._fail_batch(batch_id_snapshot, e.code, e.message)
             raise
@@ -239,24 +388,57 @@ class ContentImportService:
             await self._fail_batch(batch_id_snapshot, "PARSE_FAILED", str(e))
             raise ContentParseError("PARSE_FAILED", f"解析失败: {e}")
 
+        await emit(stage="saving", stage_label="保存候选题", percent=92, pages=parsed_pages, questions=len(candidates))
         async with get_db_session() as db:
             batch = await db.get(ImportBatch, batch_id_snapshot)
             for cand in candidates:
                 db.add(cand)
             batch.status = BATCH_PARSED
+            batch.parser_name = parsed.parser_name
             batch.parser_version = parsed.parser_version
             batch.stats = {
                 "total_candidates": len(candidates),
                 "supported_count": sum(1 for c in candidates if c.supported),
+                "parser_mode": parsed.parser_name,
+                "requested_parser_mode": requested_mode,
+                "routing": {
+                    "initial_parser": initial_parser,
+                    "selected_parser": parsed.parser_name,
+                    "quality_gate": "passed" if fallback_reason is None else "escalated_or_degraded",
+                    "heavy_parser_attempted": bool(
+                        initial_parser == MODE_MINERU
+                        or (initial_parser == MODE_QUICK and fallback_reason and (mineru_available or layout_worker_available))
+                    ),
+                },
+                "fallback_reason": fallback_reason,
+                "warning_counts": self._warning_counts(candidates),
             }
             batch.completed_at = datetime.now(timezone.utc)
             await db.commit()
             await db.refresh(batch)
+            await emit(stage="completed", stage_label="解析完成", percent=100, pages=parsed_pages, questions=len(candidates))
             return batch
 
-    def _build_candidate(self, sq, index: int, batch_id: str, match=None) -> ContentImportCandidate:
+    @staticmethod
+    def _warning_counts(candidates: List[ContentImportCandidate]) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for candidate in candidates:
+            for warning in candidate.warnings or []:
+                counts[warning] = counts.get(warning, 0) + 1
+        return counts
+
+    def _build_candidate(
+        self,
+        sq,
+        index: int,
+        batch_id: str,
+        match=None,
+        parser_fallback: Optional[str] = None,
+    ) -> ContentImportCandidate:
         detected = sq.detected_question_type
         warnings = list(sq.warnings)
+        if parser_fallback:
+            warnings.append("parser_fallback_mineru")
         original_answer = (match.original_answer if match and match.original_answer else "") or ""
         original_solution = (match.original_solution if match and match.original_solution else "") or ""
         if match is not None and match.status != MATCHED:
@@ -297,6 +479,8 @@ class ContentImportService:
             candidate_index=index,
             source_page_start=sq.page_start,
             source_page_end=sq.page_end,
+            source_bbox=sq.source_bbox,
+            source_regions=sq.source_regions or None,
             source_question_number=sq.question_number,
             raw_parsed_content=sq.raw_text,
             stem=stem,
@@ -307,6 +491,7 @@ class ContentImportService:
             supported=supported,
             warnings=warnings,
             suggested_knowledge_point_codes=[],
+            suggested_difficulty=None,
             status=CAND_PARSED,
         )
 
@@ -336,6 +521,23 @@ class ContentImportService:
         async with get_db_session() as db:
             return await db.get(ImportBatch, batch_id)
 
+    async def retry_import(self, batch_id: str) -> ImportBatch:
+        """重试失败批次，保留原 PDF 与批次身份，不自动删除已有候选。"""
+        async with get_db_session() as db:
+            batch = await db.get(ImportBatch, batch_id)
+            if batch is None:
+                raise ContentParseError("PARSE_FAILED", "批次不存在")
+            if batch.status != BATCH_FAILED:
+                raise ContentParseError("PARSE_FAILED", "只有失败批次可以重试")
+            batch.status = BATCH_PENDING
+            batch.error_code = None
+            batch.error_message = None
+            batch.completed_at = None
+            batch.stats = {}
+            await db.commit()
+            await db.refresh(batch)
+            return batch
+
     # ── list_candidates ──
     async def list_candidates(self, batch_id: str) -> List[ContentImportCandidate]:
         async with get_db_session() as db:
@@ -349,7 +551,101 @@ class ContentImportService:
                     .order_by(ContentImportCandidate.candidate_index)
                 )
             ).scalars().all()
-            return list(rows)
+            candidates = list(rows)
+
+            source_doc = None
+            if any(
+                not self._valid_bbox(candidate.source_bbox)
+                or not isinstance(candidate.source_regions, list)
+                or not candidate.source_regions
+                for candidate in candidates
+            ):
+                source_doc = await db.get(SourceDocument, batch.source_document_id)
+
+        # 旧批次是在解析器开始记录 bbox 之前生成的。首次打开审核页时，
+        # 用同一套题目切分器重新读取 PDF，仅补齐显示用的 provenance 坐标；
+        # 不改 raw/stem/答案等题库内容。
+        if source_doc is not None:
+            repaired = await self._backfill_source_bboxes(batch_id, candidates, source_doc)
+            if repaired:
+                async with get_db_session() as db:
+                    rows = (
+                        await db.execute(
+                            select(ContentImportCandidate)
+                            .where(ContentImportCandidate.import_batch_id == batch_id)
+                            .order_by(ContentImportCandidate.candidate_index)
+                        )
+                    ).scalars().all()
+                    candidates = list(rows)
+
+        return candidates
+
+    @staticmethod
+    def _valid_bbox(value: Any) -> bool:
+        if not isinstance(value, list) or len(value) < 4:
+            return False
+        try:
+            x0, y0, x1, y1 = (float(value[i]) for i in range(4))
+        except (TypeError, ValueError):
+            return False
+        return x1 > x0 and y1 > y0
+
+    async def _backfill_source_bboxes(
+        self,
+        batch_id: str,
+        candidates: List[ContentImportCandidate],
+        source_doc: SourceDocument,
+    ) -> int:
+        """为旧候选补齐逐题 PDF 坐标，供审核页生成题目级截图。"""
+        storage_path = self._resolve_storage_path(source_doc.storage_key)
+        try:
+            parsed = await asyncio.to_thread(self._parser.parse, storage_path, MODE_QUICK)
+            splits = split_document(parsed)
+        except Exception:  # noqa: BLE001
+            logger.warning("旧批次题目截图坐标回填失败 batch=%s", batch_id, exc_info=True)
+            return 0
+
+        # 正常情况下顺序完全一致；题号索引作为解析结果发生轻微变化时的兜底。
+        by_key: Dict[Tuple[Optional[int], Optional[str]], List[Any]] = {}
+        for split in splits:
+            by_key.setdefault((split.page_start, split.question_number), []).append(split)
+
+        updates: List[Tuple[str, List[float]]] = []
+        region_updates: List[Tuple[str, List[dict]]] = []
+        for pos, candidate in enumerate(candidates):
+            if self._valid_bbox(candidate.source_bbox) and candidate.source_regions:
+                continue
+            split = splits[pos] if pos < len(splits) else None
+            if split is None or (
+                candidate.source_page_start is not None
+                and split.page_start != candidate.source_page_start
+            ):
+                matches = by_key.get((candidate.source_page_start, candidate.source_question_number), [])
+                split = matches.pop(0) if matches else None
+            if split is None or (
+                not self._valid_bbox(split.source_bbox)
+                and not split.source_regions
+            ):
+                continue
+            if not self._valid_bbox(candidate.source_bbox) and self._valid_bbox(split.source_bbox):
+                updates.append((candidate.id, [float(v) for v in split.source_bbox[:4]]))
+            if split.source_regions:
+                region_updates.append((candidate.id, split.source_regions))
+
+        if not updates and not region_updates:
+            return 0
+        async with get_db_session() as db:
+            for candidate_id, bbox in updates:
+                candidate = await db.get(ContentImportCandidate, candidate_id)
+                if candidate is not None and not self._valid_bbox(candidate.source_bbox):
+                    candidate.source_bbox = bbox
+            for candidate_id, regions in region_updates:
+                candidate = await db.get(ContentImportCandidate, candidate_id)
+                if candidate is not None and not candidate.source_regions:
+                    candidate.source_regions = regions
+            await db.commit()
+        logger.info("旧批次补齐逐题 PDF 裁剪坐标 batch=%s count=%s", batch_id, len(updates))
+        return len({candidate_id for candidate_id, _ in updates + region_updates})
 
     # ── update_candidate（最小编辑，不改 provenance）──
     async def update_candidate(self, batch_id: str, candidate_id: str, patch: Dict[str, Any]) -> ContentImportCandidate:
@@ -373,7 +669,7 @@ class ContentImportService:
             doc = await db.get(SourceDocument, document_id)
             return doc if doc is not None and doc.status == "active" else None
 
-    async def render_page_preview(self, document_id: str, page: int) -> bytes:
+    async def render_page_preview(self, document_id: str, page: int, bbox: Optional[List[float]] = None) -> bytes:
         """渲染来源 PDF 指定页为 PNG（PyMuPDF，已进入主 runtime）。
 
         安全要求：
@@ -397,7 +693,21 @@ class ContentImportService:
             try:
                 if page < 1 or page > pdf.page_count:
                     raise ContentParseError("PARSE_FAILED", f"页码越界: {page}")
-                pix = pdf[page - 1].get_pixmap(dpi=110)
+                target = pdf[page - 1]
+                clip = None
+                if bbox and len(bbox) == 4:
+                    raw_clip = fitz.Rect(*bbox)
+                    # 题号、选项和公式常贴近文本块边界，给每侧留出安全边距。
+                    padding = 10
+                    clip = fitz.Rect(
+                        raw_clip.x0 - padding,
+                        raw_clip.y0 - padding,
+                        raw_clip.x1 + padding,
+                        raw_clip.y1 + padding,
+                    ) & target.rect
+                    if clip.is_empty or clip.width < 1 or clip.height < 1:
+                        raise ContentParseError("PARSE_FAILED", "题目裁剪区域无效")
+                pix = target.get_pixmap(dpi=140, clip=clip)
                 return pix.tobytes("png")
             finally:
                 pdf.close()
@@ -485,7 +795,7 @@ class ContentImportService:
                     "answer": cand.original_answer or "",
                     "analysis": cand.original_solution or "",
                     "category": (cand.import_batch.source_document.original_filename if cand.import_batch.source_document else "") or "待分类",
-                    "difficulty": 3,
+                    "difficulty": cand.suggested_difficulty or 3,
                     "source": source_name,
                     "review_status": "draft",
                     "is_ai_generated": False,

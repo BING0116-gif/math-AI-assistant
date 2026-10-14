@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import logging
 import math
 from dataclasses import dataclass
@@ -73,6 +74,57 @@ class VerifiedDraft:
         return self.draft
 
 
+def parse_structured_answer(model_answer: str) -> Mapping[str, Any] | None:
+    """Extract the small, auditable answer envelope emitted by a model.
+
+    Free-form prose is deliberately not treated as a verified answer. The model
+    must provide JSON with a ``verification`` object and optional ``steps``.
+    """
+    if not isinstance(model_answer, str) or not model_answer.strip():
+        return None
+    text = model_answer.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        text = text.rsplit("```", 1)[0].strip()
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            value = json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(value, Mapping) or not isinstance(value.get("verification"), Mapping):
+        return None
+    steps = value.get("steps", [])
+    if not isinstance(steps, list) or not all(isinstance(step, str) and step.strip() for step in steps):
+        return None
+    return value
+
+
+def verify_model_answer(
+    question: str,
+    model_answer: str,
+    *,
+    verifier: "MathVerifier" | None = None,
+) -> Dict[str, Any]:
+    """Run the minimum question -> parse -> deterministic verification slice."""
+    if not isinstance(question, str) or not question.strip():
+        return {"status": INCONCLUSIVE, "reason": "题目为空", "parsed": None}
+    parsed = parse_structured_answer(model_answer)
+    if parsed is None:
+        return {"status": INCONCLUSIVE, "reason": "模型回答不是可审计的结构化 JSON", "parsed": None}
+    result = (verifier or get_math_verifier()).verify(parsed["verification"])
+    return {
+        "status": result.status,
+        "question": question,
+        "parsed": {"answer": parsed.get("answer", ""), "steps": parsed.get("steps", []), "verification": parsed["verification"]},
+        "verification": result.to_dict(),
+    }
+
+
 RedraftCallback = Callable[
     [str, Mapping[str, Any], VerificationResult],
     Awaitable[tuple[str, Mapping[str, Any]]] | tuple[str, Mapping[str, Any]],
@@ -90,6 +142,8 @@ class MathVerifier:
         "function": "function_value",
         "matrix_operation": "matrix",
         "simple_probability": "probability",
+        "unit": "quantity",
+        "quantity_value": "quantity",
     }
 
     def verify(self, request: Mapping[str, Any]) -> VerificationResult:
@@ -334,6 +388,25 @@ class MathVerifier:
             [VerificationCheck("probability", passed, f"有利数/总数={sp.sstr(actual)}，候选值={sp.sstr(claimed_expr)}")],
             confidence=0.99,
         )
+
+    def _verify_quantity(self, request: Mapping[str, Any]) -> VerificationResult:
+        """Verify simple scalar quantities while rejecting unknown dimensions/units."""
+        factors = {"mm": ("length", 0.001), "cm": ("length", 0.01), "m": ("length", 1.0), "km": ("length", 1000.0),
+                   "g": ("mass", 0.001), "kg": ("mass", 1.0), "s": ("time", 1.0), "min": ("time", 60.0), "h": ("time", 3600.0)}
+        claimed_unit = str(request.get("claimed_unit") or request.get("unit") or "").strip().lower()
+        expected_unit = str(request.get("expected_unit") or "").strip().lower()
+        if claimed_unit not in factors or expected_unit not in factors:
+            return self._inconclusive("units", "单位不在受支持的确定性换算表中")
+        claimed_dimension, claimed_factor = factors[claimed_unit]
+        expected_dimension, expected_factor = factors[expected_unit]
+        if claimed_dimension != expected_dimension:
+            return self._from_checks([VerificationCheck("units", False, "候选单位与期望单位量纲不一致")], confidence=0.99)
+        try:
+            claimed = float(request["claimed_value"]) * claimed_factor
+            expected = float(request["expected_value"]) * expected_factor
+        except (KeyError, TypeError, ValueError):
+            return self._inconclusive("units", "缺少可计算的数值")
+        return self._from_checks([VerificationCheck("units", self._close(claimed, expected), f"换算值={claimed:g}，期望值={expected:g}")], confidence=0.99)
 
     def _parse_expression(self, raw: Any, variables: Iterable[str]) -> sp.Expr:
         if raw is None:

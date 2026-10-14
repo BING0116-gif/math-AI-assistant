@@ -1,0 +1,50 @@
+version: 1.0.0
+chapter_code: mean-value-and-applications
+chapter_name: 均值定理与导数应用
+knowledge_point_code: fermat-theorem
+knowledge_point_name: 费马定理
+source: 知微原创垂直切片；依据高等数学课程定义与定理整理
+review_status: draft
+verification_status: pending
+privacy: synthetic
+items:
+  - id: P3-FERMAT-B01
+    level: 基础
+    difficulty: 2
+    question_type: choice
+    content: "若函数 f 在点 c 处取得内点极值，且在 c 处可导，则必有（ ）。"
+    options:
+      - {id: A, text: "f'(c)=0"}
+      - {id: B, text: "f(c)=0"}
+      - {id: C, text: "f 在 c 处不连续"}
+      - {id: D, text: "f'(c)>0"}
+    answer: A
+    answer_spec: {version: 1, kind: choice, correct: A}
+    analysis: "费马定理要求 c 是定义域内点、函数在 c 处取得局部极值且在 c 处可导，结论是 f'(c)=0；函数值不必为零。"
+    knowledge_point_codes: [fermat-theorem]
+    source: "知微原创垂直切片 v1"
+    verification_status: verified
+  - id: P3-FERMAT-S01
+    level: 常规
+    difficulty: 3
+    question_type: numeric_fill
+    content: "函数 f(x)=x^2-4x+1 在 x=？处取得唯一的局部极小值。"
+    options: []
+    answer: "2"
+    answer_spec: {version: 1, kind: numeric_fill, value: 2}
+    analysis: "f'(x)=2x-4。令 f'(x)=0 得 x=2；且 f''(x)=2>0，所以 x=2 是局部极小值点。"
+    knowledge_point_codes: [fermat-theorem]
+    source: "知微原创垂直切片 v1"
+    verification_status: verified
+  - id: P3-FERMAT-A01
+    level: 进阶
+    difficulty: 4
+    question_type: judge
+    content: "判断：若 f'(c)=0，则 f 一定在 c 处取得局部极值。"
+    options: []
+    answer: "错误"
+    answer_spec: {version: 1, kind: judge, correct: false}
+    analysis: "导数为零只是可导内点取得局部极值的必要条件，不是充分条件。例如 f(x)=x^3 在 x=0 处 f'(0)=0，但 0 不是局部极值点。"
+    knowledge_point_codes: [fermat-theorem]
+    source: "知微原创垂直切片 v1"
+    verification_status: verified

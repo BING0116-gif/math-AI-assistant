@@ -228,8 +228,40 @@ def render_import(token: str) -> None:
             st.error(f"上传失败：{err}")
         else:
             _bump("imports")
+            task_id = (data.get("batch") or {}).get("parse_task_id")
+            if task_id:
+                st.session_state.import_parse_task_id = task_id
             st.success(f"批次已创建：{data['batch']['id']}")
             st.rerun()
+
+    parse_task_id = st.session_state.get("import_parse_task_id")
+    if parse_task_id:
+        task, terr = safe_call(client.get_content_task, token, parse_task_id)
+        if terr is not None:
+            st.error(f"查询 PDF 解析进度失败：{terr}")
+            st.session_state.pop("import_parse_task_id", None)
+        else:
+            progress = task.get("progress") or {}
+            percent = int(progress.get("percent") or 0)
+            label = progress.get("stage_label") or "解析进行中"
+            st.progress(percent / 100, text=f"{label}：{percent}%")
+            meta = []
+            if progress.get("pages"):
+                meta.append(f"已处理 {progress['pages']} 页")
+            if progress.get("questions"):
+                meta.append(f"已识别 {progress['questions']} 道题")
+            if meta:
+                st.caption(" · ".join(meta))
+            if task.get("status") in {"pending", "running", "retrying"}:
+                time.sleep(1)
+                st.rerun()
+            elif task.get("status") in {"failed", "cancelled"}:
+                st.error(task.get("error_message") or "PDF 解析未完成")
+                st.session_state.pop("import_parse_task_id", None)
+            else:
+                st.success("PDF 解析完成，候选题已生成。")
+                st.session_state.pop("import_parse_task_id", None)
+                _bump("imports")
 
     st.divider()
     st.markdown("### 候选列表")

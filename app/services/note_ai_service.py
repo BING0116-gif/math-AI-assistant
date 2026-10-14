@@ -18,7 +18,7 @@ class Provider(Protocol):
  async def recognize(self,payload:dict)->dict: ...
 class AiError(Exception): pass
 def data(run,page_revision): return {"run_id":run.id,"page_id":run.page_id,"source_revision":run.source_revision,"status":"stale" if run.status=="needs_review" and run.source_revision!=page_revision else run.status,"model":run.model,"prompt_version":run.prompt_version,"result":run.result,"error":run.error,"attempt_no":run.attempt_no}
-async def create_run(user,note,page,key,model="qwen-vl-plus",prompt_version="v1"):
+async def create_run(user,note,page,key,model="deepseek-flash",prompt_version="v1"):
  async with get_db_session() as db:
   p=await db.scalar(select(NotePage).join(StudyNote).where(NotePage.id==page,NotePage.note_id==note,NotePage.user_id==user,StudyNote.status=="active"))
   if not p: raise NoteServiceError("NOTE_NOT_FOUND","笔记页面不存在")

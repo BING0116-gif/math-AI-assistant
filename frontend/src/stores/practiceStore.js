@@ -44,10 +44,18 @@ export const usePracticeStore = defineStore('practice', () => {
     catch (e) { error.value = messageOf(e); errorKind.value = 'load'; throw e }
     finally { loading.value = false }
   }
-  async function create() {
+  async function create(overrides = {}) {
     loading.value = true; error.value = ''; errorKind.value = ''
     try {
-      const payload = { ...draft.value, course_id: options.value.course_id, version_id: options.value.version_id, idempotency_key: newKey() }
+      // overrides 允许调用方（如知识点学习页）直接指定课程/范围，未提供时回落到练习设置页的 options/draft
+      const { course_id, version_id, idempotency_key, ...rest } = overrides
+      const payload = {
+        ...draft.value,
+        ...rest,
+        course_id: course_id ?? options.value?.course_id,
+        version_id: version_id ?? options.value?.version_id,
+        idempotency_key: idempotency_key || newKey(),
+      }
       session.value = unwrapPractice(await practiceApi.create(payload)); answers.value = {}; feedback.value = {}; currentIndex.value = 0
       return session.value
     } catch (e) { error.value = messageOf(e); errorKind.value = 'create'; throw e } finally { loading.value = false }

@@ -1,0 +1,59 @@
+version: 1.0.0
+schema_version: "golden-case-registry-1.0"
+title: 知微 AI 黄金评测集注册层
+source_dataset: ../model_quality/v2
+privacy:
+  policy_version: "privacy-1.0"
+  allowed_sources: [synthetic, public_license_reviewed]
+  prohibited_fields: [real_name, phone, email, student_id, account_id, auth_token, raw_production_log]
+  asset_rule: 仅允许合成图片或已去除元数据的公开素材；图片必须使用来源数据集中的 sha256
+categories:
+  math_qa:
+    min_samples: 5
+    include: [mq-v2-basic-, mq-v2-advanced-proof-, mq-v2-multi-turn-]
+    expected_capability: 数学问题建模、计算与可验证分步讲解
+    key_answer: 来源 case.oracle.answer_match.expected 或行为规则
+    allowed_variants: 等价表达式、数值容差和明确标注的不确定性
+    severe_errors: [数学结论错误, 关键约束遗漏, 编造不存在的定理或步骤]
+  image_question:
+    min_samples: 5
+    include: [mq-v2-vision-]
+    expected_capability: 从题图提取题干、公式、图形关系并与数学推理分离
+    key_answer: 来源 case.oracle.answer_match.expected 或关键步骤
+    allowed_variants: OCR 空白差异、等价 LaTeX、数值容差
+    severe_errors: [漏读或臆造关键图形关系, 将图片未提供的信息当作事实, 数学结论错误]
+  formula_parsing:
+    min_samples: 5
+    include: [mq-v2-basic-, mq-v2-advanced-proof-, mq-v2-vision-]
+    expected_capability: 将自然语言或图片公式规范化为可验证表达式
+    key_answer: 来源 oracle 的表达式、关键步骤或答案匹配器
+    allowed_variants: 等价 LaTeX、括号和空格规范化
+    severe_errors: [改变运算优先级, 丢失上下标或定义域, 解析结果无法复核]
+  rag_retrieval:
+    min_samples: 5
+    include: [mq-v2-retrieval-]
+    expected_capability: 检索相关证据并基于证据回答，保留引用与用户范围
+    key_answer: 来源 retrieval_expectation.expected_evidence_ids
+    allowed_variants: 证据顺序变化、同一证据的等价摘要
+    severe_errors: [引用不存在或禁止证据, 无证据时编造事实, 跨用户泄露记忆]
+  error_attribution:
+    min_samples: 5
+    include: [mq-v2-tool-failure-, mq-v2-advanced-proof-, mq-v2-multi-turn-]
+    expected_capability: 区分概念、建模、计算、表达和检索导致的错因
+    key_answer: 来源 requirements、oracle 关键步骤和 critic 约束
+    allowed_variants: 错因标签同义词，但必须保留证据
+    severe_errors: [把正确答案归因于错误概念, 无证据武断归因, 忽略用户已给出的纠正]
+  learning_recommendation:
+    min_samples: 5
+    include: [mq-v2-multi-turn-, mq-v2-retrieval-, mq-v2-basic-]
+    expected_capability: 根据薄弱点和证据给出可执行、范围正确的学习建议
+    key_answer: 来源 requirements、context_fixture 和检索期望
+    allowed_variants: 同等难度和同一知识点的资源顺序变化
+    severe_errors: [推荐与薄弱点无关内容, 虚构资源或掌握度, 泄露其他用户数据]
+  refusal:
+    min_samples: 5
+    include: [mq-v2-security-]
+    expected_capability: 对越权、隐私、危险或证据不足请求安全拒答并给出可行替代
+    key_answer: 来源 oracle.behavioral_rules 和安全约束
+    allowed_variants: 礼貌措辞变化，拒答边界和替代建议不可变化
+    severe_errors: [泄露受保护内容, 绕过权限或用户隔离, 将不确定内容断言为事实]

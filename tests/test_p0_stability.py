@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -59,6 +60,81 @@ def test_jwt_runtime_validation_fails_closed(monkeypatch):
     validate_runtime_security()
     monkeypatch.setattr(settings, "APP_ENV", "test")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "short")
+    validate_runtime_security()
+
+
+@pytest.mark.parametrize("missing", ["JWT_SECRET_KEY", "ENCRYPTION_KEY"])
+def test_production_requires_security_keys(monkeypatch, missing):
+    from app.lifespan import settings
+
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "x" * 32)
+    valid_key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", valid_key)
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, missing, "")
+    with pytest.raises(RuntimeError, match=missing):
+        validate_runtime_security()
+
+
+def test_production_rejects_placeholder_keys_and_mock_publish(monkeypatch):
+    from app.lifespan import settings
+    valid_key = Fernet.generate_key().decode()
+
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "math-ai-jwt-secret-must-be-overridden-in-production")
+    monkeypatch.setattr(settings, "DEBUG", False)
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        validate_runtime_security()
+
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "change-this-to-a-long-random-secret")
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        validate_runtime_security()
+
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "x" * 32)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "changeme")
+    with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
+        validate_runtime_security()
+
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", valid_key)
+    monkeypatch.setattr(settings, "ALLOW_MOCK_PUBLISH", True)
+    with pytest.raises(RuntimeError, match="ALLOW_MOCK_PUBLISH"):
+        validate_runtime_security()
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("ADMIN_PASSWORD", "admin", "ADMIN_PASSWORD"),
+    ("ADMIN_PASSWORD", "change-this-password", "ADMIN_PASSWORD"),
+])
+def test_production_rejects_dangerous_admin_password_and_debug(monkeypatch, field, value, message):
+    from app.lifespan import settings
+
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "x" * 32)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, field, value)
+    with pytest.raises(RuntimeError, match=message):
+        validate_runtime_security()
+
+    monkeypatch.setattr(settings, "ADMIN_PASSWORD", "safe-long-admin-password-value")
+    monkeypatch.setattr(settings, "DEBUG", True)
+    with pytest.raises(RuntimeError, match="DEBUG"):
+        validate_runtime_security()
+
+
+def test_development_and_test_security_compatibility_is_preserved(monkeypatch):
+    from app.lifespan import settings
+
+    monkeypatch.setattr(settings, "APP_ENV", "development")
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "x" * 32)
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "")
+    monkeypatch.setattr(settings, "ALLOW_MOCK_PUBLISH", True)
+    validate_runtime_security()
+
+    monkeypatch.setattr(settings, "APP_ENV", "test")
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "")
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", "")
     validate_runtime_security()
 
 
@@ -139,6 +215,47 @@ async def test_stale_processing_outbox_event_is_reclaimed_once(monkeypatch):
         assert row.status == "completed"
         assert row.completed_at is not None
 
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_outbox_idempotency_and_active_lease_fence_duplicate_delivery(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    import app.data.database as database
+    import app.services.outbox as outbox_module
+    monkeypatch.setattr(database, "async_session_factory", factory)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with database.get_db_session() as db:
+        first = await outbox_module.enqueue_outbox(db, event_type="learning.refresh", aggregate_type="x", aggregate_id="1", idempotency_key="same")
+        second = await outbox_module.enqueue_outbox(db, event_type="learning.refresh", aggregate_type="x", aggregate_id="1", idempotency_key="same")
+        assert first.id == second.id
+        first.status = "processing"
+        first.lease_until = datetime.now(timezone.utc) + timedelta(minutes=5)
+        first.locked_by = "another-worker"
+    assert await outbox_module.process_outbox_event(first.id) is False
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_outbox_moves_to_dead_at_retry_boundary(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    import app.data.database as database
+    import app.services.outbox as outbox_module
+    from app.config.settings import settings
+    monkeypatch.setattr(database, "async_session_factory", factory)
+    monkeypatch.setattr(settings, "OUTBOX_MAX_RETRIES", 1)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with database.get_db_session() as db:
+        row = await outbox_module.enqueue_outbox(db, event_type="unsupported", aggregate_type="x", aggregate_id="1", idempotency_key="dead-boundary")
+        event_id = row.id
+    assert await outbox_module.process_outbox_event(event_id) is False
+    async with factory() as db:
+        row = await db.get(OutboxEvent, event_id)
+        assert row.status == "dead" and row.attempts == 1
     await engine.dispose()
 
 

@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select, and_
 
-from app.config.settings import settings
+from app.config.settings import canonical_model_name, settings
 from app.data.database import get_db_session
 from app.data.models import Question, LearningRecord
 from app.services.difficulty_estimator import DifficultyEstimator
@@ -359,11 +359,11 @@ class RAGRecommender:
             f"### 推荐题目\n共{len(questions)}道{target_category}题目：\n" + "\n".join(question_summaries)
         )
         try:
-            # AI分析使用快速模型（settings.LLM_MATH_MODEL，默认 qwen-turbo），不需要最强推理能力
+            # AI 分析使用统一的 DeepSeek 快速模型，不需要额外供应商路由
             response = await self._llm.generate(
                 prompt=prompt, system_prompt=system_prompt,
                 temperature=0.3,
-                model=settings.LLM_MATH_MODEL or "qwen-turbo",  # 快速模型：可切换 DeepSeek 轻量模型降本
+                model=canonical_model_name(settings.LLM_MATH_MODEL) or "deepseek-flash",
                 max_tokens=512,  # 限制输出长度加速
             )
             content = response.content.strip()

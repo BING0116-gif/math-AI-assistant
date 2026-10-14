@@ -20,8 +20,9 @@ import socket
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
-from app.data.database import get_db_session
-from app.data.models import ContentTask
+from app.data.database import close_db, get_db_session, init_db
+from app.data.models import AsyncTask, ContentTask
+from app.services.async_task import transition as transition_async
 from app.services.content_task import (
     STATUS_CANCELLED,
     STATUS_FAILED,
@@ -63,6 +64,11 @@ async def claim_task_by_id(task_id: str, worker_id: str) -> Optional[ContentTask
         )
         if res.rowcount != 1:
             return None
+        canonical = await db.get(AsyncTask, task_id)
+        if canonical is not None:
+            if canonical.status == "retryable_failed": canonical.status = "pending"
+            transition_async(canonical, "running")
+            canonical.worker_id = worker_id
         return await db.get(ContentTask, task_id)
 
 
@@ -71,15 +77,38 @@ async def _handle_import_parse(task: ContentTask) -> str:
     from app.services.content_import import ContentImportService, ContentParseError
 
     svc = ContentImportService()
+    await update_progress(
+        task.id,
+        total=1,
+        done=0,
+        percent=0,
+        stage="queued",
+        stage_label="等待解析",
+        pages=0,
+        questions=0,
+    )
+
+    async def _progress_callback(**fields: Any) -> None:
+        if await is_cancel_requested(task.id):
+            raise TaskCancelled()
+        await update_progress(task.id, total=1, done=0, **fields)
+
     try:
-        batch = await svc.parse_import(task.ref_id)
+        batch = await svc.parse_import(task.ref_id, progress_callback=_progress_callback)
     except ContentParseError as e:
         await fail_task(task.id, e.code, e.message)
         return await _current_status(task.id)
     await complete_task(
         task.id,
         STATUS_SUCCEEDED,
-        progress={"total": 1, "done": 1, "batch_status": batch.status},
+        progress={
+            "total": 1,
+            "done": 1,
+            "percent": 100,
+            "stage": "completed",
+            "stage_label": "解析完成",
+            "batch_status": batch.status,
+        },
     )
     return STATUS_SUCCEEDED
 
@@ -185,12 +214,20 @@ async def worker_loop(
             await fail_task(task.id, "WORKER_LOOP_ERROR", str(e)[:500])
 
 
+async def _main() -> None:
+    await init_db()
+    try:
+        await worker_loop()
+    finally:
+        await close_db()
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)-6s | %(name)s | %(message)s",
     )
-    asyncio.run(worker_loop())
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":

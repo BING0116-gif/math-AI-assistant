@@ -6,10 +6,20 @@ from pydantic import Field, field_validator
 # T12：模型高级能力的唯一配置源。调用方不得根据模型名前缀猜测能力；
 # 新增或替换模型时只在这里登记，并由服务层统一执行 fail-closed 校验。
 MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
+    "deepseek-flash": {
+        "tool_call": True,
+        "json_output": True,
+        "vision": True,
+    },
+    "deepseek-v4.1-flash": {  # 2026-10-12 已被官方下线，仅保留兼容登记
+        "tool_call": True,
+        "json_output": True,
+        "vision": True,
+    },
     "deepseek-v4-flash": {
         "tool_call": True,
         "json_output": True,
-        "vision": False,
+        "vision": True,
     },
     "qwen-vl-plus": {
         "tool_call": False,
@@ -28,6 +38,16 @@ MODEL_CAPABILITIES: dict[str, dict[str, bool]] = {
 # 价格单位为 元/百万 token;初始值含占位成分（deepseek-chat 为公开牌价，
 # 其余待 3-E 首轮校准）,价格变更必须走 PR 并更新 effective_from。
 MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "deepseek-flash": {
+        "provider": "deepseek", "tier": "light",
+        "price_in_per_m": 1.0, "price_out_per_m": 4.0,
+        "p95_latency_s": 2.0, "effective_from": "2026-10-12",
+    },
+    "deepseek-v4.1-flash": {  # 2026-10-12 已下线
+        "provider": "deepseek", "tier": "light",
+        "price_in_per_m": 1.0, "price_out_per_m": 4.0,
+        "p95_latency_s": 2.0, "effective_from": "2026-10-11",
+    },
     "deepseek-chat": {
         "provider": "deepseek", "tier": "standard",
         "price_in_per_m": 2.0, "price_out_per_m": 8.0,
@@ -53,11 +73,32 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
 # 阶段三 5.1 规则路由表 v1（键 = TaskType.value,零额外模型调用）。
 # T4 multimodal 不入文本路由表:视觉档由能力表强制。
 MODEL_ROUTE_TABLE: dict[str, str] = {
-    "knowledge": "deepseek-v4-flash",
-    "quick": "deepseek-v4-flash",
-    "concept": "deepseek-chat",
-    "solution": "deepseek-chat",
+    "knowledge": "deepseek-flash",
+    "quick": "deepseek-flash",
+    "concept": "deepseek-flash",
+    "solution": "deepseek-flash",
 }
+
+
+def canonical_model_name(model: str | None) -> str:
+    """Map historical model names to the single production model.
+
+    2026-10-12: DeepSeek 官方下线 deepseek-v4.1-flash / deepseek-v4-flash，
+    现存模型仅 deepseek-flash / deepseek-v4-pro（经 /v1/models 实测）。
+    """
+    value = (model or "").strip()
+    if value in {"deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-chat",
+                 "qwen-vl-plus", "qwen-vl-max", "qwen-turbo", "qwen-max"}:
+        return "deepseek-flash"
+    return value
+
+
+def canonical_base_url(base_url: str | None) -> str:
+    """Prevent legacy DashScope URLs from activating a Qwen production route."""
+    value = (base_url or "").strip().rstrip("/")
+    if "dashscope.aliyuncs.com" in value.lower() or not value:
+        return "https://api.deepseek.com/v1"
+    return value
 
 
 class Settings(BaseSettings):
@@ -261,16 +302,15 @@ class Settings(BaseSettings):
     )
 
     # ── LLM 配置 ──
-    # 主文本模型：DeepSeek（OpenAI 兼容端点）。识图链路（vision_tool / qwen-vl-*）
-    # 仍使用千问 VL，只读 DASHSCOPE_API_KEY；快速分类/分析走 LLM_MATH_MODEL。
+    # 所有生产 AI 链路统一使用 DeepSeek-V4.1-Flash。
     LLM_API_KEY: str = Field(default="", alias="LLM_API_KEY")
     LLM_API_BASE: str = Field(
         default="https://api.deepseek.com/v1",
         alias="LLM_API_BASE",
     )
-    LLM_MODEL: str = Field(default="deepseek-chat", alias="LLM_MODEL")
-    LLM_MATH_MODEL: str = Field(default="qwen-turbo", alias="LLM_MATH_MODEL")
-    VISION_MODEL: str = Field(default="qwen-vl-plus", alias="VISION_MODEL")
+    LLM_MODEL: str = Field(default="deepseek-flash", alias="LLM_MODEL")
+    LLM_MATH_MODEL: str = Field(default="deepseek-flash", alias="LLM_MATH_MODEL")
+    VISION_MODEL: str = Field(default="deepseek-flash", alias="VISION_MODEL")
     LLM_TEMPERATURE: float = Field(default=0.3, alias="LLM_TEMPERATURE")
     LLM_MAX_TOKENS: int = Field(default=4096, alias="LLM_MAX_TOKENS")
     LLM_STREAMING: bool = Field(default=True, alias="LLM_STREAMING")
@@ -338,6 +378,11 @@ class Settings(BaseSettings):
     CONTENT_MAX_PAGES: int = Field(default=500, alias="CONTENT_MAX_PAGES")
     # 单次解析 subprocess 超时（秒）
     CONTENT_PARSER_TIMEOUT_SECONDS: int = Field(default=600, alias="CONTENT_PARSER_TIMEOUT_SECONDS")
+    # 可选的重型版面解析 sidecar；留空时自动路由不会发起网络调用。
+    LAYOUT_WORKER_URL: str = Field(default="", alias="LAYOUT_WORKER_URL")
+    LAYOUT_WORKER_TIMEOUT_SECONDS: int = Field(default=120, ge=5, le=900, alias="LAYOUT_WORKER_TIMEOUT_SECONDS")
+    # 按页提交可提供真实进度和单页失败定位；关闭后可回退为整 PDF 请求。
+    LAYOUT_WORKER_PAGEWISE: bool = Field(default=True, alias="LAYOUT_WORKER_PAGEWISE")
 
     # ── 手写笔记（T02；SQL 只存已校验的相对 storage_key）──
     NOTE_STORAGE_ROOT: str = Field(default="./runtime/notes", alias="NOTE_STORAGE_ROOT")
@@ -373,7 +418,7 @@ class Settings(BaseSettings):
     # 真实 DeepSeek provider 配置契约（OpenAI 兼容；API Key 只从环境变量读取）。
     # 默认 base_url 为 DeepSeek 官方兼容端点；DEEPSEEK_MODEL 可填 deepseek-chat / deepseek-reasoner。
     DEEPSEEK_API_KEY: str = Field(default="", alias="DEEPSEEK_API_KEY")
-    DEEPSEEK_MODEL: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    DEEPSEEK_MODEL: str = Field(default="deepseek-flash", alias="DEEPSEEK_MODEL")
     DEEPSEEK_BASE_URL: str = Field(
         default="https://api.deepseek.com/v1",
         alias="DEEPSEEK_BASE_URL",

@@ -15,6 +15,7 @@ export const adminReviewApi = {
   },
   listBatches: () => api.get('/admin/content/imports'),
   getBatch: (batchId) => api.get(`/admin/content/imports/${batchId}`),
+  retryImport: (batchId) => api.post(`/admin/content/imports/${batchId}/retry`),
   listCandidates: (batchId) => api.get(`/admin/content/imports/${batchId}/candidates`),
   batchStats: (batchId) => api.get(`/admin/content/imports/${batchId}/ai-analysis/stats`),
   updateCandidate: (batchId, cid, patch) =>
@@ -55,8 +56,11 @@ export const adminReviewApi = {
   cancelTask: (taskId) => api.post(`/admin/content/tasks/${taskId}/cancel`),
 
   // PDF 原页预览（admin-only，需带 token → 走 axios blob）
-  fetchPagePreview: (docId, page) =>
-    api.get(`/admin/content/source-documents/${docId}/pages/${page}/preview`, { responseType: 'blob' }),
+  fetchPagePreview: (docId, page, bbox) =>
+    api.get(`/admin/content/source-documents/${docId}/pages/${page}/preview`, {
+      params: bbox?.length === 4 ? { bbox: bbox.join(',') } : undefined,
+      responseType: 'blob',
+    }),
 
   // provider 能力状态
   providerStatus: () => api.get('/admin/content/ai-analysis/provider-status'),

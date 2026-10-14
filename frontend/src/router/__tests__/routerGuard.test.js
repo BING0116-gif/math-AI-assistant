@@ -93,4 +93,20 @@ describe('生产路由守卫', () => {
     await router.push('/error-book')
     expect(document.title).toBe('登录 - 数学AI助手')
   })
+
+  describe('死链兜底', () => {
+    it('未知路径落到 404 页而不是空白', async () => {
+      await router.push('/knowledge/function-definition-broken-demo')
+      expect(router.currentRoute.value.name).toBe('KnowledgeLearningAlias')
+      await router.push('/no/such/path/at/all')
+      expect(router.currentRoute.value.name).toBe('NotFound')
+      expect(router.currentRoute.value.path).toBe('/no/such/path/at/all')
+    })
+
+    it('学习页 code 别名复用同一视图组件', async () => {
+      await router.push('/knowledge/function-definition')
+      expect(router.currentRoute.value.name).toBe('KnowledgeLearningAlias')
+      expect(router.currentRoute.value.params.pointId).toBe('function-definition')
+    })
+  })
 })

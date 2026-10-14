@@ -42,6 +42,7 @@ from app.api.admin_agent_metrics_api import router as admin_agent_metrics_router
 from app.api.quality_admin_api import router as quality_admin_router
 from app.api.notes_api import router as notes_router
 from app.api.student_paper_api import router as student_paper_router
+from app.api.user_deletion_api import router as user_deletion_router
 from app.config.settings import settings
 from app.lifespan import lifespan
 from app.middleware.security import SecurityValidationError
@@ -102,6 +103,7 @@ def _register_routers(target_app: FastAPI) -> None:
         quality_admin_router,
         notes_router,
         student_paper_router,
+        user_deletion_router,
     )
     for router in routers:
         target_app.include_router(router)
@@ -125,15 +127,15 @@ def _build_services():
         )
         from prompts.dynamic_params import init_dynamic_llm_factory
 
-        # 文本 LLM 密钥：优先 LLM_API_KEY，兜底 DASHSCOPE_API_KEY。
-        # 视觉链路（vision_tool / qwen-vl-plus）仍只读 DASHSCOPE_API_KEY，互不影响。
-        _agent_api_key = settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY
-        _llm_api_base = settings.LLM_API_BASE or "https://api.deepseek.com/v1"
-        _llm_model = settings.LLM_MODEL or "deepseek-chat"
+        # 文本与视觉链路统一使用 DeepSeek/LLM API Key。
+        _agent_api_key = settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY
+        from app.config.settings import canonical_base_url, canonical_model_name
+        _llm_api_base = canonical_base_url(settings.LLM_API_BASE)
+        _llm_model = canonical_model_name(settings.LLM_MODEL) or "deepseek-flash"
         # 若配置把主文本链路指向 DeepSeek 端点却遗留千问默认模型名，
         # 自动对齐到 DeepSeek 文本模型，避免向 DeepSeek 发送 qwen-* 导致 404。
         if "deepseek" in _llm_api_base.lower() and _llm_model.startswith("qwen"):
-            _llm_model = "deepseek-chat"
+            _llm_model = "deepseek-flash"
         init_dynamic_llm_factory(
             api_key=_agent_api_key,
             base_url=_llm_api_base,
@@ -163,6 +165,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG or settings.APP_ENV.strip().lower() != "production" else None,
     lifespan=lifespan,
 )
 setup_middleware(app)

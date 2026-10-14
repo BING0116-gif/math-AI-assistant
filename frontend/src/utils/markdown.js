@@ -21,8 +21,10 @@ function autoWrapLatex(text) {
     const i = placeholders.push(s) - 1
     return `\x00MATH${i}\x00`
   }
-  // 1. 保护已有公式
-  let s = text.replace(/\$\$[\s\S]*?\$\$/g, (m) => stash(m))
+  // 1. 保护已有公式，并把常见的 \(...\) / \[...\] 转成 KaTeX 能识别的分隔符
+  let s = text.replace(/\\\\\[([\\s\\S]*?)\\\\\]/g, (_, body) => stash(`$$${body}$$`))
+  s = s.replace(/\\\\\(([\\s\\S]*?)\\\\\)/g, (_, body) => stash(`$${body}$`))
+  s = s.replace(/\$\$[\s\S]*?\$\$/g, (m) => stash(m))
   s = s.replace(/\$[^\$\n]+?\$/g, (m) => stash(m))
   // 2. 常见 LaTeX 命令 + 它的 {...} / 上下标 参数
   const cmd = 'frac|sqrt|sum|int|lim|log|ln|sin|cos|tan|arcsin|arccos|arctan|lg|tan|sec|csc|cot|sinh|cosh|tanh|overline|underline|vec|hat|bar|tilde|cdot|times|div|pm|mp|leq|geq|neq|approx|equiv|infty|partial|nabla|to|rightarrow|leftarrow|Rightarrow|Leftarrow|in|notin|subset|supset|cup|cap|forall|exists|mathbf|mathrm|mathit|mathcal|mathbb|text|operatorname'
@@ -30,6 +32,11 @@ function autoWrapLatex(text) {
   s = s.replace(new RegExp(`(\\\\(?:${cmd})(?:\\s*\\{[^}\\n]{1,80}\\}){1,3})`, 'g'), (m) => `$${m}$`)
   // 2b. \cmd 单独出现（前后是空格/标点）
   s = s.replace(new RegExp(`(\\\\(?:${cmd}))(?=[\\s,，。.;；!！?？:：)\\]）]|$)`, 'gm'), (m) => `$${m}$`)
+  // 2c. OCR/AI 常会丢掉反斜杠，但保留 lim_{...}、x_0、x^2 这类数学结构。
+  // 只包裹短数学片段，避免把整段中文题干误送进 KaTeX。
+  s = s.replace(/\b(?:lim|log|ln|sin|cos|tan|arcsin|arccos|arctan)\s*[_^]\{[^}\n]{1,48}\}/g, (m) => `$${m}$`)
+  s = s.replace(/\b[A-Za-z](?:[A-Za-z0-9']*)?[_^]\{[^}\n]{1,24}\}/g, (m) => `$${m}$`)
+  s = s.replace(/\b[A-Za-z](?:[A-Za-z0-9']*)?[_^][A-Za-z0-9]+\b/g, (m) => `$${m}$`)
   // 3. 行内分数 a/b（a/b 都是 1-4 位的字母/数字）
   s = s.replace(/(^|[^A-Za-z0-9\u4e00-\u9fa5]|[（(])([A-Za-z0-9\u4e00-\u9fa5]{1,4})\s*[／/]\s*([A-Za-z0-9\u4e00-\u9fa5]{1,4})(?=$|[^A-Za-z0-9\u4e00-\u9fa5])/g,
     (m, pre, a, b) => `${pre}$${a}/${b}$`)

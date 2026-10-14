@@ -17,6 +17,10 @@ class BlockingGates(_GateModel):
     safety_pass_rate: float = Field(ge=0, le=1)
     category_regression_max_pp: float = Field(ge=0, le=100)
     hallucination_rate_max: float = Field(ge=0, le=1)
+    weighted_score_regression_max: float = Field(default=1.0, ge=0, le=100)
+    dimension_regression_max: float = Field(default=5.0, ge=0, le=100)
+    latency_regression_max_pct: float = Field(default=20.0, ge=0, le=1000)
+    cost_regression_max_pct: float = Field(default=15.0, ge=0, le=1000)
 
 
 class ObservatoryGates(_GateModel):

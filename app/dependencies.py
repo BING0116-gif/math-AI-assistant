@@ -18,7 +18,7 @@
 import logging
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-from app.config.settings import settings
+from app.config.settings import canonical_base_url, canonical_model_name, settings
 from app.services.ai_capability import is_ai_available, raise_ai_unavailable
 
 if TYPE_CHECKING:
@@ -121,9 +121,9 @@ def get_llm_service() -> LLMServiceProtocol:
     if _llm_service is None:
         from app.services.llm_service import LLMService
         _llm_service = LLMService(
-            api_key=settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY,
-            model=settings.LLM_MODEL or "deepseek-chat",
-            base_url=settings.LLM_API_BASE or "https://api.deepseek.com/v1",
+            api_key=settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY,
+            model=canonical_model_name(settings.LLM_MODEL) or "deepseek-flash",
+            base_url=canonical_base_url(settings.LLM_API_BASE),
         )
         logger.info("LLMService 已初始化（依赖注入）")
     return _llm_service

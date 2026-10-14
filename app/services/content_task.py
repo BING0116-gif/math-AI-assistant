@@ -17,7 +17,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import or_, select, update
 
 from app.data.database import get_db_session
-from app.data.models import ContentTask
+from app.data.models import AsyncTask, ContentTask
+from app.services.async_task import transition as transition_async
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,9 @@ async def enqueue_task(
     )
     async with get_db_session() as db:
         db.add(task)
+        canonical = AsyncTask(id=task.id, task_type=kind, resource_type="content_task", resource_id=task.id,
+                              status=STATUS_PENDING, max_attempts=max_retries)
+        db.add(canonical)
         await db.commit()
         await db.refresh(task)
         return task
@@ -120,6 +124,11 @@ async def claim_next_task(worker_id: str) -> Optional[ContentTask]:
                 )
             )
             if res.rowcount == 1:
+                canonical = await db.get(AsyncTask, tid)
+                if canonical is not None:
+                    if canonical.status == "retryable_failed": canonical.status = "pending"
+                    transition_async(canonical, "running")
+                    canonical.worker_id = worker_id
                 return await db.get(ContentTask, tid)
         return None
 
@@ -164,6 +173,9 @@ async def complete_task(
             merged.update(progress)
             task.progress = merged
         task.status = status
+        canonical = await db.get(AsyncTask, task.task_id or task.id)
+        if canonical is not None:
+            transition_async(canonical, "succeeded" if status in (STATUS_SUCCEEDED, STATUS_PARTIAL) else "cancelled")
         task.error_code = error_code
         task.error_message = error_message
         task.completed_at = _now()
@@ -183,11 +195,17 @@ async def fail_task(task_id: str, code: str, message: str) -> None:
             task.next_run_at = _now() + timedelta(seconds=_backoff_seconds(task.retry_count))
             task.error_code = code
             task.error_message = message
+            canonical = await db.get(AsyncTask, task.task_id or task.id)
+            if canonical is not None:
+                transition_async(canonical, "retryable_failed", error=message)
         else:
             task.status = STATUS_FAILED
             task.error_code = code
             task.error_message = message
             task.completed_at = _now()
+            canonical = await db.get(AsyncTask, task.task_id or task.id)
+            if canonical is not None:
+                transition_async(canonical, "permanently_failed", error=message)
         task.updated_at = _now()
         await db.commit()
 
@@ -202,6 +220,8 @@ async def cancel_task(task_id: str) -> bool:
             task.status = STATUS_CANCELLED
             task.completed_at = _now()
             task.updated_at = _now()
+            canonical = await db.get(AsyncTask, task.task_id or task.id)
+            if canonical is not None: transition_async(canonical, "cancelled")
             await db.commit()
             return True
         if task.status == STATUS_RUNNING:

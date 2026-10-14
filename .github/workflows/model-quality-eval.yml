@@ -28,7 +28,7 @@ jobs:
     environment: model-evaluation
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15.12
         env:
           POSTGRES_USER: mathai_eval
           POSTGRES_PASSWORD: evaluation-only-password
@@ -58,14 +58,14 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --requirement requirements.lock.txt
 
       - name: Validate approved dataset offline
         run: python -m scripts.model_quality_eval validate --dataset evaluations/model_quality/v1

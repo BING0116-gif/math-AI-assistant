@@ -9,7 +9,7 @@ _CSP_DEBUG = (
     "img-src 'self' data: blob:; "
     "font-src 'self' data:; "
     "connect-src 'self' ws://localhost:* wss://localhost:* "
-    "https://api.deepseek.com https://dashscope.aliyuncs.com "
+    "https://api.deepseek.com "
     "http://localhost:* https://localhost:*; "
     "frame-ancestors 'self'"
 )
@@ -21,7 +21,7 @@ _CSP_PRODUCTION = (
     "img-src 'self' data: blob:; "
     "font-src 'self' data:; "
     "connect-src 'self' wss://localhost:* "
-    "https://api.deepseek.com https://dashscope.aliyuncs.com; "
+    "https://api.deepseek.com; "
     "frame-ancestors 'none'"
 )
 

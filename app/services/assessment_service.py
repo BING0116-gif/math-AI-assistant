@@ -51,6 +51,7 @@ _FORBIDDEN_OUTPUT_KEYS = {"question_id", "question_ids", "content", "question", 
 class BlueprintBucket(BaseModel):
     quota_kind: Literal["weakness", "due_review", "current_chapter", "challenge"]
     knowledge_point_code: str = Field(min_length=1, max_length=100)
+    knowledge_point_name: str | None = Field(default=None, max_length=200)
     count: int = Field(ge=1, le=30)
     difficulty_min: int = Field(ge=1, le=5)
     difficulty_max: int = Field(ge=1, le=5)
@@ -417,6 +418,9 @@ async def _plan_assessment(user_id: str, config: dict[str, Any], planner: Assess
     signals["assessment_request"] = {"goal": config["goal"], "intensity": config["intensity"], "duration_minutes": config["duration_minutes"]}
     planned = await (planner or AssessmentBlueprintPlanner()).plan(signals, inventory, config["question_count"])
     plan = AssessmentPlan.model_validate(planned["plan"])
+    name_by_code = {point.code: point.name for point in points}
+    for bucket in plan.buckets:
+        bucket.knowledge_point_name = name_by_code.get(bucket.knowledge_point_code)
     return plan, planned, version, signals
 
 

@@ -1,0 +1,8 @@
+policy_version: privacy-1.0
+allowed_sources: [synthetic, public_license_reviewed]
+prohibited_fields: [real_name, phone, email, student_id, account_id, auth_token, raw_production_log]
+pre_publish:
+  - 检查输入和 context_fixture 不含真实用户标识
+  - 图片去除 EXIF 与文件名中的用户标识
+  - 只保留来源 case_id，不复制生产会话或模型原文
+  - 报告中的错误摘要必须脱敏

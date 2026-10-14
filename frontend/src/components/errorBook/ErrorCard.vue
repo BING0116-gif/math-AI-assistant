@@ -68,6 +68,7 @@ import { Clock } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { renderMarkdown } from '@/utils/markdown'
 import { createVariantSession } from '@/api/errorBook'
+import { kpLabel } from '@/utils/knowledgeNames'
 
 const props = defineProps({
   error: { type: Object, required: true },
@@ -99,7 +100,7 @@ const solutionHtml = computed(() =>
   renderMarkdown(props.error.correct_answer || '暂无解析内容')
 )
 
-const primaryCategory = computed(() => props.error.categories?.[0] || '')
+const primaryCategory = computed(() => kpLabel(props.error.categories?.[0] || ''))
 
 const addedShort = computed(() => {
   if (!props.error.added_at) return ''

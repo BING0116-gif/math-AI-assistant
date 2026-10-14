@@ -993,7 +993,9 @@ class MemoryStore:
     async def delete_user_vectors(self, user_id: str) -> bool:
         """Permanently remove all memory vectors belonging to one user."""
         if not self._QDRANT_AVAILABLE:
-            return True
+            # Deletion must never be reported successful when the external
+            # store cannot be reached; the durable deletion task will retry.
+            return False
 
         client = await self._get_qdrant_client()
         if client is None:

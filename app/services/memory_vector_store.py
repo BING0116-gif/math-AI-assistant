@@ -48,6 +48,8 @@ class MemoryVectorStore:
             # 阶段四 6.8:kind/confidence 同步入 payload;旧点缺列读取时按 context/0.6 兼容
             "memory_kind": getattr(memory, "memory_kind", None) or "context",
             "confidence": float(getattr(memory, "confidence", 0.6) or 0.6),
+            "embedding_model": settings.MEMORY_EMBEDDING_MODEL,
+            "embedding_version": settings.MEMORY_EMBEDDING_MODEL,
         }
         await asyncio.to_thread(
             self._client.upsert,

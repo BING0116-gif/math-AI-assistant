@@ -40,7 +40,7 @@ def _register_builtin_tools(registry: HybridToolRegistry, api_key: str = None) -
     if api_key is None:
         try:
             from app.config.settings import settings
-            api_key = settings.DASHSCOPE_API_KEY
+            api_key = settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY
         except Exception:
             pass
 

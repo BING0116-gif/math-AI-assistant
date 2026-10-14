@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 
 from app.config.settings import settings
 from app.data.database import get_db_session
 from app.data.models import KnowledgePoint, KnowledgePointResource, Memory, OutboxEvent, Question
 
 logger = logging.getLogger(__name__)
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """Normalize SQLite's naive timestamp reads to UTC-aware values."""
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 async def enqueue_outbox(
@@ -185,10 +193,19 @@ _HANDLERS = {
 
 
 async def process_outbox_event(event_id: str) -> bool:
+    worker_id = uuid.uuid4().hex
+    now = datetime.now(timezone.utc)
+    lease_until = now + timedelta(minutes=10)
     async with get_db_session() as db:
         event = await db.get(OutboxEvent, event_id)
         if event is None or event.status == "completed":
             return True
+        if event.status == "processing" and _utc(event.lease_until) and _utc(event.lease_until) > now:
+            return False
+        event.status = "processing"
+        event.locked_at = now
+        event.lease_until = lease_until
+        event.locked_by = worker_id
         event_type = event.event_type
     handler = _HANDLERS.get(event_type)
     if handler is None:
@@ -198,9 +215,13 @@ async def process_outbox_event(event_id: str) -> bool:
             await handler(event)
             async with get_db_session() as db:
                 row = await db.get(OutboxEvent, event_id)
+                if row is None or row.locked_by != worker_id:
+                    return False
                 row.status = "completed"
                 row.completed_at = datetime.now(timezone.utc)
                 row.locked_at = None
+                row.lease_until = None
+                row.locked_by = None
                 row.last_error = None
             return True
         except Exception as exc:  # side effects are retried by design
@@ -208,9 +229,13 @@ async def process_outbox_event(event_id: str) -> bool:
 
     async with get_db_session() as db:
         row = await db.get(OutboxEvent, event_id)
+        if row is None or row.locked_by != worker_id:
+            return False
         row.attempts = int(row.attempts or 0) + 1
         row.last_error = str(error)[:4000]
         row.locked_at = None
+        row.lease_until = None
+        row.locked_by = None
         if row.attempts >= settings.OUTBOX_MAX_RETRIES:
             row.status = "dead"
         else:
@@ -223,7 +248,9 @@ async def process_outbox_event(event_id: str) -> bool:
 
 async def process_outbox_batch() -> dict[str, int]:
     now = datetime.now(timezone.utc)
-    stale = now - timedelta(minutes=10)
+    stale = now
+    worker_id = uuid.uuid4().hex
+    lease_until = now + timedelta(minutes=10)
     claimed: list[str] = []
     async with get_db_session() as db:
         stmt = (
@@ -231,7 +258,10 @@ async def process_outbox_batch() -> dict[str, int]:
             .where(
                 or_(
                     (OutboxEvent.status == "pending") & (OutboxEvent.available_at <= now),
-                    (OutboxEvent.status == "processing") & (OutboxEvent.locked_at < stale),
+                    (OutboxEvent.status == "processing") & or_(
+                        OutboxEvent.lease_until <= stale,
+                        (OutboxEvent.lease_until.is_(None)) & (OutboxEvent.locked_at < now - timedelta(minutes=10)),
+                    ),
                 )
             )
             .order_by(OutboxEvent.available_at, OutboxEvent.created_at)
@@ -242,11 +272,55 @@ async def process_outbox_batch() -> dict[str, int]:
             stmt = stmt.with_for_update(skip_locked=True)
         rows = list((await db.execute(stmt)).scalars())
         for row in rows:
-            row.status = "processing"
-            row.locked_at = now
-            claimed.append(row.id)
-    results = await asyncio.gather(*(process_outbox_event(event_id) for event_id in claimed))
+            claim_filter = or_(
+                (OutboxEvent.status == "pending") & (OutboxEvent.available_at <= now),
+                (OutboxEvent.status == "processing") & or_(
+                    OutboxEvent.lease_until <= now,
+                    (OutboxEvent.lease_until.is_(None)) & (OutboxEvent.locked_at < now - timedelta(minutes=10)),
+                ),
+            )
+            result = await db.execute(
+                update(OutboxEvent).where(OutboxEvent.id == row.id, claim_filter).values(
+                    status="processing", locked_at=now, lease_until=lease_until, locked_by=worker_id
+                ).execution_options(synchronize_session=False)
+            )
+            if result.rowcount == 1:
+                claimed.append(row.id)
+    results = await asyncio.gather(*(_process_claimed_event(event_id, worker_id) for event_id in claimed))
     return {"claimed": len(claimed), "completed": sum(bool(value) for value in results)}
+
+
+async def _process_claimed_event(event_id: str, worker_id: str) -> bool:
+    """Run a batch claim without re-claiming it under another token."""
+    async with get_db_session() as db:
+        event = await db.get(OutboxEvent, event_id)
+        if event is None or event.status != "processing" or event.locked_by != worker_id:
+            return False
+        event_type = event.event_type
+    handler = _HANDLERS.get(event_type)
+    error = None
+    try:
+        if handler is None:
+            raise RuntimeError(f"unsupported outbox event: {event_type}")
+        await handler(event)
+    except Exception as exc:
+        error = exc
+    async with get_db_session() as db:
+        row = await db.get(OutboxEvent, event_id)
+        if row is None or row.locked_by != worker_id:
+            return False
+        if error is None:
+            row.status = "completed"; row.completed_at = datetime.now(timezone.utc); row.last_error = None
+        else:
+            row.attempts = int(row.attempts or 0) + 1; row.last_error = str(error)[:4000]
+            if row.attempts >= settings.OUTBOX_MAX_RETRIES:
+                row.status = "dead"
+            else:
+                row.status = "pending"; row.available_at = datetime.now(timezone.utc) + timedelta(seconds=min(900, 5 * (2 ** max(0, row.attempts - 1))))
+        row.locked_at = None; row.lease_until = None; row.locked_by = None
+    if error:
+        logger.warning("Outbox 事件处理失败: id=%s error=%s", event_id, error)
+    return error is None
 
 
 async def outbox_health() -> dict[str, Any]:

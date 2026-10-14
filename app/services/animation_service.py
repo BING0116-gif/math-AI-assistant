@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config.settings import settings
-from app.data.models import AnimationJob, AnimationJobEvent
+from app.data.models import AnimationJob, AnimationJobEvent, AsyncTask
 from app.schemas.animation import AnimationArtifactSummary, AnimationJobResponse
 
 
@@ -248,6 +248,16 @@ async def enqueue_validated_animation(
     )
     db.add(job)
     await db.flush()
+    job.task_id = job.id
+    db.add(AsyncTask(
+        id=job.id,
+        task_type="animation_render",
+        resource_type="animation_job",
+        resource_id=job.id,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        max_attempts=settings.ANIMATION_MAX_ATTEMPTS,
+    ))
     db.add(AnimationJobEvent(
         event_id=str(uuid.uuid4()),
         job_id=job.id,

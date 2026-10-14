@@ -1,9 +1,17 @@
 """Read-only queries for published course catalogs."""
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.data.models import Chapter, Course, KnowledgeGraphVersion, KnowledgePoint, KnowledgePointResource
+from app.data.models import (
+    Chapter,
+    Course,
+    KnowledgeGraphVersion,
+    KnowledgePoint,
+    KnowledgePointResource,
+    Question,
+    QuestionKnowledgePoint,
+)
 
 
 async def get_published_course_tree(session: AsyncSession, course_id: str, version_name: str | None = None) -> dict | None:
@@ -45,6 +53,26 @@ async def list_published_courses(session: AsyncSession) -> list[dict]:
 async def get_published_point(session: AsyncSession, point_id: str) -> dict | None:
     point = (await session.execute(select(KnowledgePoint).where(KnowledgePoint.id == point_id, KnowledgePoint.status == "active"))).scalar_one_or_none()
     if point is None:
+        # code 兜底：学习路径/历史链接可能携带 knowledge point code。
+        # code 仅版本内唯一，多版本同 code 时优先取所属课程的默认发布版本、
+        # 再按 id 取最新，保证解析确定性。
+        point = (await session.execute(
+            select(KnowledgePoint)
+            .join(KnowledgeGraphVersion, KnowledgeGraphVersion.id == KnowledgePoint.version_id)
+            .join(Course, Course.id == KnowledgePoint.course_id)
+            .where(
+                KnowledgePoint.code == point_id,
+                KnowledgePoint.status == "active",
+                KnowledgeGraphVersion.status == "published",
+                Course.status == "active",
+            )
+            .order_by(
+                case((KnowledgeGraphVersion.id == Course.default_version_id, 1), else_=0).desc(),
+                KnowledgePoint.id.desc(),
+            )
+            .limit(1)
+        )).scalar_one_or_none()
+    if point is None:
         return None
     # A point from any explicitly requested published version remains readable;
     # the default-version restriction belongs on course discovery, not on the
@@ -65,9 +93,10 @@ async def get_published_learning_content(session: AsyncSession, point_id: str) -
     point = await get_published_point(session, point_id)
     if point is None:
         return None
+    resolved_id = point["id"]
     resources = list((await session.execute(
         select(KnowledgePointResource)
-        .where(KnowledgePointResource.knowledge_point_id == point_id, KnowledgePointResource.status == "published")
+        .where(KnowledgePointResource.knowledge_point_id == resolved_id, KnowledgePointResource.status == "published")
         .order_by(KnowledgePointResource.resource_type, KnowledgePointResource.sort_order)
     )).scalars())
     point["resources"] = [{
@@ -101,6 +130,33 @@ async def get_published_learning_content(session: AsyncSession, point_id: str) -
         {"code": code, "name": prerequisite_names.get(code, code)} for code in prerequisite_codes
     ]
     return point
+
+
+async def list_published_point_examples(session: AsyncSession, point_id: str, limit: int = 3) -> list[dict]:
+    """该知识点的 published 真题（含答案与解析），供学习页「典型例题」折叠展示。
+
+    答案/解析本就是学生答题后可见的内容；按难度升序取前 N 题，保证可读性。
+    """
+    rows = (await session.execute(
+        select(
+            Question.id.label("question_id"),
+            Question.question_type,
+            Question.content,
+            Question.options,
+            Question.difficulty,
+            Question.answer,
+            Question.analysis,
+        )
+        .join(QuestionKnowledgePoint, QuestionKnowledgePoint.question_id == Question.id)
+        .where(
+            QuestionKnowledgePoint.knowledge_point_id == point_id,
+            Question.review_status == "published",
+            Question.is_active.is_(True),
+        )
+        .order_by(Question.difficulty, Question.id)
+        .limit(limit)
+    )).mappings().all()
+    return [dict(row) for row in rows]
 
 
 async def search_published_points(

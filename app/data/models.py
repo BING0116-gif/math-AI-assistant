@@ -22,12 +22,46 @@ class Base(DeclarativeBase):
     pass
 
 
+class AsyncTask(Base):
+    """Canonical execution lifecycle; domain status columns remain separate."""
+    __tablename__ = "async_tasks"
+    id = Column(String(36), primary_key=True)
+    task_type = Column(String(50), nullable=False)
+    resource_type = Column(String(50), nullable=False)
+    resource_id = Column(String(128), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    status = Column(String(24), nullable=False, default="pending", index=True)
+    legacy_status = Column(String(40), nullable=True)
+    idempotency_key = Column(String(255), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    worker_id = Column(String(64), nullable=True)
+    last_error = Column(Text, nullable=True)
+    payload = Column(JSON, nullable=True)
+    result = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    queued_at = Column(DateTime(timezone=True), nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    succeeded_at = Column(DateTime(timezone=True), nullable=True)
+    failed_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','running','succeeded','retryable_failed','permanently_failed','cancelled')", name="ck_async_task_status"),
+        CheckConstraint("attempts >= 0", name="ck_async_task_attempts"),
+        UniqueConstraint("task_type", "idempotency_key", name="uq_async_task_type_idem"),
+        Index("ix_async_task_claim", "status", "lease_until", "queued_at"),
+        Index("ix_async_task_resource", "resource_type", "resource_id"),
+    )
+
+
 class Course(Base):
     """A subject-level course with one currently published knowledge version."""
     __tablename__ = "courses"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    code = Column(String(80), nullable=False, unique=True, index=True)
+    code = Column(String(80), nullable=False)
     name = Column(String(200), nullable=False)
     description = Column(Text, default="")
     subject = Column(String(80), nullable=False)
@@ -35,6 +69,11 @@ class Course(Base):
     status = Column(String(20), nullable=False, default="active")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("code", name="courses_code_key"),
+        Index("ix_courses_code", "code", unique=True),
+    )
 
     versions = relationship("KnowledgeGraphVersion", back_populates="course", cascade="all, delete-orphan")
 
@@ -133,10 +172,10 @@ class KnowledgePointResource(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     knowledge_point_id = Column(String(36), ForeignKey("knowledge_points.id", ondelete="CASCADE"), nullable=False, index=True)
-    source_document_id = Column(String(36), ForeignKey("source_documents.id", ondelete="RESTRICT"), nullable=True, index=True)
+    source_document_id = Column(String(36), ForeignKey("source_documents.id", ondelete="RESTRICT"), nullable=True)
     external_key = Column(String(160), nullable=True, unique=True)
     source_locator = Column(String(300), nullable=True)
-    content_hash = Column(String(64), nullable=True, index=True)
+    content_hash = Column(String(64), nullable=True)
     resource_type = Column(String(30), nullable=False, index=True)
     title = Column(String(200), nullable=False)
     body = Column(Text, nullable=False, default="")
@@ -155,6 +194,8 @@ class KnowledgePointResource(Base):
     source_document = relationship("SourceDocument")
     __table_args__ = (
         UniqueConstraint("knowledge_point_id", "resource_type", "title", name="uq_point_resource_type_title"),
+        Index("ix_kp_resource_source_document", "source_document_id"),
+        Index("ix_kp_resource_content_hash", "content_hash"),
         Index("idx_point_resource_order", "knowledge_point_id", "resource_type", "sort_order"),
     )
 
@@ -313,7 +354,6 @@ class Question(Base):
     __table_args__ = (
         Index("idx_question_category_difficulty", "category", "difficulty"),
         Index("idx_question_source", "source"),
-        Index("idx_question_review_status", "review_status"),
     )
 
 
@@ -331,7 +371,7 @@ class QuestionKnowledgePoint(Base):
     knowledge_point = relationship("KnowledgePoint", back_populates="questions")
 
     __table_args__ = (
-        Index("idx_qkp_knowledge_point", "knowledge_point_id"),
+        Index("ix_qkp_knowledge_point", "knowledge_point_id"),
     )
 
 
@@ -340,9 +380,9 @@ class VariantGeneration(Base):
     __tablename__ = "variant_generations"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    error_item_id = Column(Integer, ForeignKey("error_items.id", ondelete="CASCADE"), nullable=False, index=True)
-    source_question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    error_item_id = Column(Integer, ForeignKey("error_items.id", ondelete="CASCADE"), nullable=False)
+    source_question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False)
     generated_question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, unique=True)
     session_id = Column(String(36), ForeignKey("practice_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
     variation_dimensions = Column(JSON, nullable=False, default=list)
@@ -354,7 +394,7 @@ class VariantGeneration(Base):
     prompt_version = Column(String(40), nullable=True)
     review_status = Column(String(20), nullable=False, default="draft")
     validation_report = Column(JSON, nullable=False, default=dict)
-    duplicate_fingerprint = Column(String(64), nullable=False, index=True)
+    duplicate_fingerprint = Column(String(64), nullable=False)
     idempotency_key = Column(String(128), nullable=False)
     request_fingerprint = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -363,6 +403,10 @@ class VariantGeneration(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_variant_generation_owner_idem"),
         UniqueConstraint("user_id", "duplicate_fingerprint", name="uq_variant_generation_owner_fingerprint"),
+        Index("ix_variant_generation_user_id", "user_id"),
+        Index("ix_variant_generation_error_item_id", "error_item_id"),
+        Index("ix_variant_generation_source_question_id", "source_question_id"),
+        Index("ix_variant_generation_duplicate_fingerprint", "duplicate_fingerprint"),
         Index("ix_variant_generation_owner_created", "user_id", "created_at"),
     )
 
@@ -437,7 +481,9 @@ class SourceDocument(Base):
     batches = relationship("ImportBatch", back_populates="source_document")
 
     __table_args__ = (
-        Index("idx_source_doc_created_by", "created_by", "created_at"),
+        # Keep the historical Alembic name so model metadata matches the
+        # already deployed index without requiring a production rename.
+        Index("ix_source_doc_created_by", "created_by", "created_at"),
     )
 
 
@@ -454,7 +500,6 @@ class ImportBatch(Base):
         String(36),
         ForeignKey("source_documents.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     status = Column(String(20), nullable=False, default="pending", index=True)
     parser_name = Column(String(50), nullable=False)
@@ -476,7 +521,7 @@ class ImportBatch(Base):
 
     __table_args__ = (
         UniqueConstraint("created_by", "idempotency_key", name="uq_import_batch_idem"),
-        Index("idx_import_batch_source", "source_document_id", "status"),
+        Index("ix_import_batch_source", "source_document_id", "status"),
     )
 
 
@@ -494,11 +539,13 @@ class ContentImportCandidate(Base):
         String(36),
         ForeignKey("import_batches.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     candidate_index = Column(Integer, nullable=False, default=0)
     source_page_start = Column(Integer, nullable=True)
     source_page_end = Column(Integer, nullable=True)
+    source_bbox = Column(JSON, nullable=True)
+    # 题目可能跨页或由多个版面区域组成；source_bbox 保留用于旧客户端兼容。
+    source_regions = Column(JSON, nullable=True)
     source_question_number = Column(String(50), nullable=True)
     raw_parsed_content = Column(Text, nullable=True)
     stem = Column(Text, nullable=True)
@@ -509,8 +556,9 @@ class ContentImportCandidate(Base):
     supported = Column(Boolean, nullable=False, default=False)
     warnings = Column(JSON, nullable=False, default=list)
     suggested_knowledge_point_codes = Column(JSON, nullable=False, default=list)
+    suggested_difficulty = Column(Integer, nullable=True)
     # 状态机：parsed / edited / imported / rejected
-    status = Column(String(20), nullable=False, default="parsed", index=True)
+    status = Column(String(20), nullable=False, default="parsed")
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -525,8 +573,9 @@ class ContentImportCandidate(Base):
     )
 
     __table_args__ = (
-        Index("idx_candidate_batch_index", "import_batch_id", "candidate_index"),
-        Index("idx_candidate_status", "status"),
+        Index("ix_candidates_import_batch_id", "import_batch_id"),
+        Index("ix_candidate_batch_index", "import_batch_id", "candidate_index"),
+        Index("ix_candidate_status", "status"),
     )
 
 
@@ -554,21 +603,21 @@ class ContentAIAnalysisRun(Base):
     __tablename__ = "content_ai_analysis_runs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(36), ForeignKey("async_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     candidate_id = Column(
         String(36),
         ForeignKey("content_import_candidates.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True,
     )
     # provider 事实：'mock' 必须醒目标记，且由 review service 阻止基于此结果的正式发布。
-    provider = Column(String(30), nullable=False, default="mock", index=True)
+    provider = Column(String(30), nullable=False, default="mock")
     model = Column(String(80), nullable=True)
     prompt_version = Column(String(40), nullable=True)
 
     # 状态机：pending / analyzing / validating / verifying / pass / doubtful / failed
-    status = Column(String(20), nullable=False, default="pending", index=True)
+    status = Column(String(20), nullable=False, default="pending")
     # 最终 gate（仅在 terminal 状态稳定）：PASS / DOUBTFUL / FAILED / null
-    gate = Column(String(20), nullable=True, index=True)
+    gate = Column(String(20), nullable=True)
 
     analysis_json = Column(JSON, nullable=True)
     verifier_json = Column(JSON, nullable=True)
@@ -579,11 +628,10 @@ class ContentAIAnalysisRun(Base):
         String(36),
         ForeignKey("content_ai_analysis_runs.id", ondelete="RESTRICT"),
         nullable=True,
-        index=True,
     )
 
     # 人工处置：approved / doubtful / reject / reanalyze / null
-    human_disposition = Column(String(20), nullable=True, index=True)
+    human_disposition = Column(String(20), nullable=True)
     human_note = Column(Text, nullable=True)
 
     error_code = Column(String(50), nullable=True)
@@ -602,10 +650,13 @@ class ContentAIAnalysisRun(Base):
     parent_run = relationship("ContentAIAnalysisRun", remote_side=[id], backref="child_runs")
 
     __table_args__ = (
-        Index("idx_ai_run_candidate_attempt", "candidate_id", "attempt_no"),
-        Index("idx_ai_run_status", "status"),
-        Index("idx_ai_run_gate", "gate"),
-        Index("idx_ai_run_disposition", "human_disposition"),
+        Index("ix_ai_run_candidate", "candidate_id"),
+        Index("ix_ai_run_candidate_attempt", "candidate_id", "attempt_no"),
+        Index("ix_ai_run_status", "status"),
+        Index("ix_ai_run_gate", "gate"),
+        Index("ix_ai_run_disposition", "human_disposition"),
+        Index("ix_ai_run_parent", "parent_run_id"),
+        Index("ix_ai_run_provider", "provider"),
     )
 
 
@@ -768,10 +819,10 @@ class ErrorItem(Base):
     last_attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="SET NULL"), nullable=True)
     last_reviewed_at = Column(DateTime(timezone=True), nullable=True)
     # ---- T02 ReviewScheduler：错题级间隔复习排期（知识点级 ReviewSchedule 无法表达，见审计结论）----
-    next_review_at = Column(DateTime(timezone=True), nullable=True, comment="下次到期复习时间；NULL 表示未排期或已毕业")
-    review_interval_days = Column(Integer, nullable=False, default=0, server_default="0", comment="当前复习间隔（天）；0 表示尚未排期")
-    review_streak = Column(Integer, nullable=False, default=0, server_default="0", comment="连续答对的复习次数；答错重置为 0")
-    scheduler_version = Column(String(40), nullable=False, default="", server_default="", comment="排期算法版本标识")
+    next_review_at = Column(DateTime(timezone=True), nullable=True)
+    review_interval_days = Column(Integer, nullable=False, default=0, server_default="0")
+    review_streak = Column(Integer, nullable=False, default=0, server_default="0")
+    scheduler_version = Column(String(40), nullable=False, default="", server_default="")
 
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -893,6 +944,7 @@ class Memory(Base):
         Index("idx_mem_user_status", "user_id", "status"),
         Index("idx_mem_user_type", "user_id", "memory_type", "status"),
         Index("idx_mem_user_category", "user_id", "high_category", "category", "status"),
+        Index("idx_mem_user_kind_status", "user_id", "memory_kind", "status"),
         Index("idx_mem_expire_status", "expire_at", "status"),
         Index("idx_mem_source_id", "source_id", "memory_type"),
     )
@@ -1034,6 +1086,7 @@ class OutboxEvent(Base):
     __tablename__ = "outbox_events"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(36), ForeignKey("async_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     event_type = Column(String(64), nullable=False)
     aggregate_type = Column(String(40), nullable=False)
     aggregate_id = Column(String(128), nullable=False)
@@ -1044,6 +1097,8 @@ class OutboxEvent(Base):
     attempts = Column(Integer, nullable=False, default=0)
     available_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     locked_at = Column(DateTime(timezone=True), nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    locked_by = Column(String(64), nullable=True)
     last_error = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -1074,16 +1129,21 @@ class PaperTemplate(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(200), nullable=False)
     course_id = Column(
-        String(36), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True, index=True
+        String(36), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True
     )
     version_id = Column(
         String(36), ForeignKey("knowledge_graph_versions.id", ondelete="RESTRICT"),
-        nullable=True, index=True,
+        nullable=True,
     )
     config = Column(JSON, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_paper_templates_course", "course_id"),
+        Index("ix_paper_templates_version", "version_id"),
     )
 
     papers = relationship("Paper", back_populates="template")
@@ -1098,15 +1158,22 @@ class Paper(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     template_id = Column(
         String(36), ForeignKey("paper_templates.id", ondelete="RESTRICT"),
-        nullable=True, index=True,
+        nullable=True,
     )
     title = Column(String(200), nullable=False)
-    course_id = Column(String(36), nullable=True, index=True)
-    version_id = Column(String(36), nullable=True, index=True)
+    course_id = Column(String(36), nullable=True)
+    version_id = Column(String(36), nullable=True)
     status = Column(String(20), nullable=False, default="generated")
     random_seed = Column(Integer, nullable=False, default=0)
     created_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_papers_template", "template_id"),
+        Index("ix_papers_course", "course_id"),
+        Index("ix_papers_version", "version_id"),
+        Index("ix_papers_created_at", "created_at"),
     )
 
     template = relationship("PaperTemplate", back_populates="papers")
@@ -1123,12 +1190,17 @@ class PaperQuestion(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     paper_id = Column(
-        String(36), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
     )
     question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False)
     position = Column(Integer, nullable=False)
     score = Column(Float, nullable=False, default=10)
     snapshot = Column(JSON, nullable=False)
+
+    __table_args__ = (
+        Index("ix_paper_questions_paper", "paper_id"),
+        Index("ix_paper_questions_question", "question_id"),
+    )
 
     paper = relationship("Paper", back_populates="questions")
 
@@ -1403,7 +1475,7 @@ class QuestionAuditLog(Base):
     )
 
     __table_args__ = (
-        Index("idx_qa_question_created", "question_id", "created_at"),
+        Index("ix_qa_question_created", "question_id", "created_at"),
     )
 
 
@@ -1459,6 +1531,7 @@ class ContentTask(Base):
     __tablename__ = "content_tasks"
 
     id = Column(String(36), primary_key=True)
+    task_id = Column(String(36), ForeignKey("async_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     kind = Column(String(30), nullable=False, index=True)  # import_parse / ai_batch_analyze
     ref_id = Column(String(36), nullable=False, index=True)  # 关联业务对象（batch_id）
     status = Column(String(20), nullable=False, default="pending", index=True)
@@ -1483,8 +1556,8 @@ class ContentTask(Base):
     )
 
     __table_args__ = (
-        Index("idx_ct_claim", "status", "next_run_at"),
-        Index("idx_ct_kind_ref", "kind", "ref_id"),
+        Index("ix_ct_claim", "status", "next_run_at"),
+        Index("ix_ct_kind_ref", "kind", "ref_id"),
     )
 
 
@@ -1494,6 +1567,7 @@ class AnimationJob(Base):
     __tablename__ = "animation_jobs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(36), ForeignKey("async_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     idempotency_key = Column(String(128), nullable=False)
     request_fingerprint = Column(String(64), nullable=False)
@@ -1617,6 +1691,10 @@ class StudyNote(Base):
         CheckConstraint("status IN ('active','archived','deleted')", name="ck_study_note_status"),
         Index("ix_study_note_owner_updated", "user_id", "updated_at"),
         Index("ix_study_note_owner_status", "user_id", "status"),
+        # Retain indexes introduced by the original filter-metadata migration;
+        # the current query paths still benefit from these owner-scoped filters.
+        Index("ix_study_note_owner_course", "user_id", "primary_course_id"),
+        Index("ix_study_note_owner_kp", "user_id", "primary_knowledge_point_id"),
     )
 
 
@@ -1699,6 +1777,7 @@ class NoteCleanupTask(Base):
     __tablename__ = "note_cleanup_tasks"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(36), ForeignKey("async_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     storage_keys = Column(JSON, nullable=False, default=list)
     status = Column(String(20), nullable=False, default="pending")
@@ -1715,6 +1794,7 @@ class NoteCleanupTask(Base):
 class NoteAiRun(Base):
     __tablename__ = "note_ai_runs"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id = Column(String(36), ForeignKey("async_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     note_id = Column(String(36), ForeignKey("study_notes.id", ondelete="CASCADE"), nullable=False)
     page_id = Column(String(36), ForeignKey("note_pages.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)

@@ -38,7 +38,7 @@ class ReorderPagesRequest(BaseModel):
 class CreateAiRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     idempotency_key: str = Field(min_length=8, max_length=128)
-    model: str = Field(default="qwen-vl-plus", max_length=100)
+    model: str = Field(default="deepseek-flash", max_length=100)
     prompt_version: str = Field(default="v1", max_length=40)
 class ConfirmAiSuggestionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")

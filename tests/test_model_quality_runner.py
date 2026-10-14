@@ -11,6 +11,9 @@ from model_quality_eval.runner import (
     ai_enabled_from_environment,
     deterministic_session_id,
     estimated_cost_from_environment,
+    accumulated_tokens,
+    live_timeout_seconds_from_environment,
+    live_token_budget_from_environment,
     live_budget_from_environment,
     load_live_checkpoint,
     run_live_sync,
@@ -71,6 +74,21 @@ def test_live_budget_requires_a_positive_explicit_value(monkeypatch):
     assert live_budget_from_environment() is None
     monkeypatch.setenv("EVAL_MAX_COST_USD", "2.00")
     assert live_budget_from_environment() == 2.0
+
+
+def test_live_token_and_timeout_budgets_are_explicit_and_positive(monkeypatch):
+    monkeypatch.delenv("EVAL_MAX_TOKENS", raising=False)
+    monkeypatch.delenv("EVAL_TIMEOUT_SECONDS", raising=False)
+    assert live_token_budget_from_environment() is None
+    assert live_timeout_seconds_from_environment() is None
+    monkeypatch.setenv("EVAL_MAX_TOKENS", "1200")
+    monkeypatch.setenv("EVAL_TIMEOUT_SECONDS", "30")
+    assert live_token_budget_from_environment() == 1200
+    assert live_timeout_seconds_from_environment() == 30.0
+
+
+def test_accumulated_tokens_fails_closed_when_telemetry_is_missing():
+    assert accumulated_tokens([], [{"execution": {"token_usage": None}}]) is None
 
 
 def test_mocked_run_covers_all_cases_without_network_or_hard_failures(monkeypatch):

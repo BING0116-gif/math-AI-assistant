@@ -163,6 +163,10 @@ class TestWorkerProcessing:
         assert fresh_batch.status == "parsed"
         candidates = await service.list_candidates(batch.id)
         assert len(candidates) >= 1
+        fresh_task = await get_task(task.id)
+        assert fresh_task.progress["percent"] == 100
+        assert fresh_task.progress["stage"] == "completed"
+        assert fresh_task.progress["questions"] == len(candidates)
 
     async def test_worker_cancels_before_run(self, engine, session_factory, patch_global_session_factory):
         async with engine.begin() as conn:

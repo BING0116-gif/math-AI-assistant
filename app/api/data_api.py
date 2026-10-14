@@ -15,6 +15,7 @@ from app.services.cache import get_cache_manager
 from app.services.user_data_deletion import delete_user_data
 from app.services.memory_store import get_memory_store
 from app.security.audit import get_audit_logger
+from app.security.access_control import require_admin_role
 
 router = APIRouter(prefix="/api/data", tags=["数据管理"])
 
@@ -143,14 +144,17 @@ async def purge_user_data(
     http_request: Request,
     confirm: str = Query("", description="输入 'DELETE_MY_DATA' 确认删除"),
 ):
+    # Destructive deletion is administrator controlled. Use the two-step
+    # /api/admin/user-deletions workflow for preview, task creation and retry.
+    require_admin_role(http_request)
     user_id = getattr(http_request.state, "user_id", None)
     if not user_id:
         raise HTTPException(status_code=401, detail="未认证")
 
-    if confirm != "DELETE_MY_DATA":
+    if confirm != "DELETE_USER_DATA":
         raise HTTPException(
             status_code=400,
-            detail="请确认删除操作：输入 confirm=DELETE_MY_DATA",
+            detail="请确认删除操作：输入 confirm=DELETE_USER_DATA；推荐使用管理员删除任务接口",
         )
 
     try:

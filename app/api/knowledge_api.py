@@ -7,13 +7,14 @@ from pydantic import BaseModel
 from app.api.student_contracts import (
     CourseListResponse,
     CourseTreeResponse,
+    KnowledgeExamplesResponse,
     KnowledgePointResponse,
     KnowledgeSearchResponse,
     MasteryResponse,
     STUDENT_API_RESPONSES,
 )
 from app.data.database import get_db_session
-from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point, list_published_courses, search_published_points
+from app.services.knowledge_catalog import get_published_course_tree, get_published_learning_content, get_published_point, list_published_courses, list_published_point_examples, search_published_points
 from app.services.learning_projection import read_learning_states, state_evidence
 from app.services.knowledge_learning_map import build_learning_map
 
@@ -114,6 +115,17 @@ async def get_learning_content(point_id: str):
     if content is None:
         raise HTTPException(status_code=404, detail="未找到已发布知识点")
     return content
+
+
+@router.get("/points/{point_id}/examples", response_model=KnowledgeExamplesResponse, responses=STUDENT_API_RESPONSES)
+async def get_point_examples(point_id: str, limit: int = Query(3, ge=1, le=10)):
+    """学习页「典型例题」：该知识点已发布真题（含答案与解析，前端折叠展示）。"""
+    async with get_db_session() as session:
+        point = await get_published_point(session, point_id)
+        if point is None:
+            raise HTTPException(status_code=404, detail="未找到已发布知识点")
+        examples = await list_published_point_examples(session, point["id"], limit)
+    return {"examples": examples}
 
 
 def _map_mastery_status(mastery: float, attempts: int) -> str:

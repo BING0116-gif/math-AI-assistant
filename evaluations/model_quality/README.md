@@ -23,6 +23,7 @@
 ```powershell
 python -m scripts.model_quality_eval validate --dataset evaluations/model_quality/v1
 python -m scripts.model_quality_eval run --dataset evaluations/model_quality/v1 --mode mocked --output artifacts/model-quality/offline
+python -m scripts.model_quality_eval run --dataset evaluations/model_quality/v1 --mode mocked --case-id mq-text-001 --output artifacts/model-quality/dry-run
 python -m scripts.model_quality_eval run --dataset evaluations/model_quality/v1 --mode live --label candidate --output artifacts/model-quality/live
 python -m scripts.model_quality_eval review-template --report artifacts/model-quality/live/results.json --output artifacts/model-quality/live/review.yaml
 python -m scripts.model_quality_eval review --report artifacts/model-quality/live/results.json --review-file artifacts/model-quality/live/review.yaml --output artifacts/model-quality/live-reviewed
@@ -38,12 +39,15 @@ python -m scripts.model_quality_eval promote --report artifacts/model-quality/li
 - 与评测目标不同的常规 `DATABASE_URL`，或不设置该变量
 - 两个显式成本变量 `EVAL_INPUT_COST_PER_MILLION`、`EVAL_OUTPUT_COST_PER_MILLION`
 - 正数预算变量 `EVAL_MAX_COST_USD`；Phase 4 封版受控运行使用 `2.00`
+- 正整数 token 预算 `EVAL_MAX_TOKENS`
+- 每个样例的墙钟超时 `EVAL_TIMEOUT_SECONDS`
 
 Live runner 在任何应用导入、迁移或模型调用前验证数据库目标，然后将现有 Chat/Tutor/Agent 边界指向该一次性数据库。
 它不会写正式业务数据库，不创建新的业务表，也不会直接实例化模型供应商客户端。
 每个完成的主 attempt 和稳定性重跑会原子写入输出目录的 `checkpoint.json`。每次调用后按显式单价累计成本；
 达到预算或成本遥测缺失时立即停止并将报告标为 `incomplete`。进程中断后，使用相同
 `--run-id`、数据集和过滤条件重跑即可跳过已完成 attempt；checkpoint 不匹配时命令直接失败，禁止拼接不同运行证据。
+token 遥测缺失、token 预算耗尽或单样例超时同样 fail-closed；报告会记录实际 token、成本、P95/平均延迟、超时和预算状态。
 自动硬失败或加权分低于 85 的临界案例会固定追加 attempt 2/3；报告给出分数范围、响应变体数和硬失败一致性，
 不会从三次结果中挑选最好的一次替换主结果。
 

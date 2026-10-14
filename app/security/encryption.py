@@ -20,8 +20,8 @@ class DataEncryption:
             else:
                 encryption_key = Fernet.generate_key()
                 logger.warning(
-                    f"未设置 ENCRYPTION_KEY 环境变量，已生成临时密钥。"
-                    f"生产环境请设置该变量: {encryption_key.decode()}"
+                    "未设置 ENCRYPTION_KEY 环境变量，已生成临时密钥。"
+                    "生产环境请显式设置该变量。"
                 )
 
         self.fernet = Fernet(encryption_key)

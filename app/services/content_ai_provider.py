@@ -142,11 +142,11 @@ def _hash_int(value: str) -> int:
 
 
 def _build_answer_spec(qtype: str, original_answer: str, options: Any) -> Optional[Dict[str, Any]]:
-    """依据 candidate 的原答案 / 选项确定性构造 answer_spec（供后续 draft 校验一致）。"""
+    """构造答案建议；原答案缺失时不虚构 choice 的第一项。"""
     ans = (original_answer or "").strip()
     if qtype == "choice":
         opt_ids = [str(o.get("id", "")).strip() for o in options if isinstance(o, dict)] if isinstance(options, list) else []
-        correct = ans if ans in opt_ids else (opt_ids[0] if opt_ids else ans)
+        correct = ans if ans in opt_ids else ""
         return {"version": 1, "kind": "choice", "correct": correct}
     if qtype == "judge":
         truthy = ans in ("对", "正确", "true", "True", "T", "1", "√")
@@ -349,7 +349,8 @@ class DeepSeekContentAIProvider(ContentAIProvider):
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None):
         # 显式传空字符串表示「无 key」，不再回退到 settings（便于测试和程序化构造）。
         self._api_key = settings.DEEPSEEK_API_KEY if api_key is None else api_key
-        self.model = settings.DEEPSEEK_MODEL if model is None else model
+        from app.config.settings import canonical_model_name
+        self.model = canonical_model_name(settings.DEEPSEEK_MODEL if model is None else model) or "deepseek-flash"
         self._base_url = (settings.DEEPSEEK_BASE_URL if base_url is None else base_url).rstrip("/")
         self._timeout = float(getattr(settings, "DEEPSEEK_TIMEOUT_SECONDS", 60) or 60)
 
@@ -593,7 +594,7 @@ class DeepSeekContentAIProvider(ContentAIProvider):
             f"检测到的题型（可作为参考，若不一致请按你判断的真实题型输出）：{qtype}\n"
             f"题干：\n{snapshot.get('stem') or '（空）'}\n\n"
             f"选项：\n{self._fmt_options(snapshot.get('options'))}\n\n"
-            f"原答案（ground truth，请据此做答案自检）：{snapshot.get('original_answer') or '（空）'}\n"
+            f"原答案（可选；PDF 可能没有答案。若为空，只分析题目并给出 AI 建议答案，不要因此判错）：{snapshot.get('original_answer') or '（未提供，待人工补录）'}\n"
             f"原解析（参考）：\n{snapshot.get('original_solution') or '（空）'}\n\n"
             f"建议知识点 code：{suggested}\n"
             f"已知知识点 code 列表（只能从中挑选，无合适则返回空数组）：{known}\n\n"
@@ -604,7 +605,7 @@ class DeepSeekContentAIProvider(ContentAIProvider):
             '  "difficulty": 1,\n'
             '  "analysis": "详细中文解题过程，步骤清晰",\n'
             '  "common_mistakes": [{"type": "错误类型", "description": "学生常见错误描述"}],\n'
-            '  "answer_check": {"official_answer": "你独立求解得到的答案", "consistent": true, "reason": "与原答案是否一致的简要理由"},\n'
+            '  "answer_check": {"official_answer": "你独立求解得到的答案", "consistent": true, "reason": "有原答案时说明是否一致；无原答案时说明‘待人工确认’"},\n'
             '  "confidence": 0.9,\n'
             '  "flags": ["需要人工关注的标签，如 ambiguous_stem；无则 []"]'
             f"{verification_part}\n"
@@ -650,12 +651,13 @@ class DeepSeekContentAIProvider(ContentAIProvider):
         common_mistakes = data.get("common_mistakes") or []
         if not isinstance(common_mistakes, list):
             common_mistakes = []
+        suggested_answer = original_answer or (answer_check.official_answer or "")
         return ContentAIAnalysisResult(
             question_type=qtype,
             knowledge_point_codes=[str(c) for c in kp],
             difficulty=max(1, min(5, int(data.get("difficulty", 2) or 2))),
             analysis=str(data.get("analysis") or ""),
-            answer_spec=_build_answer_spec(qtype, original_answer, options),
+            answer_spec=_build_answer_spec(qtype, suggested_answer, options),
             common_mistakes=common_mistakes,
             answer_check=answer_check,
             confidence=confidence,
@@ -756,16 +758,20 @@ class ContentAIProviderFactory:
     def get_provider(self) -> ContentAIProvider:
         if self._mode == MOCK_PROVIDER_NAME:
             return MockContentAIProvider()
-        if self._mode == DEEPSEEK_PROVIDER_NAME:
-            return DeepSeekContentAIProvider(api_key=settings.DEEPSEEK_API_KEY)
-        # qwen / auto：当前 stub
-        return QwenContentAIProvider(api_key=settings.QWEN_API_KEY)
+        if self._mode in {DEEPSEEK_PROVIDER_NAME, "qwen", "auto"}:
+            # qwen/auto are historical configuration values; they must never
+            # activate a DashScope request in production.
+            return DeepSeekContentAIProvider(
+                api_key=settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY,
+                model=settings.DEEPSEEK_MODEL or settings.LLM_MODEL,
+            )
+        return MockContentAIProvider()
 
     def provider_status(self):
         from app.models.content_ai import ContentAIProviderStatusData
 
-        qwen_key = bool(settings.QWEN_API_KEY and settings.QWEN_API_KEY.strip())
-        deepseek_key = bool(settings.DEEPSEEK_API_KEY and settings.DEEPSEEK_API_KEY.strip())
+        qwen_key = False
+        deepseek_key = bool((settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY or "").strip())
         if self._mode == MOCK_PROVIDER_NAME:
             return ContentAIProviderStatusData(
                 mode=self._mode,
@@ -783,13 +789,13 @@ class ContentAIProviderFactory:
                 real_available=deepseek_key,
                 reason="ok" if deepseek_key else "missing_api_key",
             )
-        # qwen / auto：当前 stub 未实现 → 不可用；但记录真实 key 是否已配置
+        # qwen / auto are compatibility aliases for DeepSeek.
         return ContentAIProviderStatusData(
             mode=self._mode,
-            provider=QWEN_PROVIDER_NAME,
-            available=False,
-            real_available=qwen_key,
-            reason="not_implemented" if qwen_key else "missing_api_key",
+            provider=DEEPSEEK_PROVIDER_NAME,
+            available=deepseek_key,
+            real_available=deepseek_key,
+            reason="compatibility_alias" if deepseek_key else "missing_api_key",
         )
 
 

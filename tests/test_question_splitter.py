@@ -122,6 +122,26 @@ class TestSplitting:
         assert len(splits) == 1
         assert splits[0].identity == "A-calculation-1"
 
+    def test_embedded_top_level_question_boundary_is_split(self):
+        """解析器把相邻题目压成一个 block 时，明确边界仍应拆开。"""
+        blocks = [
+            B("函数与极限自测题A", 1),
+            B("一、单项选择题", 1),
+            B("7. 设 f(x) 可微，则 f'(x0)=（ ）.8．设 f(x)=...，则 f'(0)（ ）", 1),
+        ]
+        splits = split_document(doc_of(blocks))
+        assert len(splits) == 2
+        assert identities(splits) == ["A-choice-7", "A-choice-8"]
+
+    def test_unrenderable_pdf_glyphs_are_flagged(self):
+        blocks = [
+            B("函数与极限自测题A", 1),
+            B("一、单项选择题", 1),
+            B("1. 设 f(x)(a,b)，则结论为（ ）。", 1),
+        ]
+        splits = split_document(doc_of(blocks))
+        assert "unrenderable_glyphs" in splits[0].warnings
+
     def test_subquestions_not_split(self):
         blocks = [
             B("函数与极限自测题A", 1),
@@ -139,6 +159,17 @@ class TestSplitting:
         splits = split_document(doc_of(blocks))
         assert len(splits) == 8
         assert identities(splits) == [f"A-fill-{i}" for i in range(1, 9)]
+
+    def test_question_number_gap_is_flagged_without_reordering(self):
+        blocks = [
+            B("函数与极限自测题A", 1),
+            B("一、单项选择题", 1),
+            B("1. 题一（ ）。A. 1 B. 2 C. 3 D. 4", 1),
+            B("3. 题三（ ）。A. 1 B. 2 C. 3 D. 4", 1),
+        ]
+        splits = split_document(doc_of(blocks))
+        assert [s.question_number for s in splits] == ["1", "3"]
+        assert all("question_number_gap" in s.warnings for s in splits)
 
     def test_cross_page_question_merged(self):
         """跨页题：page N 开始，下一页无新 section/题号 -> 拼接，记录 N..N+1。"""
@@ -302,3 +333,13 @@ class TestProvenance:
         assert splits[0].identity == "A-calculation-1"
         assert "\\lim" in splits[0].raw_text  # 公式并入第一题
         assert splits[1].identity == "A-calculation-2"
+
+    def test_source_bbox_is_preserved_and_merged(self):
+        blocks = [
+            B("函数与极限自测题A", 1),
+            B("三、计算题", 1),
+            PageBlock(text="1. 求解：", page=1, bbox=[10, 20, 100, 60]),
+            PageBlock(text="续：继续推导", page=1, bbox=[5, 55, 120, 90]),
+        ]
+        splits = split_document(doc_of(blocks))
+        assert splits[0].source_bbox == [5, 20, 120, 90]

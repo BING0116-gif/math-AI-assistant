@@ -85,12 +85,10 @@ KEY_CONTENT_FIELDS = {
 _BLOCKING_WARNING_CODES = {
     "option_parse_uncertain",
     "possible_answer_leak",
-    "answer_match_missing",
-    "answer_match_key_incomplete",
-    "answer_roster_incomplete",
-    "choice_answer_ambiguous",
     "fill_type_needs_review",
     "page_mapping_uncertain",
+    "unrenderable_glyphs",
+    "question_number_gap",
 }
 
 
@@ -692,6 +690,10 @@ class ContentReviewService:
         for w in warnings:
             if w not in _BLOCKING_WARNING_CODES:
                 continue
+            if w == "unrenderable_glyphs":
+                # 字体映射失败无法安全推断，必须由管理员依据原 PDF 修复。
+                blocking.append(w)
+                continue
             if w == "option_parse_uncertain":
                 if not _choice_options_ok(question.options):
                     blocking.append(w)
@@ -704,9 +706,10 @@ class ContentReviewService:
                 "answer_roster_incomplete",
                 "choice_answer_ambiguous",
             ):
-                # 答案来源告警：人工补全 answer 后视为解决
-                if not (question.answer or "").strip():
-                    blocking.append(w)
+                # 原 PDF 没有答案或答案区无法可靠匹配，不阻塞题干入审核队列。
+                # 正式题发布前仍由题目答案/answer_spec 的服务端契约校验负责拦截，
+                # 管理员需要在“题目发布”阶段人工补录答案。
+                continue
             elif w == "fill_type_needs_review":
                 # 审核员显式改为 numeric_fill/expression_fill 后视为解决
                 if (question.question_type or "") == "fill":

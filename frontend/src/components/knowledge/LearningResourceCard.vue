@@ -4,7 +4,16 @@
       <div><span class="lesson-card__kind">{{ typeLabel }}</span><h3 :id="titleId">{{ resource.title }}</h3></div>
       <button class="lesson-card__ask" type="button" @click="$emit('ask-ai', resource)"><MessageCircle :size="14" :stroke-width="1.75" />让 AI 讲这一步</button>
     </header>
-    <ol v-if="isExample" class="example-steps">
+    <div v-if="isLectureLike" class="lecture-sections">
+      <section v-for="(sec, index) in lectureSections" :key="index" class="lecture-subcard" :class="{ 'lecture-subcard--lead': index === 0, 'lecture-subcard--warn': isPitfalls }">
+        <header v-if="sec.title" class="lecture-subcard__head">
+          <span class="lecture-subcard__idx">{{ index + 1 }}</span>
+          <h4>{{ sec.title }}</h4>
+        </header>
+        <div class="math-content" v-html="sec.html" />
+      </section>
+    </div>
+    <ol v-else-if="isExample" class="example-steps">
       <li v-for="(step, index) in exampleSteps" :key="index">
         <button type="button" :aria-expanded="index <= revealedStep" :aria-controls="`${titleId}-step-${index}`" @click="reveal(index)">
           <span>步骤 {{ index + 1 }}</span><strong>{{ index <= revealedStep ? '收起/查看' : index === revealedStep + 1 ? '展开下一步' : '完成前一步后展开' }}</strong>
@@ -55,7 +64,24 @@ const feedbackOpen = reactive({})
 const isExample = computed(() => ['example', 'worked_example'].includes(props.resource.type))
 const isCheckpoint = computed(() => props.resource.type === 'checkpoint')
 const isExercise = computed(() => ['exercise', 'exercise_set'].includes(props.resource.type))
-const labels = { intuition:'直觉解释',concept:'核心概念',definition:'定义与条件',formula:'公式与符号',visual:'静态图解',animation:'动态讲解',example:'例题',worked_example:'分步例题',common_error:'易错辨析',exam_focus:'常见考点',checkpoint:'理解检查',exercise:'正式练习',exercise_set:'分层练习',summary:'小结与下一步',source_reference:'来源与署名' }
+// 讲义类资源（精讲/易错警示）：按 ## 小节拆成编号子卡，逐节成卡而非整墙文字
+const isLectureLike = computed(() => ['lecture', 'pitfalls'].includes(props.resource.type))
+const isPitfalls = computed(() => props.resource.type === 'pitfalls')
+const lectureSections = computed(() => {
+  if (!isLectureLike.value) return []
+  const blocks = String(props.resource.body || '').split(/\n(?=## )/g)
+  return blocks
+    .map((block) => {
+      const match = block.match(/^##\s+(.+?)(?:\n|$)/)
+      const title = match ? match[1].trim() : ''
+      const content = match ? block.slice(match[0].length).trim() : block.trim()
+      // 自查清单的 "- [ ]" 在 markdown-it 里输出为字面 "[ ]"，换成勾选框占位
+      const html = renderMarkdown(content).replace(/\[ \]/g, '<span class="check-todo" aria-hidden="true"></span>')
+      return { title, html }
+    })
+    .filter((sec) => sec.title || sec.html)
+})
+const labels = { lecture:'知识点精讲',pitfalls:'易错警示',intuition:'直觉解释',concept:'核心概念',definition:'定义与条件',formula:'公式与符号',visual:'静态图解',animation:'动态讲解',example:'例题',worked_example:'分步例题',common_error:'易错辨析',exam_focus:'常见考点',checkpoint:'理解检查',exercise:'正式练习',exercise_set:'分层练习',summary:'小结与下一步',source_reference:'来源与署名' }
 const typeLabel = computed(() => labels[props.resource.type] || '学习资料')
 const exampleSteps = computed(() => {
   const structured = props.resource.metadata?.steps
@@ -95,6 +121,26 @@ function toggleFeedback(index) { feedbackOpen[index] = !feedbackOpen[index] }
 .checkpoint-feedback strong{color:var(--amber)}
 .checkpoint-feedback p{margin:6px 0;line-height:1.7}
 .resource-fallback{margin-top:14px}
+/* ── 讲义分节子卡 ── */
+.lecture-sections{display:grid;gap:14px}
+.lecture-subcard{padding:16px 18px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+.lecture-subcard--lead{background:var(--brand-soft)}
+.lecture-subcard--warn{border-color:var(--amber)}
+.lecture-subcard__head{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.lecture-subcard__idx{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:8px;background:var(--brand);color:#fff;font-size:12.5px;font-weight:700}
+.lecture-subcard--warn .lecture-subcard__idx{background:var(--amber)}
+.lecture-subcard__head h4{margin:0;color:var(--ink-1);font-size:16px}
+.lecture-subcard .math-content{color:var(--ink-2);line-height:1.95;font-size:14.5px}
+.lecture-subcard .math-content p{margin:10px 0}
+.lecture-subcard .math-content strong{color:var(--ink-1)}
+.lecture-subcard .math-content ul,.lecture-subcard .math-content ol{margin:8px 0;padding-left:22px;display:grid;gap:6px}
+.lecture-subcard .math-content li::marker{color:var(--brand-text)}
+.lecture-subcard .math-content .katex-display{margin:12px 0;overflow-x:auto;overflow-y:hidden}
+.lecture-subcard .math-content table{margin:10px 0;border-collapse:collapse;font-size:13.5px}
+.lecture-subcard .math-content th,.lecture-subcard .math-content td{padding:6px 10px;border:1px solid var(--border)}
+.check-todo{display:inline-block;width:14px;height:14px;margin-right:6px;border:1.5px solid var(--brand-text);border-radius:4px;vertical-align:-2px}
+.lecture-subcard--warn .check-todo{border-color:var(--amber)}
+@media(max-width:600px){.lecture-subcard{padding:14px 12px}.lecture-subcard .math-content{font-size:14px}}
 button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 @media(max-width:600px){.lesson-card{padding:18px 16px}.lesson-card__header{display:block}.lesson-card__ask{width:100%;margin-top:12px}.lesson-card h3{font-size:18px}.math-content{font-size:16px}.example-steps button{align-items:flex-start;flex-direction:column}}
 </style>

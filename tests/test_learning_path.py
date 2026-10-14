@@ -79,14 +79,16 @@ def test_same_snapshot_yields_identical_path():
 
 
 def test_step_template_statuses_derive_from_data():
-    strong = {"code": "S", "name": "S", "mastery": 0.7, "attempts_count": 5, "mistake_count": 0, "variant_performance": 0.8, "prerequisites": []}
+    strong = {"id": "kp-s", "code": "S", "name": "S", "mastery": 0.7, "attempts_count": 5, "mistake_count": 0, "variant_performance": 0.8, "prerequisites": []}
     weak = {"code": "W", "name": "W", "mastery": 0.2, "attempts_count": 3, "mistake_count": 2, "variant_performance": 0.1, "prerequisites": []}
     strong_steps = build_point_steps(strong)
     weak_steps = build_point_steps(weak)
     assert [step["status"] for step in strong_steps] == ["in_progress", "done", "done", "done"]
     assert weak_steps[1]["status"] == "in_progress" and weak_steps[2]["status"] == "pending"
-    # 路由含知识点 code 占位
-    assert strong_steps[0]["route"] == "/knowledge/S"
+    # 四类步骤统一指向学习页锚点：有 id 用 id，缺失回退 code（接口支持 id-or-code）
+    assert strong_steps[0]["route"] == "/knowledge/points/kp-s/learn?step=explain"
+    assert weak_steps[0]["route"] == "/knowledge/points/W/learn?step=explain"
+    assert weak_steps[3]["route"] == "/knowledge/points/W/learn?step=review"
 
 
 @pytest.mark.asyncio
@@ -118,6 +120,9 @@ async def test_build_learning_path_from_db(tmp_path, monkeypatch):
     path = await build_learning_path("path-user")
     assert path["weak_count"] == 2
     assert path["weeks"][0]["points"][0]["code"] == "极限"  # 前置在前
+    first_point = path["weeks"][0]["points"][0]
+    assert first_point["id"] == "kp-a"  # point id 透传，供学习页路由使用
+    assert first_point["steps"][0]["route"] == "/knowledge/points/kp-a/learn?step=explain"
     all_steps = [step for point in path["weeks"][0]["points"] for step in point["steps"]]
     assert len(all_steps) == 8  # 每点四步
     await engine.dispose()

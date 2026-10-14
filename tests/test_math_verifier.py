@@ -10,6 +10,7 @@ from app.services.math_verifier import (
     INCONCLUSIVE,
     VERIFIED,
     MathVerifier,
+    verify_model_answer,
     verify_draft_with_single_retry,
 )
 from agent_core.langchain_adapter import LangChainToolConverter
@@ -55,6 +56,32 @@ def test_unsupported_or_malformed_is_inconclusive_not_verified(verifier):
     assert malformed.status == INCONCLUSIVE
     assert unsupported.safe_to_publish is True
     assert malformed.safe_to_publish is True
+
+
+def test_structured_answer_slice_never_verifies_free_form_prose(verifier):
+    result = verify_model_answer("计算 1+1", "答案是 2。", verifier=verifier)
+    assert result["status"] == INCONCLUSIVE
+    structured = '{"answer":"2","steps":["直接相加"],"verification":{"type":"function_value","expression":"x+1","values":{"x":1},"claimed":2}}'
+    result = verify_model_answer("计算 x+1 (x=1)", structured, verifier=verifier)
+    assert result["status"] == VERIFIED
+    assert result["parsed"]["steps"] == ["直接相加"]
+
+
+def test_structured_answer_rejects_malformed_steps(verifier):
+    result = verify_model_answer("题目", '{"verification":{"type":"function_value"},"steps":[3]}', verifier=verifier)
+    assert result["status"] == INCONCLUSIVE
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ({"type": "quantity", "claimed_value": 100, "claimed_unit": "cm", "expected_value": 1, "expected_unit": "m"}, VERIFIED),
+        ({"type": "quantity", "claimed_value": 1, "claimed_unit": "m", "expected_value": 1, "expected_unit": "s"}, FAILED),
+        ({"type": "quantity", "claimed_value": 1, "claimed_unit": "parsec", "expected_value": 1, "expected_unit": "m"}, INCONCLUSIVE),
+    ],
+)
+def test_units_are_checked_with_dimension_and_conversion(verifier, case, expected):
+    assert verifier.verify(case).status == expected
 
 
 def test_improper_integral_is_not_false_verified(verifier):

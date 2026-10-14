@@ -17,15 +17,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from app.config.settings import settings
+from app.config.settings import canonical_model_name, settings
 from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
 
 # 主文本模型默认值：跟随 settings（.env），兜底 DeepSeek 官方兼容端点。
-# 注意：识图链路（vision_tool / qwen-vl-*）不在此列，固定走千问 VL。
+# 识图链路也使用同一 DeepSeek 模型，但保留独立提示词。
 DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_LLM_MODEL = "deepseek-chat"
+DEFAULT_LLM_MODEL = "deepseek-flash"
 
 
 class TaskType(str, Enum):
@@ -344,7 +344,7 @@ class DynamicLLMFactory:
     ):
         self._api_key = api_key
         self._base_url = base_url or settings.LLM_API_BASE or DEFAULT_LLM_BASE_URL
-        self._model = model or settings.LLM_MODEL or DEFAULT_LLM_MODEL
+        self._model = canonical_model_name(model or settings.LLM_MODEL) or DEFAULT_LLM_MODEL
         self._default_temperature = default_temperature
         self._streaming = streaming
 
@@ -503,14 +503,14 @@ def init_dynamic_llm_factory(
     初始化全局DynamicLLMFactory单例。
 
     应在应用启动时调用一次。base_url / model 缺省时跟随 settings
-    （主文本模型默认 DeepSeek；识图仍走 vision_tool 的千问 VL）。
+    （主文本模型与识图工具统一使用 DeepSeek，提示词按场景区分）。
 
     Example:
         from prompts.dynamic_params import init_dynamic_llm_factory
 
         init_dynamic_llm_factory(
-            api_key=settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY,
-            base_url=settings.LLM_API_BASE,
+            api_key=settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY,
+            base_url=settings.DEEPSEEK_BASE_URL or settings.LLM_API_BASE,
         )
     """
     global _factory_instance

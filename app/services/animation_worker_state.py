@@ -14,7 +14,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.settings import settings
-from app.data.models import AnimationArtifact, AnimationJob, AnimationJobEvent
+from app.data.models import AnimationArtifact, AnimationJob, AnimationJobEvent, AsyncTask
+from app.services.async_task import transition as transition_async
 from app.services.animation_service import AnimationServiceError
 from app.services.animation_storage import ValidatedArtifact
 
@@ -137,6 +138,11 @@ async def claim_next_animation_job(
     job.updated_at = now
     if recovered:
         job.recovery_count += 1
+    canonical = await db.get(AsyncTask, job.task_id or job.id)
+    if canonical is not None:
+        if canonical.status == "retryable_failed": canonical.status = "pending"
+        if canonical.status != "running": transition_async(canonical, "running")
+        canonical.worker_id = worker_id
     await _append_event(
         db,
         job,
@@ -233,12 +239,16 @@ async def finish_animation_job(
         job.status = "cancelled"
         job.stage = "cancelled"
         event_type = "job_cancelled"
+        canonical = await db.get(AsyncTask, job.task_id or job.id)
+        if canonical is not None: transition_async(canonical, "cancelled")
     else:
         if artifact is None:
             return None
         job.status = "succeeded"
         job.stage = "completed"
         event_type = "job_succeeded"
+        canonical = await db.get(AsyncTask, job.task_id or job.id)
+        if canonical is not None: transition_async(canonical, "succeeded")
         db.add(AnimationArtifact(
             job_id=job.id,
             user_id=job.user_id,
@@ -291,10 +301,15 @@ async def fail_animation_attempt(
         job.stage = "cancelled"
         job.completed_at = now
         event_type = "job_cancelled"
+        canonical = await db.get(AsyncTask, job.task_id or job.id)
+        if canonical is not None: transition_async(canonical, "cancelled", error=error_code)
     elif job.attempt_count < job.max_attempts:
         job.status = "pending"
         job.stage = "retry_queued"
         event_type = "render_attempt_failed"
+        canonical = await db.get(AsyncTask, job.task_id or job.id)
+        if canonical is not None:
+            transition_async(canonical, "retryable_failed", error=error_code)
     else:
         job.status = "fallback"
         job.stage = "fallback"
@@ -303,6 +318,10 @@ async def fail_animation_attempt(
         job.error_message = "动画生成失败，已回退到静态可视化"
         job.completed_at = now
         event_type = "job_fallback"
+        canonical = await db.get(AsyncTask, job.task_id or job.id)
+        if canonical is not None:
+            transition_async(canonical, "succeeded", error=error_code)
+            canonical.result = {"outcome": "fallback", "fallback_kind": "t08_static"}
     job.worker_id = None
     job.heartbeat_at = None
     job.lease_expires_at = None

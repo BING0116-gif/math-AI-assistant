@@ -44,3 +44,33 @@ describe('LearningResourceCard', () => {
     expect(wrapper.emitted('practice')).toHaveLength(1)
   })
 })
+
+describe('讲义分节子卡', () => {
+  it('把 ## 小节拆成编号子卡并渲染自查勾选框', () => {
+    const wrapper = mount(LearningResourceCard, {
+      props: {
+        resource: {
+          id: 'le-1', type: 'lecture', title: '精讲',
+          body: '## 为什么学\n先讲前提。\n\n## 核心定义\n$f(x)$ 的含义。\n\n## 自查清单\n- [ ] 定义域写了？',
+        },
+      },
+      global: { stubs },
+    })
+    const subcards = wrapper.findAll('.lecture-subcard')
+    expect(subcards).toHaveLength(3)
+    expect(subcards[0].text()).toContain('为什么学')
+    expect(subcards[1].text()).toContain('核心定义')
+    expect(subcards[2].find('.check-todo').exists()).toBe(true)
+    expect(wrapper.find('.lecture-subcard--lead').exists()).toBe(true)
+  })
+
+  it('易错警示子卡带警示色修饰', () => {
+    const wrapper = mount(LearningResourceCard, {
+      props: {
+        resource: { id: 'pf-1', type: 'pitfalls', title: '易错警示', body: '## 高频错误\n别乱替换。' },
+      },
+      global: { stubs },
+    })
+    expect(wrapper.find('.lecture-subcard--warn').exists()).toBe(true)
+  })
+})

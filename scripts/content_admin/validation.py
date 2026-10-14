@@ -117,6 +117,8 @@ def blocking_warnings(
             cand = candidate or {}
             if not cand.get("source_page_start") or not cand.get("source_page_end"):
                 blocking.append(w)
+        elif w == "unrenderable_glyphs":
+            blocking.append(w)
         # contains_subquestions 不作为阻塞（与服务端一致）：splitter 启发式会误判
         # 求导记号 f'(1)，保留在 warnings 中作为提示，由审核员左右对照确认。
     return sorted(set(blocking))

@@ -1,0 +1,33 @@
+services:
+  web:
+    environment:
+      LAYOUT_WORKER_URL: http://layout-worker:8100
+      LAYOUT_WORKER_TIMEOUT_SECONDS: "900"
+      LAYOUT_WORKER_PAGEWISE: "true"
+    depends_on:
+      layout-worker:
+        condition: service_started
+
+  content-worker:
+    environment:
+      LAYOUT_WORKER_URL: http://layout-worker:8100
+      LAYOUT_WORKER_TIMEOUT_SECONDS: "900"
+      LAYOUT_WORKER_PAGEWISE: "true"
+    depends_on:
+      layout-worker:
+        condition: service_started
+
+  layout-worker:
+    build:
+      context: ./layout_worker
+      dockerfile: Dockerfile.paddle
+    environment:
+      LAYOUT_ENGINE: pp_structure_v3
+      LAYOUT_FORMULA_RECOGNITION: ${LAYOUT_FORMULA_RECOGNITION:-false}
+    volumes:
+      - paddle_model_cache:/root/.paddlex
+      - paddle_hf_cache:/root/.cache
+
+volumes:
+  paddle_model_cache:
+  paddle_hf_cache:

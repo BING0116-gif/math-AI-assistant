@@ -24,7 +24,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, Dict, List, Optional
 
 from app.config.settings import settings
 
@@ -38,7 +38,9 @@ PARSE_FAILED = "PARSE_FAILED"
 # 支持的 parser 模式
 MODE_MINERU = "mineru"
 MODE_QUICK = "quick"
-SUPPORTED_MODES = (MODE_MINERU, MODE_QUICK)
+MODE_AUTO = "auto"
+MODE_LAYOUT_WORKER = "layout_worker"
+SUPPORTED_MODES = (MODE_MINERU, MODE_QUICK, MODE_AUTO, MODE_LAYOUT_WORKER)
 
 # subprocess 输出长度上限（防止大输出撑爆内存）
 _MAX_STREAM_CHARS = 20000
@@ -51,6 +53,10 @@ class ContentParseError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class ParserCancelled(Exception):
+    """解析过程被上层任务取消。"""
 
 
 @dataclass
@@ -78,6 +84,7 @@ class PageBlock:
     kind: str = BLOCK_KIND_TEXT
     text_level: Optional[int] = None
     bbox: Optional[list] = None
+    confidence: Optional[float] = None
 
 
 @dataclass
@@ -92,6 +99,94 @@ class ParsedDocument:
     page_mapping_uncertain: bool = False
 
 
+def _parsed_document_from_worker(payload: object) -> ParsedDocument:
+    """将 sidecar JSON 收敛为内部模型，拒绝不完整/不可信结构。"""
+    if not isinstance(payload, dict):
+        raise ContentParseError(PARSE_FAILED, "layout-worker 返回格式无效")
+    parser_name = str(payload.get("parser_name") or MODE_LAYOUT_WORKER)
+    parser_version = str(payload.get("parser_version") or "unknown")
+    pages: List[ParsedPage] = []
+    for item in payload.get("pages") or []:
+        if not isinstance(item, dict):
+            continue
+        pages.append(ParsedPage(page=item.get("page"), text=str(item.get("text") or "")))
+    blocks: List[PageBlock] = []
+    for item in payload.get("blocks") or []:
+        if not isinstance(item, dict) or not str(item.get("text") or "").strip():
+            continue
+        bbox = item.get("bbox")
+        if bbox is not None and (not isinstance(bbox, list) or len(bbox) != 4):
+            bbox = None
+        blocks.append(PageBlock(
+            text=str(item.get("text") or ""),
+            page=item.get("page"),
+            kind=str(item.get("kind") or BLOCK_KIND_TEXT),
+            text_level=item.get("text_level"),
+            bbox=bbox,
+            confidence=float(item["confidence"]) if item.get("confidence") is not None else None,
+        ))
+    markdown = str(payload.get("markdown") or "")
+    if not markdown and pages:
+        markdown = "\n\n".join(page.text for page in pages)
+    if not markdown and not blocks:
+        raise ContentParseError(PARSE_FAILED, "layout-worker 输出为空")
+    return ParsedDocument(
+        parser_name=parser_name,
+        parser_version=parser_version,
+        markdown=markdown,
+        pages=pages,
+        blocks=blocks,
+        page_mapping_uncertain=bool(payload.get("page_mapping_uncertain", False)),
+    )
+
+
+def _repage_worker_payload(payload: object, page_number: int) -> Dict[str, object]:
+    """把单页 worker 输出绑定到原 PDF 的真实 1-based 页码。"""
+    if not isinstance(payload, dict):
+        raise ContentParseError(PARSE_FAILED, "layout-worker 返回格式无效")
+    repaged = dict(payload)
+    pages = []
+    for item in payload.get("pages") or []:
+        if not isinstance(item, dict):
+            continue
+        page = dict(item)
+        page["page"] = page_number
+        pages.append(page)
+    blocks = []
+    for item in payload.get("blocks") or []:
+        if not isinstance(item, dict):
+            continue
+        block = dict(item)
+        block["page"] = page_number
+        blocks.append(block)
+    repaged["pages"] = pages
+    repaged["blocks"] = blocks
+    return repaged
+
+
+def _merge_worker_payloads(payloads: List[Dict[str, object]]) -> Dict[str, object]:
+    """合并按页 worker 输出，保持页面/块顺序并保留解析元数据。"""
+    if not payloads:
+        raise ContentParseError(PARSE_FAILED, "layout-worker 输出为空")
+    pages = []
+    blocks = []
+    markdown_parts = []
+    for payload in payloads:
+        pages.extend(payload.get("pages") or [])
+        blocks.extend(payload.get("blocks") or [])
+        markdown = str(payload.get("markdown") or "").strip()
+        if markdown:
+            markdown_parts.append(markdown)
+    return {
+        "parser_name": str(payloads[0].get("parser_name") or MODE_LAYOUT_WORKER),
+        "parser_version": str(payloads[0].get("parser_version") or "unknown"),
+        "markdown": "\n\n".join(markdown_parts),
+        "pages": pages,
+        "blocks": blocks,
+        "page_mapping_uncertain": any(bool(p.get("page_mapping_uncertain")) for p in payloads),
+    }
+
+
 class DocumentParser:
     """解析 PDF -> ParsedDocument。"""
 
@@ -99,12 +194,32 @@ class DocumentParser:
         self._executable = executable if executable is not None else settings.MINERU_EXECUTABLE
 
     # ── 对外统一入口 ──
-    def parse(self, file_path: str | Path, mode: str = MODE_QUICK) -> ParsedDocument:
+    def parse(
+        self,
+        file_path: str | Path,
+        mode: str = MODE_QUICK,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> ParsedDocument:
         if mode not in SUPPORTED_MODES:
             raise ContentParseError(PARSE_FAILED, f"未知解析模式: {mode}")
         if mode == MODE_MINERU:
             return self._parse_mineru(file_path)
+        if mode == MODE_LAYOUT_WORKER:
+            return self._parse_layout_worker(file_path, progress_callback=progress_callback)
         return self._parse_quick(file_path)
+
+    def layout_worker_available(self) -> bool:
+        """只做轻量探活；sidecar 不可达时绝不阻塞主解析链路。"""
+        base_url = (settings.LAYOUT_WORKER_URL or "").strip().rstrip("/")
+        if not base_url:
+            return False
+        try:
+            import httpx
+            response = httpx.get(f"{base_url}/health", timeout=min(5.0, float(settings.LAYOUT_WORKER_TIMEOUT_SECONDS)))
+            return response.status_code == 200 and response.json().get("status") == "ready"
+        except Exception:  # noqa: BLE001
+            logger.info("layout-worker 探活失败，自动路由将跳过 sidecar", exc_info=True)
+            return False
 
     # ── quick：PyMuPDF ──
     def _parse_quick(self, file_path: str | Path) -> ParsedDocument:
@@ -123,13 +238,26 @@ class DocumentParser:
             pages: List[ParsedPage] = []
             blocks: List[PageBlock] = []
             for i in range(doc.page_count):
-                text = doc[i].get_text("text", sort=True) or ""
+                page = doc[i]
+                text = page.get_text("text", sort=True) or ""
                 page_no = i + 1
                 pages.append(ParsedPage(page=page_no, text=text))
-                # quick 模式无结构化类型信息：把每行当作一个 text 块，保留页码
-                for line in text.splitlines():
-                    if (line or "").strip():
-                        blocks.append(PageBlock(text=line, page=page_no, kind=BLOCK_KIND_TEXT))
+                # 保留文本块 bbox，后续遇到字体映射异常时可精确显示原题图。
+                # 只用 get_text("text") 会丢掉位置，导致审核页只能展示整页缩略图。
+                page_blocks = page.get_text("blocks", sort=True) or []
+                if page_blocks:
+                    for item in page_blocks:
+                        block_text = str(item[4] or "") if len(item) > 4 else ""
+                        if block_text.strip():
+                            bbox = list(item[:4]) if len(item) >= 4 else None
+                            for line in block_text.splitlines():
+                                if line.strip():
+                                    blocks.append(PageBlock(text=line, page=page_no, kind=BLOCK_KIND_TEXT, bbox=bbox))
+                else:
+                    # 极少数 PDF 没有 block 元数据，保留原有逐行降级路径。
+                    for line in text.splitlines():
+                        if (line or "").strip():
+                            blocks.append(PageBlock(text=line, page=page_no, kind=BLOCK_KIND_TEXT))
             markdown = "\n\n".join(p.text for p in pages)
             return ParsedDocument(
                 parser_name=MODE_QUICK,
@@ -141,6 +269,76 @@ class DocumentParser:
             )
         finally:
             doc.close()
+
+    def _parse_layout_worker(
+        self,
+        file_path: str | Path,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> ParsedDocument:
+        """调用独立版面解析 worker，按页提交以提供可恢复进度。"""
+        base_url = (settings.LAYOUT_WORKER_URL or "").strip().rstrip("/")
+        if not base_url:
+            raise ContentParseError(PARSER_UNAVAILABLE, "layout-worker 未配置")
+        path = Path(file_path)
+        if not path.exists() or not path.is_file():
+            raise ContentParseError(INVALID_PDF, "文件不存在")
+        try:
+            import fitz
+            import httpx
+
+            source = fitz.open(path)
+            try:
+                if source.page_count <= 0:
+                    raise ContentParseError(INVALID_PDF, "PDF 无有效页面")
+                total_pages = source.page_count
+                if not settings.LAYOUT_WORKER_PAGEWISE:
+                    with path.open("rb") as handle:
+                        response = httpx.post(
+                            f"{base_url}/v1/parse",
+                            files={"file": (path.name, handle, "application/pdf")},
+                            timeout=float(settings.LAYOUT_WORKER_TIMEOUT_SECONDS),
+                        )
+                    if response.status_code != 200:
+                        raise ContentParseError(
+                            PARSE_FAILED,
+                            f"layout-worker 返回 {response.status_code}: {response.text[-1000:]}",
+                        )
+                    if progress_callback is not None:
+                        progress_callback(total_pages, total_pages)
+                    return _parsed_document_from_worker(response.json())
+                payloads: List[Dict[str, object]] = []
+                with tempfile.TemporaryDirectory(prefix="layout_pages_") as page_dir:
+                    for page_index in range(total_pages):
+                        page_number = page_index + 1
+                        page_path = Path(page_dir) / f"page-{page_number}.pdf"
+                        single_page = fitz.open()
+                        try:
+                            single_page.insert_pdf(source, from_page=page_index, to_page=page_index)
+                            single_page.save(page_path)
+                        finally:
+                            single_page.close()
+
+                        with page_path.open("rb") as handle:
+                            response = httpx.post(
+                                f"{base_url}/v1/parse",
+                                files={"file": (page_path.name, handle, "application/pdf")},
+                                timeout=float(settings.LAYOUT_WORKER_TIMEOUT_SECONDS),
+                            )
+                        if response.status_code != 200:
+                            raise ContentParseError(
+                                PARSE_FAILED,
+                                f"layout-worker 第 {page_number} 页返回 {response.status_code}: {response.text[-1000:]}",
+                            )
+                        payloads.append(_repage_worker_payload(response.json(), page_number))
+                        if progress_callback is not None:
+                            progress_callback(page_number, total_pages)
+                return _parsed_document_from_worker(_merge_worker_payloads(payloads))
+            finally:
+                source.close()
+        except (ContentParseError, ParserCancelled):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise ContentParseError(PARSER_UNAVAILABLE, f"layout-worker 不可用: {exc}")
 
     # ── mineru：subprocess 调用独立 CLI ──
     def _parse_mineru(self, file_path: str | Path) -> ParsedDocument:

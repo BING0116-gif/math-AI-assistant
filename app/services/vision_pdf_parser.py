@@ -1,8 +1,8 @@
 """
-视觉模型驱动的 PDF 题目提取器 — 用千问VL"看"PDF图片来识别数学公式。
+视觉模型驱动的 PDF 题目提取器 — 用 DeepSeek-V4.1-Flash 识别数学公式。
 
 原理：
-  PDF页面 → 转成PNG图片 → 发给千问VL(视觉模型) → AI识别题目+公式+选项+答案
+  PDF页面 → 转成PNG图片 → 发给 DeepSeek 视觉模型 → AI识别题目+公式+选项+答案
 
 优势：
   - 不依赖字体编码，任何数学公式都能"看到"
@@ -29,7 +29,7 @@ if sys.platform == 'win32':
 
 # Use fitz/PyMuPDF for PDF→image conversion (already installed)
 import fitz  # PyMuPDF
-from app.config.settings import settings
+from app.config.settings import canonical_model_name, settings
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,10 @@ class VLExtractedQuestion:
     difficulty: int = 3
     knowledge_points: List[str] = field(default_factory=list)
     source_page: int = 0
+    bbox: Optional[dict] = None
+    confidence: float = 0.0
+    needs_review: bool = False
+    review_reasons: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -81,14 +85,16 @@ class VisionPDFParser:
 3. 如果有选项(A/B/C/D)，完整记录每个选项的内容
 4. 如果能看出答案（如选择题的勾选、填空题的答案），也一并记录
 
-输出格式（严格JSON数组）：
+输出格式（严格JSON数组；bbox 使用相对页面宽高的 0..1 坐标）：
 [
   {
     "content": "题目完整内容（含公式）",
     "type": "选择题|填空题|解答题|计算题|证明题",
     "options": ["A选项内容", "B选项内容", ...],
     "answer": "答案",
-    "analysis": "解题思路（如果能从图中看出）"
+    "analysis": "解题思路（如果能从图中看出）",
+    "bbox": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
+    "confidence": 0.0
   },
   ...
 ]
@@ -100,12 +106,16 @@ class VisionPDFParser:
 - 如果这一页没有题目，返回空数组 []
 """
 
+    SINGLE_QUESTION_PROMPT = r"""请只解析图片中的这一道数学题，返回严格 JSON 对象：
+{"content":"完整题干（含 LaTeX）","type":"choice|fill|calculation|proof|unknown","options":[],"answer":"","analysis":"","confidence":0.0}
+不要补写图片中看不清的内容；看不清时在 analysis 中说明。"""
+
     def __init__(self, api_key: str = "", api_base: str = "", model: str = ""):
         from openai import AsyncOpenAI
         
-        self.api_key = api_key or settings.LLM_API_KEY
-        self.api_base = api_base or "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        self.model = model or "qwen-vl-max"  # 千问视觉模型
+        self.api_key = api_key or settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY
+        self.api_base = (api_base or settings.DEEPSEEK_BASE_URL or settings.LLM_API_BASE or "https://api.deepseek.com/v1").rstrip("/")
+        self.model = canonical_model_name(model or settings.VISION_MODEL) or "deepseek-flash"
         
         self.client = AsyncOpenAI(
             api_key=self.api_key,
@@ -138,11 +148,40 @@ class VisionPDFParser:
         logger.info(f"PDF转图完成: {len(pages)} 页")
         return pages
 
+    @staticmethod
+    def crop_question_from_pdf(pdf_path: str, page_num: int, bbox: Optional[dict]) -> tuple[Optional[bytes], List[str]]:
+        """Crop one normalized bbox; return no image when validation fails."""
+        if not bbox:
+            return None, ["bbox_missing"]
+        try:
+            x, y = float(bbox["x"]), float(bbox["y"])
+            width, height = float(bbox["width"]), float(bbox["height"])
+        except (KeyError, TypeError, ValueError):
+            return None, ["bbox_invalid"]
+        if width <= 0.02 or height <= 0.02:
+            return None, ["bbox_too_small"]
+        if x < 0 or y < 0 or x + width > 1 or y + height > 1:
+            return None, ["bbox_out_of_bounds"]
+        doc = fitz.open(pdf_path)
+        try:
+            if page_num < 1 or page_num > len(doc):
+                return None, ["page_missing"]
+            page = doc[page_num - 1]
+            rect = page.rect
+            clip = fitz.Rect(x * rect.width, y * rect.height, (x + width) * rect.width, (y + height) * rect.height)
+            pix = page.get_pixmap(matrix=fitz.Matrix(200 / 72, 200 / 72), clip=clip)
+            if pix.width < 80 or pix.height < 40:
+                return None, ["crop_too_small"]
+            return pix.tobytes("png"), []
+        finally:
+            doc.close()
+
     async def extract_from_image(
         self,
         image_bytes: bytes,
         page_num: int = 0,
         category_hint: str = "",
+        prompt: Optional[str] = None,
     ) -> VLExtractionResult:
         """
         发送单页图片到视觉模型，提取题目。
@@ -150,6 +189,7 @@ class VisionPDFParser:
         img_b64 = base64.b64encode(image_bytes).decode('utf-8')
         
         # 构建用户消息（带图片）
+        extraction_prompt = prompt or self.EXTRACTION_PROMPT
         user_content = [
             {
                 "type": "image_url",
@@ -160,15 +200,14 @@ class VisionPDFParser:
             },
             {
                 "type": "text",
-                "text": self.EXTRACTION_PROMPT,
+                "text": extraction_prompt,
             },
         ]
         
         # 如果有分类提示，加到prompt里
         if category_hint:
             user_content[1]["text"] = (
-                f"这份试卷属于【{category_hint}】章节。\n\n" + 
-                self.EXTRACTION_PROMPT
+                f"这份试卷属于【{category_hint}】章节。\n\n" + extraction_prompt
             )
         
         try:
@@ -239,6 +278,27 @@ class VisionPDFParser:
                 page_num=page_num,
                 category_hint=category,
             )
+
+            # Page detection is followed by per-question analysis. Invalid
+            # regions stay reviewable and never get a fabricated crop.
+            if result.questions:
+                for question in result.questions:
+                    if not question.bbox:
+                        continue
+                    crop, reasons = self.crop_question_from_pdf(pdf_path, page_num, question.bbox)
+                    if crop is None:
+                        question.needs_review = True
+                        question.review_reasons = sorted(set(question.review_reasons + reasons))
+                        continue
+                    single = await self.extract_from_image(crop, page_num, category, self.SINGLE_QUESTION_PROMPT)
+                    if single.questions:
+                        refined = single.questions[0]
+                        refined.id = question.id
+                        refined.bbox = question.bbox
+                        refined.source_page = page_num
+                        refined.needs_review = question.needs_review or refined.needs_review
+                        refined.review_reasons = sorted(set(question.review_reasons + refined.review_reasons))
+                        result.questions[result.questions.index(question)] = refined
             
             all_result.questions.extend(result.questions)
             all_result.errors.extend(result.errors)
@@ -350,6 +410,9 @@ class VisionPDFParser:
                 q.answer = item.get("answer", "")
                 q.analysis = item.get("analysis", "")
                 q.source_page = page
+                q.bbox = item.get("bbox") if isinstance(item.get("bbox"), dict) else None
+                q.confidence = float(item.get("confidence", 0.0) or 0.0)
+                q.needs_review, q.review_reasons = VisionPDFParser._review_bbox(q.bbox)
                 q.category = category
                 
                 # 过滤无效题目
@@ -366,7 +429,10 @@ class VisionPDFParser:
                 analysis=data.get("analysis", ""),
                 source_page=page,
                 category=category,
+                bbox=data.get("bbox") if isinstance(data.get("bbox"), dict) else None,
+                confidence=float(data.get("confidence", 0.0) or 0.0),
             )
+            q.needs_review, q.review_reasons = VisionPDFParser._review_bbox(q.bbox)
             if q.content and len(q.content.strip()) > 5:
                 questions.append(q)
         else:
@@ -374,6 +440,23 @@ class VisionPDFParser:
             questions = VisionPDFParser._fallback_extract(raw_text, category, page)
         
         return questions
+
+    @staticmethod
+    def _review_bbox(bbox: Optional[dict]) -> tuple[bool, List[str]]:
+        """Validate normalized page bbox metadata without fabricating a crop."""
+        if bbox is None:
+            return True, ["bbox_missing"]
+        try:
+            values = [float(bbox[k]) for k in ("x", "y", "width", "height")]
+        except (KeyError, TypeError, ValueError):
+            return True, ["bbox_invalid"]
+        x, y, width, height = values
+        reasons = []
+        if width <= 0 or height <= 0:
+            reasons.append("bbox_too_small")
+        if x < 0 or y < 0 or x + width > 1.001 or y + height > 1.001:
+            reasons.append("bbox_out_of_bounds")
+        return bool(reasons), reasons
 
     @staticmethod
     def _fallback_extract(text: str, category: str, page: int) -> List[VLExtractedQuestion]:

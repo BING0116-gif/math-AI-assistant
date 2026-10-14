@@ -7,6 +7,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from cryptography.fernet import Fernet
 
 from app.config.settings import settings
 from app.data.database import init_db, close_db, is_database_available
@@ -19,16 +20,49 @@ from app.tasks.scheduled_tasks import get_scheduled_tasks
 
 logger = logging.getLogger(__name__)
 
-_INSECURE_JWT_SECRET = "math-ai-jwt-secret-must-be-overridden-in-production"
+_INSECURE_JWT_SECRETS = {
+    "math-ai-jwt-secret-must-be-overridden-in-production",
+    "change-this-to-a-long-random-secret",
+}
+_INSECURE_ENCRYPTION_KEYS = {
+    "",
+    "changeme",
+    "change-me",
+    "change-this-encryption-key",
+}
+_INSECURE_ADMIN_PASSWORDS = {
+    "admin",
+    "admin123",
+    "password",
+    "changeme",
+    "change-me",
+    "change-this-password",
+}
 
 
 def validate_runtime_security() -> None:
     """Fail closed for every non-test runtime."""
-    if settings.APP_ENV.strip().lower() == "test":
+    environment = settings.APP_ENV.strip().lower()
+    if environment == "test":
         return
     secret = settings.JWT_SECRET_KEY or ""
-    if secret == _INSECURE_JWT_SECRET or len(secret) < 32:
+    if secret in _INSECURE_JWT_SECRETS or len(secret) < 32:
         raise RuntimeError("JWT_SECRET_KEY must be explicitly configured with at least 32 characters")
+    if environment == "production":
+        encryption_key = (settings.ENCRYPTION_KEY or "").strip()
+        if encryption_key in _INSECURE_ENCRYPTION_KEYS:
+            raise RuntimeError("ENCRYPTION_KEY must be explicitly configured in production")
+        try:
+            Fernet(encryption_key.encode("ascii"))
+        except (ValueError, TypeError, UnicodeEncodeError):
+            raise RuntimeError("ENCRYPTION_KEY must be a valid Fernet key in production") from None
+        if settings.ALLOW_MOCK_PUBLISH:
+            raise RuntimeError("ALLOW_MOCK_PUBLISH is forbidden in production")
+        if settings.DEBUG:
+            raise RuntimeError("DEBUG must be disabled in production")
+        admin_password = (settings.ADMIN_PASSWORD or "").strip().lower()
+        if admin_password in _INSECURE_ADMIN_PASSWORDS:
+            raise RuntimeError("ADMIN_PASSWORD must not use a default or placeholder value")
     if settings.MEMORY_EMBEDDING_MODEL != settings.VECTOR_EMBEDDING_MODEL:
         logger.warning("MEMORY_EMBEDDING_MODEL 已弃用；题目与记忆统一使用 VECTOR_EMBEDDING_MODEL")
     if settings.MEMORY_QDRANT_VECTOR_SIZE != settings.VECTOR_SIZE:

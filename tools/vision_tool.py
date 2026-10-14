@@ -1,11 +1,4 @@
-"""
-VisionTool — 通义千问 VL（视觉-语言）多模态识别工具。
-
-技术栈定位：识图链路固定使用千问 VL（qwen-vl-plus / qwen-vl-max），
-不随主文本模型（DeepSeek）切换；API Key 复用 DASHSCOPE_API_KEY。
-截图直接发给 Qwen-VL，由模型端到端理解图片内容（文字+公式+图形），
-返回结构化的「题目描述 + LaTeX 公式 + 空间关系」。
-"""
+"""DeepSeek-V4.1-Flash multimodal question understanding tool."""
 
 from __future__ import annotations
 
@@ -13,37 +6,34 @@ import base64
 import json
 import logging
 import os
+import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 
 import httpx
 
-from app.config.settings import settings
+from app.config.settings import canonical_model_name, settings
 from app.services.llm_service import require_model_capability
 
 logger = logging.getLogger(__name__)
 
-# API 配置（与现有 DashScope key 复用）
-_DASHSCOPE_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-# VL 模型名称（按能力从高到低，可按需替换）
-_VL_MODELS = [
-    "qwen-vl-plus",           # 优先：数学理解强，支持流式
-    "qwen-vl-max",            # 备选：更大规模
-]
+_DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+_DEFAULT_MODEL = "deepseek-flash"
 
 
 def _load_api_key(file_path: str = ".env") -> Optional[str]:
-    """从项目配置（pydantic-settings）或环境变量加载 API Key。"""
+    """Load the shared DeepSeek/LLM key; never use the legacy DashScope key."""
     try:
-        from app.config.settings import settings
-        if settings.DASHSCOPE_API_KEY:
-            return settings.DASHSCOPE_API_KEY
+        if settings.DEEPSEEK_API_KEY:
+            return settings.DEEPSEEK_API_KEY
+        if settings.LLM_API_KEY:
+            return settings.LLM_API_KEY
     except Exception:
         pass
 
-    api_key = os.environ.get("DASHSCOPE_API_KEY")
-    if api_key:
-        return api_key
+    for key_name in ("DEEPSEEK_API_KEY", "LLM_API_KEY"):
+        api_key = os.environ.get(key_name)
+        if api_key:
+            return api_key
 
     if not os.path.exists(file_path):
         return None
@@ -54,7 +44,7 @@ def _load_api_key(file_path: str = ".env") -> Optional[str]:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            if k.strip() == "DASHSCOPE_API_KEY":
+            if k.strip() in {"DEEPSEEK_API_KEY", "LLM_API_KEY"}:
                 return v.strip()
     return None
 
@@ -99,9 +89,9 @@ def _build_llm_input(vl_output: str) -> str:
 
 class VisionTool:
     """
-    通义千问 VL（视觉-语言）多模态识别工具。
+    DeepSeek-V4.1-Flash 多模态识别工具。
 
-    将截图直接发给 Qwen-VL，返回题目结构化描述。
+    将截图直接发给 DeepSeek，返回题目结构化描述。
 
     Attributes:
         name: 工具名称
@@ -119,12 +109,10 @@ class VisionTool:
         "- 几何图形描述（如坐标系、曲线、点、线段）\n"
         "- 选项内容（如 A/B/C/D）\n\n"
         "【步骤 2：输出格式】\n"
-        "将提取结果按以下格式返回（不要加任何额外说明）：\n\n"
-        "【题目】\n<题干文字>\n\n"
-        "【公式】\n<LaTeX 公式，重要公式用独立段落 $$...$$>\n\n"
-        "【图形描述】（如有）\n<坐标系、关键点位置等>\n\n"
-        "【选项】（如有）\n<选项内容>\n\n"
-        "【其他说明】（如有）\n<图注、补充条件等>\n"
+        "只输出一个 JSON 对象，不要 Markdown 或额外说明：\n"
+        '{"question_text":"...","options":[{"label":"A","text":"..."}],'
+        '"formulas":[{"source":"...","latex":"...","render_status":"valid|invalid|unknown"}],'
+        '"figure_description":"...","confidence":0.0,"warnings":[]}\n'
     )
 
     def __init__(
@@ -137,22 +125,19 @@ class VisionTool:
         初始化 VisionTool。
 
         Args:
-            model: VL 模型名称（默认使用 qwen-vl-plus）
-            api_key: DashScope API Key（默认从环境变量或 .env 加载）
+            model: 模型名称（旧名称会映射为 deepseek-flash）
+            api_key: DeepSeek/LLM API Key
             timeout: 请求超时时间（秒）
         """
         self.name = "vision_tool"
-        self.description = (
-            "多模态图片理解：截图直接发给 Qwen-VL，"
-            "输出题目文字、LaTeX 公式、图形空间关系的结构化描述。"
-        )
+        self.description = "多模态图片理解：使用 DeepSeek-V4.1-Flash 输出题目文字、LaTeX、选项和图形描述。"
         self._api_key = api_key or _load_api_key(".env")
-        self._model = model or settings.VISION_MODEL
-        self._base_url = _DASHSCOPE_BASE
+        self._model = canonical_model_name(model or settings.VISION_MODEL) or _DEFAULT_MODEL
+        self._base_url = (getattr(settings, "DEEPSEEK_BASE_URL", "") or settings.LLM_API_BASE or _DEEPSEEK_BASE).rstrip("/")
         self._timeout = timeout
 
         if not self._api_key:
-            logger.warning("DASHSCOPE_API_KEY not found in environment or .env file")
+            logger.warning("DeepSeek/LLM API key not configured")
 
     @property
     def api_key_configured(self) -> bool:
@@ -180,8 +165,12 @@ class VisionTool:
             mime, b64 = image_source
             return f"data:{mime};base64,{b64}"
 
-        # 本地文件
+        # Remote URLs and data URLs may be passed through unchanged.
         path = image_source
+        if path.startswith("data:") or path.startswith("http://") or path.startswith("https://"):
+            return path
+
+        # 本地文件
         if not os.path.exists(path):
             raise FileNotFoundError(f"图片文件不存在: {path}")
 
@@ -221,10 +210,10 @@ class VisionTool:
 
     def _get_models_to_try(self, model: Optional[str]) -> List[str]:
         """获取需要尝试的模型列表（按优先级排序）。"""
-        preferred = model or self._model
+        preferred = canonical_model_name(model or self._model) or _DEFAULT_MODEL
         # 显式选择了不支持视觉或未登记的模型时必须立即失败，不能静默换备用模型。
         require_model_capability(preferred, "vision")
-        return [preferred] + [m for m in _VL_MODELS if m != preferred]
+        return [preferred]
 
     # ── 同步 API 调用 ──────────────────────────────────────────────────────
 
@@ -344,8 +333,9 @@ class VisionTool:
             }
         """
         # 检查 API Key
+        started = time.perf_counter()
         if not self._api_key:
-            return self._error_result("DASHSCOPE_API_KEY 未配置，请在 .env 或环境变量中配置。")
+            return self._error_result("DeepSeek/LLM API Key 未配置，请配置 DEEPSEEK_API_KEY 或 LLM_API_KEY。")
 
         # 构造图片 URL
         try:
@@ -363,32 +353,26 @@ class VisionTool:
         last_error = ""
 
         for try_model in models_to_try:
-            try:
-                response = self._call_api_sync(
-                    messages,
-                    model=try_model,
-                    temperature=0.3,
-                    max_tokens=2048,
-                )
-                data = response.json()
-                return self._parse_response(data, try_model)
+            for attempt in range(2):
+                try:
+                    response = self._call_api_sync(
+                        messages, model=try_model, temperature=0.3, max_tokens=2048,
+                    )
+                    result = self._parse_response(response.json(), try_model)
+                    result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+                    result["attempts"] = attempt + 1
+                    return result
+                except httpx.HTTPStatusError as e:
+                    last_error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+                except httpx.RequestError as e:
+                    last_error = f"请求错误: {e}"
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e}"
+                logger.warning("DeepSeek vision call failed (%s, attempt %s): %s", try_model, attempt + 1, last_error)
 
-            except httpx.HTTPStatusError as e:
-                last_error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
-                logger.warning(f"VL 模型调用失败 ({try_model}): {last_error}")
-                continue
-
-            except httpx.RequestError as e:
-                last_error = f"请求错误: {e}"
-                logger.warning(f"VL 模型请求错误 ({try_model}): {last_error}")
-                continue
-
-            except Exception as e:
-                last_error = f"{type(e).__name__}: {e}"
-                logger.error(f"VL 模型调用异常 ({try_model}): {last_error}")
-                continue
-
-        return self._error_result(f"所有 VL 模型调用均失败: {last_error}")
+        result = self._error_result(f"DeepSeek 视觉模型调用失败: {last_error}")
+        result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return result
 
     def recognize_from_base64(
         self,
@@ -441,8 +425,9 @@ class VisionTool:
                 "model_used": str,          # type=complete 时
             }
         """
+        started = time.perf_counter()
         if not self._api_key:
-            yield {"type": "error", "content": "DASHSCOPE_API_KEY 未配置"}
+            yield {"type": "error", "content": "DeepSeek/LLM API Key 未配置"}
             return
 
         try:
@@ -511,6 +496,9 @@ class VisionTool:
                     "raw_response": full_response,
                     "model_used": try_model,
                     "token_usage": token_usage or None,
+                    "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "structured_result": self._parse_structured_content(full_response).get("value"),
+                    "parse_status": self._parse_structured_content(full_response).get("status"),
                 }
                 return
 
@@ -534,6 +522,7 @@ class VisionTool:
 
         msg = choices[0].get("message", {})
         raw = msg.get("content", "")
+        parsed = self._parse_structured_content(raw)
 
         return {
             "success": True,
@@ -541,7 +530,33 @@ class VisionTool:
             "raw_response": raw,
             "error": None,
             "model_used": model,
+            "token_usage": data.get("usage"),
+            "structured_result": parsed.get("value"),
+            "parse_status": parsed.get("status"),
         }
+
+    @staticmethod
+    def _parse_structured_content(raw: str) -> Dict[str, Any]:
+        """Parse JSON returned directly or inside a Markdown fence."""
+        if not isinstance(raw, str) or not raw.strip():
+            return {"status": "missing", "value": None}
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.rstrip().endswith("```"):
+                text = text.rstrip()[:-3].rstrip()
+        candidates = [text]
+        start, end = text.find("{"), text.rfind("}")
+        if start >= 0 and end > start:
+            candidates.append(text[start:end + 1])
+        for candidate in candidates:
+            try:
+                value = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                return {"status": "valid", "value": value}
+        return {"status": "invalid_or_truncated", "value": None}
 
     def _error_result(self, error: str) -> Dict[str, Any]:
         """构建错误结果。"""
@@ -551,6 +566,11 @@ class VisionTool:
             "raw_response": "",
             "error": error,
             "model_used": "",
+            "token_usage": None,
+            "structured_result": None,
+            "parse_status": "error",
+            "latency_ms": None,
+            "attempts": 0,
         }
 
 
@@ -571,7 +591,7 @@ class VisionToolAdapter(BaseTool):
 
     name = "vision_tool"
     description = (
-        "多模态图片理解：截图直接发给 Qwen-VL，"
+        "多模态图片理解：截图直接发给 DeepSeek-V4.1-Flash，"
         "输出题目文字、LaTeX 公式、图形空间关系的结构化描述。"
     )
     version = "2.0.0"
@@ -655,6 +675,9 @@ class VisionToolAdapter(BaseTool):
                         "model_used": result.get("model_used", ""),
                         "raw_response": result.get("raw_response", ""),
                         "token_usage": result.get("token_usage"),
+                        "structured_result": result.get("structured_result"),
+                        "parse_status": result.get("parse_status"),
+                        "latency_ms": result.get("latency_ms"),
                     },
                 )
             else:

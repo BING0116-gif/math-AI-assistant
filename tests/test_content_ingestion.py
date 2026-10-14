@@ -31,6 +31,7 @@ from app.data.models import (
 )
 from app.services.content_import import ContentImportService
 from app.services.document_parser import (
+    MODE_AUTO,
     MODE_MINERU,
     MODE_QUICK,
     ContentParseError,
@@ -38,6 +39,8 @@ from app.services.document_parser import (
     INVALID_PDF,
     PARSER_UNAVAILABLE,
     PARSE_FAILED,
+    _merge_worker_payloads,
+    _repage_worker_payload,
 )
 from app.services.knowledge_seed import seed_phase_one_calculus
 
@@ -127,6 +130,27 @@ async def create_parsed_batch(service, text, mode=MODE_QUICK):
 # §30 Parser
 # ══════════════════════════════════════════════════════════════════
 class TestParser:
+    def test_layout_worker_payloads_keep_real_page_numbers(self):
+        payload = {
+            "parser_name": "pp_structure_v3",
+            "parser_version": "paddleocr",
+            "markdown": "题干",
+            "pages": [{"page": 1, "text": "题干"}],
+            "blocks": [{"page": 1, "text": "题干", "bbox": [1, 2, 3, 4]}],
+        }
+        repaged = _repage_worker_payload(payload, 7)
+        merged = _merge_worker_payloads([repaged])
+        assert merged["pages"][0]["page"] == 7
+        assert merged["blocks"][0]["page"] == 7
+        assert merged["blocks"][0]["bbox"] == [1, 2, 3, 4]
+
+    def test_layout_worker_payloads_merge_pages_in_order(self):
+        first = _repage_worker_payload({"markdown": "第一页", "pages": [{"text": "第一页"}], "blocks": []}, 1)
+        second = _repage_worker_payload({"markdown": "第二页", "pages": [{"text": "第二页"}], "blocks": []}, 2)
+        merged = _merge_worker_payloads([first, second])
+        assert [page["page"] for page in merged["pages"]] == [1, 2]
+        assert merged["markdown"] == "第一页\n\n第二页"
+
     def test_quick_parses_valid_pdf(self, tmp_path):
         pdf = tmp_path / "valid.pdf"
         pdf.write_bytes(make_pdf("1. What is 1+1?\nA. 1\nB. 2\n"))
@@ -135,6 +159,24 @@ class TestParser:
         assert doc.page_mapping_uncertain is False
         assert len(doc.pages) == 1
         assert "1+1" in doc.markdown
+
+    @pytest.mark.asyncio
+    async def test_auto_mode_uses_light_parser_and_records_route(
+        self, service, engine, patch_global_session_factory, patch_storage_root
+    ):
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        batch, _ = await service.create_import(
+            admin_user_id="admin-1",
+            original_filename="auto.pdf",
+            content=make_pdf(MIXED_PDF_TEXT),
+            mode=MODE_AUTO,
+        )
+        parsed = await service.parse_import(batch.id)
+        assert parsed.status == "parsed"
+        assert parsed.stats["requested_parser_mode"] == MODE_AUTO
+        assert parsed.stats["routing"]["initial_parser"] == MODE_QUICK
+        assert parsed.stats["routing"]["selected_parser"] == MODE_QUICK
 
     def test_quick_rejects_invalid_pdf(self, tmp_path):
         pdf = tmp_path / "bad.pdf"
@@ -150,6 +192,24 @@ class TestParser:
         with pytest.raises(ContentParseError) as exc:
             parser.parse(str(pdf), MODE_MINERU)
         assert exc.value.code == PARSER_UNAVAILABLE
+
+    @pytest.mark.asyncio
+    async def test_import_mineru_unavailable_falls_back_to_quick(
+        self, service, engine, patch_global_session_factory, patch_storage_root, monkeypatch
+    ):
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        service._parser = DocumentParser(executable="")
+        batch, _ = await service.create_import(
+            admin_user_id="admin-1",
+            original_filename="fallback.pdf",
+            content=make_pdf(MIXED_PDF_TEXT),
+            mode=MODE_MINERU,
+        )
+        parsed = await service.parse_import(batch.id)
+        assert parsed.status == "parsed"
+        assert parsed.parser_name == MODE_QUICK
+        assert parsed.stats["fallback_reason"] == "mineru_parser_unavailable"
 
     def test_mineru_subprocess_failure(self, tmp_path):
         pdf = tmp_path / "valid.pdf"

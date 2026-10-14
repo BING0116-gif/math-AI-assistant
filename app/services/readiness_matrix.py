@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from app.config.settings import settings
+from app.config.settings import canonical_model_name, settings
 
 CapabilityStatus = Literal["ok", "warning", "blocker"]
 
@@ -87,8 +87,8 @@ def _masked(key: str | None) -> dict[str, Any]:
 async def check_ai_analysis() -> CapabilityResult:
     """AI 题目分析：provider 与 DeepSeek key 配置。"""
     provider = (settings.CONTENT_AI_PROVIDER or "").strip() or "mock"
-    deepseek_key = settings.DEEPSEEK_API_KEY
-    model = settings.QWEN_MODEL if provider in {"qwen", "auto"} else settings.DEEPSEEK_MODEL
+    deepseek_key = settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY
+    model = canonical_model_name(settings.DEEPSEEK_MODEL) or "deepseek-flash"
     details: dict[str, Any] = {
         "provider": provider,
         "model": model,
@@ -153,14 +153,14 @@ async def check_ai_analysis() -> CapabilityResult:
             details=details,
         )
 
-    model = (settings.DEEPSEEK_MODEL or "").strip()
+    model = canonical_model_name(settings.DEEPSEEK_MODEL) or "deepseek-flash"
     if model in _DEPRECATED_ON_DEEPSEEK:
         return CapabilityResult(
             id="ai_analysis",
             name="AI 题目分析",
             status="warning",
             reason=f"模型 {model} 在 DeepSeek 端点已下线，请求会 404",
-            remediation="改用 deepseek-v4-flash（可用模型以 /v1/models 实测为准）",
+            remediation="改用 deepseek-flash",
             details=details,
         )
 
@@ -174,14 +174,14 @@ async def check_ai_analysis() -> CapabilityResult:
 
 
 async def check_vision_ocr() -> CapabilityResult:
-    """视觉识题：仅读 DASHSCOPE_API_KEY。
+    """视觉识题：使用共享 DeepSeek/LLM API Key。
 
     注意：轻量探测无法验证 key 是否真实有效，只能检测缺失与格式异常。
     """
-    key = settings.DASHSCOPE_API_KEY
+    key = settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY
     model = settings.VISION_MODEL
     details: dict[str, Any] = {
-        "dashscope_key": _masked(key),
+        "deepseek_key": _masked(key),
         "model": model,
     }
 
@@ -195,7 +195,7 @@ async def check_vision_ocr() -> CapabilityResult:
             name="视觉识题",
             status="warning",
             reason=f"视觉链路模型能力不匹配：{capability['reason']}",
-            remediation="将 VISION_MODEL 改为支持 vision 的已登记模型（如 qwen-vl-plus）",
+            remediation="将 VISION_MODEL 改为 deepseek-flash",
             details=details,
         )
 
@@ -204,8 +204,8 @@ async def check_vision_ocr() -> CapabilityResult:
             id="vision_ocr",
             name="视觉识题",
             status="blocker",
-            reason="DASHSCOPE_API_KEY 为空，拍照上传链路完全不可用",
-            remediation="配置有效的 DASHSCOPE_API_KEY；或改用 deepseek-v4-flash-vision-exp 并同步改链路代码",
+            reason="DEEPSEEK_API_KEY/LLM_API_KEY 均为空，拍照上传链路完全不可用",
+            remediation="配置 DEEPSEEK_API_KEY 或 LLM_API_KEY",
             details=details,
         )
 
@@ -214,7 +214,7 @@ async def check_vision_ocr() -> CapabilityResult:
             id="vision_ocr",
             name="视觉识题",
             status="warning",
-            reason=f"DASHSCOPE_API_KEY 长度异常（{len(key)}），疑似无效或占位值",
+            reason=f"DeepSeek API Key 长度异常（{len(key)}），疑似无效或占位值",
             remediation="核对 .env 中的 key 是否为完整值",
             details=details,
         )
@@ -230,12 +230,12 @@ async def check_vision_ocr() -> CapabilityResult:
 
 async def check_assessment() -> CapabilityResult:
     """智能组卷：文本 LLM key 与章节数据。"""
-    llm_key = settings.LLM_API_KEY
-    fallback_key = settings.DASHSCOPE_API_KEY
-    math_model = (settings.LLM_MATH_MODEL or "").strip()
+    llm_key = settings.LLM_API_KEY or settings.DEEPSEEK_API_KEY
+    fallback_key = ""
+    math_model = canonical_model_name(settings.LLM_MATH_MODEL) or "deepseek-flash"
     details: dict[str, Any] = {
         "llm_key": _masked(llm_key),
-        "fallback_dashscope_key": _masked(fallback_key),
+        "fallback_deepseek_key": _masked(fallback_key),
         "math_model": math_model,
     }
 
@@ -244,8 +244,8 @@ async def check_assessment() -> CapabilityResult:
             id="assessment",
             name="智能组卷",
             status="blocker",
-            reason="LLM_API_KEY 为空，且回退的 DASHSCOPE_API_KEY 也为空",
-            remediation="在 .env 配置 LLM_API_KEY，并在 docker-compose.yml web.environment 中透传",
+            reason="LLM_API_KEY/DEEPSEEK_API_KEY 均为空",
+            remediation="在 .env 配置 DEEPSEEK_API_KEY 或 LLM_API_KEY，并在 docker-compose.yml web.environment 中透传",
             details=details,
         )
 
@@ -282,7 +282,7 @@ async def check_assessment() -> CapabilityResult:
             name="智能组卷",
             status="warning",
             reason=f"LLM_MATH_MODEL={math_model} 为 qwen 系列，打 DeepSeek 端点会 404",
-            remediation="改为 deepseek-v4-flash",
+            remediation="改为 deepseek-flash",
             details=details,
         )
     if math_model in _DEPRECATED_ON_DEEPSEEK:
@@ -291,7 +291,7 @@ async def check_assessment() -> CapabilityResult:
             name="智能组卷",
             status="warning",
             reason=f"LLM_MATH_MODEL={math_model} 在 DeepSeek 端点已下线",
-            remediation="改为 deepseek-v4-flash",
+            remediation="改为 deepseek-flash",
             details=details,
         )
     if not llm_key:
@@ -299,8 +299,8 @@ async def check_assessment() -> CapabilityResult:
             id="assessment",
             name="智能组卷",
             status="warning",
-            reason="LLM_API_KEY 为空，已回退到 DASHSCOPE_API_KEY",
-            remediation="显式配置 LLM_API_KEY，避免依赖回退",
+            reason="LLM_API_KEY 为空，已使用 DEEPSEEK_API_KEY",
+            remediation="建议统一配置 DEEPSEEK_API_KEY",
             details=details,
         )
 

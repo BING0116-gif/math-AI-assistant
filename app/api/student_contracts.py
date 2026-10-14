@@ -148,6 +148,22 @@ class MasteryResponse(BaseModel):
     mastery: dict[str, MasteryEvidence]
 
 
+class QuestionExample(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    question_id: str
+    question_type: str
+    content: str
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    difficulty: int = 3
+    answer: str = ""
+    analysis: str = ""
+
+
+class KnowledgeExamplesResponse(BaseModel):
+    examples: list[QuestionExample] = Field(default_factory=list)
+
+
 class CourseSummary(BaseModel):
     id: str
     code: str

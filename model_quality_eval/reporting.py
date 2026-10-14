@@ -285,13 +285,17 @@ def compare_reports(
         failures.append("filtered runs cannot be used for release comparison")
     if candidate_summary.get("hard_failure_count", 0):
         failures.append("candidate contains hard failures")
-    if _regression(candidate_summary.get("weighted_score"), base_summary.get("weighted_score"), 1.0):
+    weighted_limit = gates.blocking.weighted_score_regression_max if gates else 1.0
+    dimension_limit = gates.blocking.dimension_regression_max if gates else 5.0
+    latency_limit = gates.blocking.latency_regression_max_pct if gates else 20.0
+    cost_limit = gates.blocking.cost_regression_max_pct if gates else 15.0
+    if _regression(candidate_summary.get("weighted_score"), base_summary.get("weighted_score"), weighted_limit):
         failures.append("weighted score regressed by more than 1 point")
     dimension_deltas: dict[str, float | None] = {}
     for name in sorted(set(base_summary.get("dimensions", {})) | set(candidate_summary.get("dimensions", {}))):
         old, new = base_summary.get("dimensions", {}).get(name), candidate_summary.get("dimensions", {}).get(name)
         dimension_deltas[name] = round(new - old, 2) if old is not None and new is not None else None
-        if _regression(new, old, 5.0):
+        if _regression(new, old, dimension_limit):
             failures.append(f"dimension {name} regressed by more than 5 points")
     category_deltas: dict[str, float | None] = {}
     base_category_rates = base_summary.get("category_pass_rates", base_summary.get("categories", {}))
@@ -303,12 +307,12 @@ def compare_reports(
             failures.append(f"category {name} regressed by more than 10 points")
     base_p95 = base_summary.get("latency", {}).get("p95_ms")
     candidate_p95 = candidate_summary.get("latency", {}).get("p95_ms")
-    if base_p95 and candidate_p95 and candidate_p95 > base_p95 * 1.2:
-        failures.append("P95 latency increased by more than 20 percent")
+    if base_p95 and candidate_p95 and candidate_p95 > base_p95 * (1 + latency_limit / 100):
+        failures.append(f"P95 latency increased by more than {latency_limit:g} percent")
     base_cost = base_summary.get("cost", {}).get("average")
     candidate_cost = candidate_summary.get("cost", {}).get("average")
-    if base_cost and candidate_cost and candidate_cost > base_cost * 1.15 and not allow_cost_regression:
-        failures.append("average cost increased by more than 15 percent")
+    if base_cost and candidate_cost and candidate_cost > base_cost * (1 + cost_limit / 100) and not allow_cost_regression:
+        failures.append(f"average cost increased by more than {cost_limit:g} percent")
     if allow_cost_regression and (not cost_exception_note or len(cost_exception_note.strip()) < 10):
         failures.append("cost regression exception requires a substantive human review note")
     if candidate.get("status") in {"incomplete", "needs_human_review"}:
@@ -316,6 +320,7 @@ def compare_reports(
     gate_result = evaluate_gates(baseline, candidate, gates) if gates else None
     if gate_result:
         failures.extend(f"quality gate: {item}" for item in gate_result["failures"])
+    failure_case_ids = sorted({item.get("case_id") for item in candidate_summary.get("hard_failures", []) if item.get("case_id")})
     return {
         "comparison_schema_version": "1.0",
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -324,6 +329,7 @@ def compare_reports(
         "candidate_run_id": candidate["run_id"],
         "status": "rejected" if failures else "approved",
         "failures": sorted(set(failures)),
+        "failure_case_ids": failure_case_ids,
         "weighted_score_delta": (
             round(candidate_summary["weighted_score"] - base_summary["weighted_score"], 2)
             if candidate_summary.get("weighted_score") is not None and base_summary.get("weighted_score") is not None
@@ -427,6 +433,9 @@ def comparison_markdown(comparison: dict[str, Any]) -> str:
         "",
     ]
     lines.extend(f"- {failure}" for failure in comparison["failures"] or ["全部门禁通过"])
+    if comparison.get("failure_case_ids"):
+        lines.extend(["", "## 可定位失败样例", ""])
+        lines.append("- " + ", ".join(f"`{case_id}`" for case_id in comparison["failure_case_ids"]))
     return "\n".join(lines) + "\n"
 
 

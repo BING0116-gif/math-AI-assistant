@@ -3,8 +3,8 @@
 
 当前技术栈：
   - 执行模型由调用方注入（behavior_tracker.set_llm_classifier），主链路为 DeepSeek 主模型；
-  - 若需降本，可改为快速模型（settings.LLM_MATH_MODEL，默认 qwen-turbo）；
-  - 识图（vision_tool / qwen-vl-*）与本分类链路无关。
+  - 快速模型使用 settings.LLM_MATH_MODEL（默认 deepseek-flash）；
+  - 识图使用同一模型，但采用独立的视觉提示词。
 
 设计原则:
     1. 枚举约束 → 消除 LLM 自由发挥

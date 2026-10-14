@@ -60,6 +60,13 @@ def normalize_section(name: str) -> Optional[str]:
 _SECTION_HEADER_RE = re.compile(r"^\s*([一二三四五六七八九十]+)[、．.]\s*(.+?)\s*$")
 # 顶层题号：1. / 1、 / 1． / 1)  （要求行首）
 _TOP_NUM_RE = re.compile(r"^\s*(\d+)\s*[\.．、)]\s*")
+# MinerU/PyMuPDF 有时会把页内相邻两题压进同一个文本块，例如：
+# "...处（ ）.8．设 f(x)=..."。只有在句末标点、题号和典型题目引导词
+# 同时出现时才认定为嵌入边界，避免切断公式中的 1. / 2.。
+_EMBEDDED_TOP_NUM_RE = re.compile(
+    r"(?<=[。！？；;）).])\s*(\d{1,3})\s*[\.．、)]\s*"
+    r"(?=(?:设|已知|若|求|计算|证明|判断|下列|函数|填|试|求证))"
+)
 # set 识别：函数与极限自测题A / ...B / ...C
 _SET_RE = re.compile(r"函数与极限自测题\s*([A-Ca-c])")
 _ANSWER_MARK_RE = re.compile(r"解答与提示|解答|答\s*案")
@@ -79,6 +86,9 @@ class SplitQuestion:
     question_number: Optional[str] = None
     page_start: Optional[int] = None
     page_end: Optional[int] = None
+    source_bbox: Optional[List[float]] = None
+    # 每页一个区域，支持跨页题目和同页非连续版面。
+    source_regions: List[Dict[str, object]] = field(default_factory=list)
     # 归一化 section key：choice / fill / calculation / proof
     section: Optional[str] = None
     # set：A / B / C（无 set 时为 None）
@@ -147,6 +157,11 @@ def _clean_block_text(text: str) -> str:
     # 页脚页码行（块内可能混入）移除
     lines = [ln for ln in lines if not _PAGE_NUM_RE.match(ln)]
     return "\n".join(lines).strip()
+
+
+def _has_unrenderable_glyphs(text: str) -> bool:
+    """检测 PDF 字体映射失败常见的私有区/替换字符，不擅自猜数学含义。"""
+    return any("\ue000" <= ch <= "\uf8ff" or ch == "�" for ch in (text or ""))
 
 
 def _parse_inline_options(stem_text: str):
@@ -272,6 +287,10 @@ def _split_blocks(blocks: List[PageBlock]) -> List[SplitQuestion]:
     cur: Optional[SplitQuestion] = None  # 正在收集的顶层题
     seen_identity: set = set()
 
+    # 解析器输出的一个 block 可能包含页内相邻的多道题；先做保守展开，
+    # 后面的状态机仍然负责 section、跨页和答案区语义。
+    blocks = _expand_embedded_boundaries(blocks)
+
     for block in blocks:
         if block.kind == BLOCK_KIND_EQUATION and region != "answer":
             # 题目区独立公式块：并入当前顶层题（跨行/跨页公式不新起题）
@@ -339,6 +358,12 @@ def _split_blocks(blocks: List[PageBlock]) -> List[SplitQuestion]:
                 section=section,
                 set=set_id,
                 detected_question_type=_detect_section_type(section),
+                source_bbox=list(block.bbox) if isinstance(block.bbox, list) else None,
+                source_regions=(
+                    [{"page": block.page, "bbox": list(block.bbox[:4])}]
+                    if block.page is not None and isinstance(block.bbox, list) and len(block.bbox) >= 4
+                    else []
+                ),
             )
             seen_identity.add(identity)
             continue
@@ -354,6 +379,31 @@ def _split_blocks(blocks: List[PageBlock]) -> List[SplitQuestion]:
     return splits
 
 
+def _expand_embedded_boundaries(blocks: List[PageBlock]) -> List[PageBlock]:
+    """把同一文本块内可确认的顶层题号边界展开为多个 block。
+
+    仅处理明确的中文题目引导词，保守失败时保留原块，避免破坏公式和
+    普通正文。原 page/kind 信息完整继承，便于 provenance 和 PDF 对照。
+    """
+    expanded: List[PageBlock] = []
+    for block in blocks:
+        text = block.text or ""
+        matches = list(_EMBEDDED_TOP_NUM_RE.finditer(text))
+        if not matches:
+            expanded.append(block)
+            continue
+        start = 0
+        for match in matches:
+            prefix = text[start:match.start()].strip()
+            if prefix:
+                expanded.append(PageBlock(text=prefix, page=block.page, kind=block.kind, bbox=block.bbox))
+            start = match.start()
+        tail = text[start:].strip()
+        if tail:
+            expanded.append(PageBlock(text=tail, page=block.page, kind=block.kind, bbox=block.bbox))
+    return expanded
+
+
 def _append_to_current(cur: Optional[SplitQuestion], block: PageBlock) -> None:
     if cur is None:
         return
@@ -362,6 +412,30 @@ def _append_to_current(cur: Optional[SplitQuestion], block: PageBlock) -> None:
             cur.page_start = block.page
         if cur.page_end is None or block.page > cur.page_end:
             cur.page_end = block.page
+    if isinstance(block.bbox, list) and len(block.bbox) >= 4:
+        page = block.page
+        if page is not None:
+            region = next((r for r in cur.source_regions if r.get("page") == page), None)
+            if region is None:
+                cur.source_regions.append({"page": page, "bbox": list(block.bbox[:4])})
+            else:
+                old = region.get("bbox")
+                if isinstance(old, list) and len(old) >= 4:
+                    region["bbox"] = [
+                        min(float(old[0]), float(block.bbox[0])),
+                        min(float(old[1]), float(block.bbox[1])),
+                        max(float(old[2]), float(block.bbox[2])),
+                        max(float(old[3]), float(block.bbox[3])),
+                    ]
+        if not isinstance(cur.source_bbox, list) or len(cur.source_bbox) < 4:
+            cur.source_bbox = list(block.bbox[:4])
+        else:
+            cur.source_bbox = [
+                min(cur.source_bbox[0], block.bbox[0]),
+                min(cur.source_bbox[1], block.bbox[1]),
+                max(cur.source_bbox[2], block.bbox[2]),
+                max(cur.source_bbox[3], block.bbox[3]),
+            ]
     chunk = _clean_block_text(block.text)
     if not chunk:
         return
@@ -380,6 +454,9 @@ def _postprocess(splits: List[SplitQuestion]) -> None:
     for sq in splits:
         if not sq.raw_text:
             continue
+        if _has_unrenderable_glyphs(sq.raw_text):
+            if "unrenderable_glyphs" not in sq.warnings:
+                sq.warnings.append("unrenderable_glyphs")
         if _SUBQ_RE.search(sq.raw_text):
             if "contains_subquestions" not in sq.warnings:
                 sq.warnings.append("contains_subquestions")
@@ -392,6 +469,18 @@ def _postprocess(splits: List[SplitQuestion]) -> None:
             if leak:
                 if "possible_answer_leak" not in sq.warnings:
                     sq.warnings.append("possible_answer_leak")
+
+    # Phase 0：按套题 + 大题检查题号是否连续。这个检查只产生风险标记，
+    # 不会擅自重排或补题号，避免把原 PDF 的真实顺序改坏。
+    grouped: Dict[tuple, List[SplitQuestion]] = {}
+    for sq in splits:
+        grouped.setdefault((sq.set, sq.section), []).append(sq)
+    for group in grouped.values():
+        nums = [int(sq.question_number) for sq in group if (sq.question_number or "").isdigit()]
+        if nums and sorted(nums) != list(range(1, len(nums) + 1)):
+            for sq in group:
+                if "question_number_gap" not in sq.warnings:
+                    sq.warnings.append("question_number_gap")
 
 
 # 兼容旧调用：content_import 曾用 guess_option_letters 预填 options。

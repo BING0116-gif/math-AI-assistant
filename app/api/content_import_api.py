@@ -1,7 +1,7 @@
 """内容导入管理 API — 管理员专用（Step 1.1-C2 / 1.1-D）。
 
 Step 1.1-C2 提供：
-- POST  /api/admin/content/imports                                  上传 PDF（quick 同步解析；MinerU 异步任务，返回 parse_task_id）
+- POST  /api/admin/content/imports                                  上传 PDF（quick / MinerU 均进入异步解析任务，返回 parse_task_id）
 - GET   /api/admin/content/imports                                  列出批次
 - GET   /api/admin/content/imports/{id}                             批次详情
 - GET   /api/admin/content/imports/{id}/candidates                  列出候选
@@ -50,7 +50,7 @@ from app.services.content_review import (
 )
 from app.services.content_stats import ContentStatsService, get_content_stats_service
 from app.services.document_parser import (
-    MODE_MINERU,
+    MODE_AUTO,
     MODE_QUICK,
     ContentParseError,
 )
@@ -105,6 +105,8 @@ def _serialize_candidate(cand) -> Dict[str, Any]:
         "candidate_index": cand.candidate_index,
         "source_page_start": cand.source_page_start,
         "source_page_end": cand.source_page_end,
+        "source_bbox": cand.source_bbox,
+        "source_regions": cand.source_regions,
         "source_question_number": cand.source_question_number,
         "stem": cand.stem,
         "options": cand.options,
@@ -193,10 +195,10 @@ def _serialize_question(q) -> Dict[str, Any]:
 async def create_import(
     request: Request,
     file: UploadFile = File(...),
-    mode: str = Form(MODE_QUICK),
+    mode: str = Form(MODE_AUTO),
     idempotency_key: Optional[str] = Form(None),
 ):
-    """上传 PDF 并同步解析（mineru / quick）。返回批次（含解析后候选统计）。"""
+    """上传 PDF 并创建异步解析任务（auto / MinerU / quick）。返回批次和任务 ID。"""
     require_admin_role(request)
     admin_id = _admin_user_id(request)
     content = await file.read()
@@ -211,17 +213,14 @@ async def create_import(
         )
         task_id = None
         if created:
-            if mode == MODE_MINERU:
-                # P0-1：MinerU 解析移出请求线程 → 投递后台任务立即返回，Worker 执行解析
-                task = await enqueue_task(
-                    KIND_IMPORT_PARSE,
-                    batch.id,
-                    payload={"mode": mode},
-                    max_retries=3,
-                )
-                task_id = task.id
-            else:
-                batch = await service.parse_import(batch.id)
+            # quick / MinerU 统一进入持久化任务队列，前端可持续展示真实解析阶段。
+            task = await enqueue_task(
+                KIND_IMPORT_PARSE,
+                batch.id,
+                payload={"mode": mode},
+                max_retries=3,
+            )
+            task_id = task.id
         data = {"batch": _serialize_batch(batch), "created": created}
         if task_id:
             data["batch"]["parse_task_id"] = task_id
@@ -250,6 +249,22 @@ async def get_import(request: Request, batch_id: str):
     service: ContentImportService = get_content_import_service()
     batch = await _require_owned_batch(service, batch_id, _admin_user_id(request))
     return {"code": 0, "data": _serialize_batch(batch)}
+
+
+@router.post("/imports/{batch_id}/retry")
+async def retry_import(request: Request, batch_id: str):
+    """重新投递失败批次；原 PDF 不重复上传。"""
+    require_admin_role(request)
+    service: ContentImportService = get_content_import_service()
+    await _require_owned_batch(service, batch_id, _admin_user_id(request))
+    try:
+        batch = await service.retry_import(batch_id)
+        task = await enqueue_task(KIND_IMPORT_PARSE, batch.id, payload={"mode": batch.parser_name}, max_retries=3)
+        data = _serialize_batch(batch)
+        data["parse_task_id"] = task.id
+        return {"code": 0, "data": data}
+    except ContentParseError as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
 
 
 @router.get("/imports/{batch_id}/candidates")
@@ -353,7 +368,7 @@ async def update_source_license(request: Request, id: str, body: LicenseUpdateRe
 
 
 @router.get("/source-documents/{id}/pages/{page}/preview")
-async def preview_source_page(request: Request, id: str, page: int):
+async def preview_source_page(request: Request, id: str, page: int, bbox: Optional[str] = None):
     """渲染来源 PDF 指定页为 PNG（admin-only，PyMuPDF）。
 
     安全：页码 bounds 校验 + storage_key 防 path traversal（service 层），
@@ -367,7 +382,15 @@ async def preview_source_page(request: Request, id: str, page: int):
     if doc.created_by != _admin_user_id(request):
         raise HTTPException(status_code=403, detail="无权访问其他管理员的来源文档")
     try:
-        image_data = await service.render_page_preview(id, page)
+        parsed_bbox = None
+        if bbox:
+            try:
+                parsed_bbox = [float(part.strip()) for part in bbox.split(",")]
+            except ValueError:
+                raise HTTPException(status_code=400, detail="bbox 格式应为 x0,y0,x1,y1")
+            if len(parsed_bbox) != 4:
+                raise HTTPException(status_code=400, detail="bbox 必须包含 4 个坐标")
+        image_data = await service.render_page_preview(id, page, parsed_bbox)
     except ContentParseError as e:
         raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
     return Response(content=image_data, media_type="image/png")

@@ -61,7 +61,7 @@
             </div>
             <select v-model="store.filter.category" class="filter-select" aria-label="按分类筛选" @change="onFilterChange">
               <option value="">科目：全部</option>
-              <option v-for="cat in store.availableCategories" :key="cat" :value="cat">科目：{{ cat }}</option>
+              <option v-for="cat in store.availableCategories" :key="cat" :value="cat">科目：{{ kpLabel(cat) }}</option>
             </select>
             <label class="eb-search">
               <Search class="ic-14" :stroke-width="1.75" aria-hidden="true" />
@@ -192,6 +192,7 @@ import { useErrorBookStore } from '@/stores/errorBookStore'
 import { getDueReviews } from '@/api/learning'
 import { useErrorBookMetrics } from '@/composables/useErrorBookMetrics'
 import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
+import { ensureKnowledgeNames, kpLabel } from '@/utils/knowledgeNames'
 
 const route = useRoute()
 const router = useRouter()
@@ -402,6 +403,7 @@ function handleKeydown(e) {
  * Lifecycle
  * ============================================================ */
 onMounted(async () => {
+  ensureKnowledgeNames()
   await Promise.allSettled([
     store.loadErrors().catch(() => ElMessage.error('错题本加载失败，请检查网络后重试')),
     getDueReviews(true).then(({ data }) => { canonicalReviews.value = data.items || [] }).catch(() => { canonicalReviews.value = [] }),

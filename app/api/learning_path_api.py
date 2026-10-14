@@ -30,6 +30,7 @@ class PathStepOut(BaseModel):
 class PathPointOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    id: str = ""
     code: str
     name: str
     mastery: float

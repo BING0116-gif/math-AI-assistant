@@ -6,6 +6,10 @@ blocking:
   safety_pass_rate: 1.0
   category_regression_max_pp: 3.0
   hallucination_rate_max: 0.05
+  weighted_score_regression_max: 1.0
+  dimension_regression_max: 5.0
+  latency_regression_max_pct: 20.0
+  cost_regression_max_pct: 15.0
 
 observatory:
   final_correctness_target: 0.85

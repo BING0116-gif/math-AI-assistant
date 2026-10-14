@@ -9,21 +9,24 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - AI_ENABLED=${AI_ENABLED:-true}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_API_BASE=${LLM_API_BASE:-https://api.deepseek.com/v1}
-      - LLM_MODEL=${LLM_MODEL:-deepseek-v4-flash}
-      - LLM_MATH_MODEL=${LLM_MATH_MODEL:-deepseek-v4-flash}
-      - VISION_MODEL=${VISION_MODEL:-qwen-vl-plus}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-flash}
+      - LLM_MATH_MODEL=${LLM_MATH_MODEL:-deepseek-flash}
+      - VISION_MODEL=${VISION_MODEL:-deepseek-flash}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
-      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-v4-flash}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-flash}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       - DEEPSEEK_TIMEOUT_SECONDS=${DEEPSEEK_TIMEOUT_SECONDS:-60}
       # 内容审核链路的 AI provider：mock / deepseek / qwen / auto。
       # compose environment 是严格白名单，.env 的值不会自动进容器；
       # 不显式透传 → 容器内为空 → 回退默认 "mock"，UI 顶部会显示「AI：mock」。
       - CONTENT_AI_PROVIDER=${CONTENT_AI_PROVIDER:-mock}
+      - LAYOUT_WORKER_URL=${LAYOUT_WORKER_URL:-}
+      - LAYOUT_WORKER_TIMEOUT_SECONDS=${LAYOUT_WORKER_TIMEOUT_SECONDS:-120}
+      - LAYOUT_WORKER_PAGEWISE=${LAYOUT_WORKER_PAGEWISE:-true}
       - DEBUG=${DEBUG:-false}
       # compose environment 是严格白名单：不透传则容器内用代码默认值 30，
       # .env 里改 RATE_LIMIT_PER_MINUTE 不会生效。
@@ -87,6 +90,9 @@ services:
       - ./data_processing:/app/data_processing
       - ./frontend:/app/frontend
       - ./data:/app/data
+      # PDF 原文件与解析产物必须跨 web 容器重建持久化，
+      # 否则 PostgreSQL 中的批次仍在，但审核页无法回看原 PDF。
+      - ./runtime/content:/app/runtime/content
       - embedding_cache:/app/runtime/model-cache
       - ./runtime/animations:/app/runtime/animations
     restart: unless-stopped
@@ -113,8 +119,67 @@ services:
     networks:
       - mathai-network
 
+  # 持久化消费 PDF 解析与 AI 分析任务；web 只负责 API，不在请求进程内执行长任务。
+  content-worker:
+    build: .
+    entrypoint: ["python", "-m", "app.workers.content_worker"]
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-mathai}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-math_ai}
+      - ASYNC_DATABASE_URL=postgresql+asyncpg://${DB_USER:-mathai}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-math_ai}
+      - REDIS_URL=redis://redis:6379/0
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      - CONTENT_AI_PROVIDER=${CONTENT_AI_PROVIDER:-mock}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_API_BASE=${LLM_API_BASE:-https://api.deepseek.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-flash}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-flash}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      - DEEPSEEK_TIMEOUT_SECONDS=${DEEPSEEK_TIMEOUT_SECONDS:-60}
+      - CONTENT_STORAGE_ROOT=/app/runtime/content
+      - LAYOUT_WORKER_URL=${LAYOUT_WORKER_URL:-}
+      - LAYOUT_WORKER_TIMEOUT_SECONDS=${LAYOUT_WORKER_TIMEOUT_SECONDS:-120}
+      - LAYOUT_WORKER_PAGEWISE=${LAYOUT_WORKER_PAGEWISE:-true}
+      - HF_HOME=/app/runtime/model-cache
+      - DB_USER=${DB_USER:-mathai}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - DB_NAME=${DB_NAME:-math_ai}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./data_processing:/app/data_processing
+      - ./runtime/content:/app/runtime/content
+      - embedding_cache:/app/runtime/model-cache
+    restart: unless-stopped
+    networks:
+      - mathai-network
+
+  # 可选重型版面解析 sidecar。默认不启动：docker compose --profile layout up -d layout-worker
+  # PaddleOCR/PP-StructureV3 等重量依赖只进入该镜像，不进入 web/content-worker。
+  layout-worker:
+    profiles: ["layout"]
+    build:
+      context: ./layout_worker
+      dockerfile: Dockerfile
+    environment:
+      - LAYOUT_ENGINE=${LAYOUT_ENGINE:-disabled}
+    expose:
+      - "8100"
+    restart: unless-stopped
+    networks:
+      - mathai-network
+
   db:
-    image: postgres:15-alpine
+    image: postgres:15.12-alpine
     environment:
       POSTGRES_USER: ${DB_USER:-mathai}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
@@ -139,7 +204,7 @@ services:
       - mathai-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.2-alpine
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -160,7 +225,7 @@ services:
       - mathai-network
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.13.6
     # 宿主端口用 16333/16334 而非 6333/6334：
     #   Windows NAT（WinNAT）为容器端口转发预留了 6330-6929 端口段，
     #   直接绑 6333 会被 Windows 拒绝（"access forbidden"）。

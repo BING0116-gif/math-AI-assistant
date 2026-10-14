@@ -24,10 +24,13 @@ STEP_VARIANT = "variant"
 STEP_REVIEW = "review"
 
 _STEP_TEMPLATES = (
-    (STEP_EXPLAIN, "知识点讲解", "按讲解梳理概念与关键公式", "/knowledge/{code}"),
-    (STEP_PRACTICE, "基础题巩固", "做一组该知识点基础题", "/practice?knowledge_point_codes={code}"),
-    (STEP_VARIANT, "变式题迁移", "完成变式练习检验迁移能力", "/practice?knowledge_point_codes={code}&variant=true"),
-    (STEP_REVIEW, "错题复盘", "复盘该知识点错题并核对复习计划", "/error-book"),
+    # 路径是导航、学习页是场所：四类步骤都落到 /knowledge/points/{point_id}/learn
+    # 的对应锚点区（?step=），由前端定位滚动；point_id 缺失时回退 code
+    # （学习页接口支持 id-or-code 解析）。
+    (STEP_EXPLAIN, "知识点讲解", "按讲解梳理概念与关键公式", "/knowledge/points/{point_id}/learn?step=explain"),
+    (STEP_PRACTICE, "基础题巩固", "做一组该知识点基础题", "/knowledge/points/{point_id}/learn?step=practice"),
+    (STEP_VARIANT, "变式题迁移", "完成变式练习检验迁移能力", "/knowledge/points/{point_id}/learn?step=variant"),
+    (STEP_REVIEW, "错题复盘", "复盘该知识点错题并核对复习计划", "/knowledge/points/{point_id}/learn?step=review"),
 )
 
 
@@ -60,6 +63,7 @@ def pick_weak_points(
         if attempts < 1 or mastery >= threshold:
             continue
         weak.append({
+            "id": str(state.get("id") or ""),
             "code": str(state.get("knowledge_point_code") or ""),
             "mastery": round(mastery, 4),
             "attempts_count": attempts,
@@ -118,7 +122,7 @@ def build_point_steps(point: Dict[str, Any]) -> List[Dict[str, Any]]:
             "type": step_type,
             "title": title,
             "description": description,
-            "route": route.format(code=point["code"]),
+            "route": route.format(point_id=point.get("id") or point.get("code"), code=point["code"]),
             "status": status,
         })
     return steps
@@ -139,6 +143,7 @@ def build_weekly_plan(ordered: List[Dict[str, Any]], *, capacity: int) -> List[D
 
 def serialize_point(point: Dict[str, Any]) -> Dict[str, Any]:
     return {
+        "id": point.get("id") or "",
         "code": point["code"],
         "name": point["name"],
         "mastery": point["mastery"],
@@ -199,6 +204,7 @@ async def build_learning_path(user_id: str) -> Dict[str, Any]:
         for row in state_rows:
             point = points.get(row.knowledge_point_code)
             snapshot.append({
+                "id": point.id if point else "",
                 "knowledge_point_code": row.knowledge_point_code,
                 "name": point.name if point else row.knowledge_point_code,
                 "attempts_count": row.attempts_count,

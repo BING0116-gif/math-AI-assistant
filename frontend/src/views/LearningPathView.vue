@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ArrowLeft, BookOpenCheck, CircleCheck, CircleDashed, CirclePlay, RefreshCw } from 'lucide-vue-next'
 import AppShell from '@/components/shell/AppShell.vue'
 import { getMyLearningPath, trackPathStep } from '@/api/learningPath'
+import { ensureKnowledgeNames, kpLabel } from '@/utils/knowledgeNames'
 
 interface PathStep {
   type: string
@@ -72,7 +73,7 @@ function goStep(step: PathStep, code: string) {
   router.push(step.route)
 }
 
-onMounted(load)
+onMounted(() => { ensureKnowledgeNames(); load() })
 </script>
 
 <template>
@@ -120,7 +121,7 @@ onMounted(load)
             </span>
           </header>
           <p v-if="point.prerequisites.length" class="path-point__prereq">
-            先修：{{ point.prerequisites.join('、') }}
+            先修：{{ point.prerequisites.map(kpLabel).join('、') }}
           </p>
 
           <ol class="path-point__steps">

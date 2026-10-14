@@ -53,6 +53,14 @@ const routes = [
     meta: { title: '知识点学习 - 数学AI助手', transition: 'slide-fade' },
   },
   {
+    // 别名入口：/knowledge/{code} 等旧式链接。学习页接口支持 id-or-code 解析，
+    // 因此这里直接复用同一视图，route.params.pointId 即可携带 code。
+    path: '/knowledge/:pointId',
+    name: 'KnowledgeLearningAlias',
+    component: () => import('@/views/KnowledgeLearningView.vue'),
+    meta: { title: '知识点学习 - 数学AI助手', transition: 'slide-fade' },
+  },
+  {
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/DashboardView.vue'),
@@ -123,6 +131,13 @@ const routes = [
     name: 'AdminQuality',
     component: () => import('@/views/AdminQualityView.vue'),
     meta: { title: '回答质量抽检 - 数学AI助手', transition: 'slide-fade', requiresAuth: true, requiresAdmin: true },
+  },
+  {
+    // 兜底 404：未知路径不再渲染空白页（历史 bug：/knowledge/{code} 等死链白屏）
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFoundView.vue'),
+    meta: { title: '页面不存在 - 数学AI助手' },
   },
 ]
 

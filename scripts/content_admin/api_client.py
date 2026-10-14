@@ -151,6 +151,9 @@ class ContentAdminClient:
             "POST", "/api/admin/content/imports", token=token, files=files, params={"mode": mode}
         )
 
+    def get_content_task(self, token: str, task_id: str) -> Dict[str, Any]:
+        return self._request_json("GET", f"/api/admin/content/tasks/{task_id}", token=token)
+
     # ── Candidates ──
     def list_candidates(self, token: str, batch_id: str) -> List[Dict[str, Any]]:
         return self._request_json("GET", f"/api/admin/content/imports/{batch_id}/candidates", token=token)

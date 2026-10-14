@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select, and_
 
-from app.config.settings import settings
+from app.config.settings import canonical_model_name, settings
 from app.data.database import get_db_session
 from app.data.models import Question, LearningRecord
 from app.services.difficulty_estimator import DifficultyEstimator
@@ -203,7 +203,7 @@ async def extract_problem_features(input_text: str, llm_service: Optional[LLMSer
             llm_service.generate(
                 prompt=f"请分析以下数学问题：\n{input_text[:500]}",
                 system_prompt=_EXTRACT_SYSTEM_PROMPT,
-                model=settings.LLM_MATH_MODEL or "qwen-turbo",
+                model=canonical_model_name(settings.LLM_MATH_MODEL) or "deepseek-flash",
                 temperature=0.1,
                 max_tokens=256,
                 use_cache=False,
@@ -790,7 +790,7 @@ class FollowUpRecommender:
             response = await asyncio.wait_for(
                 llm.generate(
                     prompt=prompt,
-                    model=settings.LLM_MATH_MODEL or "qwen-turbo",
+                    model=canonical_model_name(settings.LLM_MATH_MODEL) or "deepseek-flash",
                     temperature=0.7,
                     max_tokens=1024,
                     use_cache=False,

@@ -3,7 +3,7 @@ AI 能力状态管理 — 统一表达 AI 是否可用。
 
 遵循设计：
 - AI_ENABLED 配置开关（默认 true 保持兼容）
-- 最终可用性: AI_ENABLED == true AND (LLM_API_KEY 或 DASHSCOPE_API_KEY) 非空
+- 最终可用性: AI_ENABLED == true AND (DEEPSEEK_API_KEY 或 LLM_API_KEY) 非空
 - 提供明确状态对象，供业务代码查询
 - 不使用到处判断 None 的设计
 """
@@ -27,7 +27,7 @@ class AICapabilityState(BaseModel):
     """AI_ENABLED 配置是否为 true。"""
 
     has_api_key: bool
-    """文本 LLM 密钥（LLM_API_KEY，兜底 DASHSCOPE_API_KEY）是否非空。"""
+    """Shared DeepSeek/LLM key 是否非空。"""
 
     available: bool
     """AI 是否实际可用。"""
@@ -39,9 +39,7 @@ class AICapabilityState(BaseModel):
     def compute(cls) -> "AICapabilityState":
         """从当前配置计算状态。"""
         enabled_config = getattr(settings, "AI_ENABLED", True)
-        # 文本 LLM 密钥：优先 LLM_API_KEY，兜底 DASHSCOPE_API_KEY。
-        # 视觉链路（vision_tool / qwen-vl-plus）仍只读 DASHSCOPE_API_KEY，互不影响。
-        _text_key = (settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY) or ""
+        _text_key = (settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY) or ""
         has_api_key = bool(_text_key and _text_key.strip())
         available = enabled_config and has_api_key
 

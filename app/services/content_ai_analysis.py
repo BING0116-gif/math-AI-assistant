@@ -165,7 +165,11 @@ def _build_snapshot(cand: ContentImportCandidate) -> Dict[str, Any]:
     }
 
 
-def _compute_gate(analysis, verifier) -> tuple[str, Optional[str], List[str]]:
+def _compute_gate(
+    analysis,
+    verifier,
+    has_original_answer: bool = True,
+) -> tuple[str, Optional[str], List[str]]:
     """依据 verifier.verdict + analysis 健康检查计算最终 gate（§29）。"""
     reasons: List[str] = list(verifier.issues or [])
     verdict = (verifier.verdict or "pass").lower()
@@ -180,7 +184,11 @@ def _compute_gate(analysis, verifier) -> tuple[str, Optional[str], List[str]]:
             verdict = "doubtful"
 
     # 健康检查降级：pass 但答案自检不一致 → 至少 doubtful
-    if verdict == "pass" and not getattr(analysis.answer_check, "consistent", True):
+    if (
+        has_original_answer
+        and verdict == "pass"
+        and not getattr(analysis.answer_check, "consistent", True)
+    ):
         verdict = "doubtful"
         reasons.append("answer_check inconsistent")
 
@@ -296,7 +304,11 @@ class ContentAIAnalysisService:
             await self._transition(run_id, "verifying")
 
             _mark_partial_result(analysis, verifier, provider)
-            status, gate, reasons = _compute_gate(analysis, verifier)
+            status, gate, reasons = _compute_gate(
+                analysis,
+                verifier,
+                has_original_answer=bool((snapshot.get("original_answer") or "").strip()),
+            )
             await self._persist_terminal(
                 run_id,
                 status=status,

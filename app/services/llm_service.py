@@ -3,8 +3,8 @@ LLM 服务模块 — 统一管理大语言模型调用。
 
 当前技术栈：
   - 主文本模型：DeepSeek（OpenAI 兼容 API，settings.LLM_API_BASE / LLM_MODEL）
-  - 快速模型（分类/难度/AI 分析）：settings.LLM_MATH_MODEL（默认 qwen-turbo）
-  - 识图链路：千问 VL（vision_tool / qwen-vl-*），独立于本模块
+  - 快速模型（分类/难度/AI 分析）：settings.LLM_MATH_MODEL（默认 deepseek-flash）
+  - 识图链路：DeepSeek-V4.1-Flash，使用独立视觉提示词
 后续阶段：切换至本地部署模型（接口不变，只改配置）
 
 设计要点：
@@ -25,7 +25,7 @@ from typing import Any, AsyncGenerator, Dict, Iterable, List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
-from app.config.settings import MODEL_CAPABILITIES, settings
+from app.config.settings import MODEL_CAPABILITIES, canonical_base_url, canonical_model_name, settings
 
 logger = logging.getLogger(__name__)
 
@@ -182,10 +182,10 @@ class LLMService:
         if hasattr(self, "_initialized") and self._initialized:
             return
 
-        self.api_key = api_key or settings.LLM_API_KEY or settings.DASHSCOPE_API_KEY
-        self.api_base = api_base or settings.LLM_API_BASE
-        self.model = model or settings.LLM_MODEL
-        self.math_model = math_model or settings.LLM_MATH_MODEL
+        self.api_key = api_key or settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY
+        self.api_base = canonical_base_url(api_base or settings.LLM_API_BASE)
+        self.model = canonical_model_name(model or settings.LLM_MODEL) or "deepseek-flash"
+        self.math_model = canonical_model_name(math_model or settings.LLM_MATH_MODEL) or "deepseek-flash"
         self.temperature = settings.LLM_TEMPERATURE
         self.max_tokens = settings.LLM_MAX_TOKENS
 
@@ -197,8 +197,7 @@ class LLMService:
             self.provider = LLMProvider.DEEPSEEK
             # 端点是 DeepSeek 时，千问模型名必然 404（与 application.py 主模型对齐逻辑一致），
             # 数学/快速模型同步对齐，避免 qwen-* 遗留配置打向 DeepSeek。
-            if self.math_model.startswith("qwen"):
-                self.math_model = "deepseek-chat"
+            self.math_model = canonical_model_name(self.math_model) or "deepseek-flash"
 
         self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.api_base)
         self._cache: Dict[str, Tuple[LLMResponse, float]] = {}

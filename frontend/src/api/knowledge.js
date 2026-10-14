@@ -7,3 +7,4 @@ export const getCourseLearningMap = (courseId) => api.get(`/knowledge/courses/${
 export const getKnowledgePoint = (pointId) => api.get(`/knowledge/points/${pointId}`)
 export const getKnowledgePointLearning = (pointId) => api.get(`/knowledge/points/${pointId}/learning`)
 export const getKnowledgeMastery = (courseId) => api.get('/knowledge/mastery', { params: { course_id: courseId } })
+export const getKnowledgePointExamples = (pointId, limit = 3) => api.get(`/knowledge/points/${pointId}/examples`, { params: { limit } })

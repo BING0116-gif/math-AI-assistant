@@ -222,6 +222,32 @@ def live_budget_from_environment() -> float | None:
     return value if value > 0 else None
 
 
+def live_token_budget_from_environment() -> int | None:
+    """Read an explicit token ceiling; missing/invalid values fail closed."""
+    try:
+        value = int(os.environ["EVAL_MAX_TOKENS"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def live_timeout_seconds_from_environment() -> float | None:
+    """Read the per-case wall-clock timeout for live model calls."""
+    try:
+        value = float(os.environ["EVAL_TIMEOUT_SECONDS"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def accumulated_tokens(results: Iterable[CaseResult], stability_runs: Iterable[dict[str, Any]]) -> int | None:
+    usages = [item.execution.token_usage for item in results]
+    usages.extend((item.get("execution") or {}).get("token_usage") for item in stability_runs)
+    if any(usage is None or usage.get("total_tokens") is None for usage in usages):
+        return None
+    return sum(int(usage["total_tokens"]) for usage in usages)
+
+
 def accumulated_cost(results: Iterable[CaseResult], stability_runs: Iterable[dict[str, Any]]) -> float | None:
     costs = [item.execution.estimated_cost for item in results]
     costs.extend(CaseResult.model_validate(item).execution.estimated_cost for item in stability_runs)
@@ -477,11 +503,21 @@ async def run_live(
             selected_case_ids=[case.case_id for case in cases],
         )
     budget = live_budget_from_environment()
+    token_budget = live_token_budget_from_environment()
+    timeout_seconds = live_timeout_seconds_from_environment()
     if budget is None:
         return build_run_report(
             run_id=run_id, label=label, mode="live", **_report_metadata(bundle, cases),
             dataset_version=bundle.manifest.dataset_version, dataset_hash=bundle.computed_hash,
             results=[], model=None, prompt_version=None, status="incomplete", reason="EVAL_BUDGET_NOT_CONFIGURED",
+            full_dataset=len(cases) == len(bundle.cases), selected_case_ids=[case.case_id for case in cases],
+        )
+    if token_budget is None or timeout_seconds is None:
+        return build_run_report(
+            run_id=run_id, label=label, mode="live", **_report_metadata(bundle, cases),
+            dataset_version=bundle.manifest.dataset_version, dataset_hash=bundle.computed_hash,
+            results=[], model=None, prompt_version=None, status="incomplete",
+            reason="EVAL_TOKEN_OR_TIMEOUT_BUDGET_NOT_CONFIGURED",
             full_dataset=len(cases) == len(bundle.cases), selected_case_ids=[case.case_id for case in cases],
         )
     eval_url = validate_eval_database_url(os.environ.get("EVAL_DATABASE_URL"), os.environ.get("DATABASE_URL"))
@@ -501,14 +537,29 @@ async def run_live(
             for item in stability_runs
         }
         budget_exhausted = False
+        timeout_exhausted = False
+        token_exhausted = False
         for case in cases:
             current_cost = accumulated_cost(results, stability_runs)
+            current_tokens = accumulated_tokens(results, stability_runs)
             if (current_cost is None and (results or stability_runs)) or (current_cost is not None and current_cost >= budget):
                 budget_exhausted = True
                 break
+            if current_tokens is None and (results or stability_runs):
+                token_exhausted = True
+                break
+            if current_tokens is not None and current_tokens >= token_budget:
+                token_exhausted = True
+                break
             result = completed.get(case.case_id)
             if result is None:
-                result = await run_live_case(bundle, case, run_id, fixture_ids)
+                try:
+                    result = await asyncio.wait_for(
+                        run_live_case(bundle, case, run_id, fixture_ids), timeout=timeout_seconds
+                    )
+                except asyncio.TimeoutError:
+                    timeout_exhausted = True
+                    break
                 completed[case.case_id] = result
                 results = [completed[item.case_id] for item in cases if item.case_id in completed]
                 _write_live_checkpoint(
@@ -520,14 +571,25 @@ async def run_live(
                     stability_runs=stability_runs,
                 )
                 current_cost = accumulated_cost(results, stability_runs)
+                current_tokens = accumulated_tokens(results, stability_runs)
                 if current_cost is None or current_cost >= budget:
                     budget_exhausted = True
+                    break
+                if current_tokens is None or current_tokens >= token_budget:
+                    token_exhausted = True
                     break
             if result.hard_failures or result.weighted_score < 85:
                 for attempt in (2, 3):
                     if (case.case_id, attempt) in stability_completed:
                         continue
-                    stability = await run_live_case(bundle, case, run_id, fixture_ids, attempt=attempt)
+                    try:
+                        stability = await asyncio.wait_for(
+                            run_live_case(bundle, case, run_id, fixture_ids, attempt=attempt),
+                            timeout=timeout_seconds,
+                        )
+                    except asyncio.TimeoutError:
+                        timeout_exhausted = True
+                        break
                     stability_runs.append(stability.model_dump(mode="json"))
                     stability_completed.add((case.case_id, attempt))
                     _write_live_checkpoint(
@@ -541,6 +603,9 @@ async def run_live(
                     current_cost = accumulated_cost(results, stability_runs)
                     if current_cost is None or current_cost >= budget:
                         budget_exhausted = True
+                        break
+                    if accumulated_tokens(results, stability_runs) is None or accumulated_tokens(results, stability_runs) >= token_budget:
+                        token_exhausted = True
                         break
                 if budget_exhausted:
                     break
@@ -557,9 +622,17 @@ async def run_live(
         report["stability_summary"] = summarise_stability(results, stability_runs)
         report["summary"]["cost_budget_usd"] = budget
         report["summary"]["budget_spent_usd"] = accumulated_cost(results, stability_runs)
-        if budget_exhausted or len(results) < len(cases):
+        report["summary"]["token_budget"] = token_budget
+        report["summary"]["tokens_spent"] = accumulated_tokens(results, stability_runs)
+        report["summary"]["timeout_seconds"] = timeout_seconds
+        if budget_exhausted or token_exhausted or timeout_exhausted or len(results) < len(cases):
             report["status"] = "incomplete"
-            report["reason"] = "EVAL_COST_BUDGET_REACHED" if accumulated_cost(results, stability_runs) is not None else "EVAL_COST_MISSING"
+            report["reason"] = (
+                "EVAL_TIMEOUT_REACHED" if timeout_exhausted else
+                "EVAL_TOKEN_BUDGET_REACHED" if token_exhausted else
+                "EVAL_COST_BUDGET_REACHED" if budget_exhausted else
+                "EVAL_COST_MISSING"
+            )
         return report
     finally:
         await close_db()

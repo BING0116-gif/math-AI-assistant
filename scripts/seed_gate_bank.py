@@ -402,7 +402,7 @@ assert len(Q) == 104, f"期望 104 道题，实际 {len(Q)}"
 
 
 async def main():
-    from app.data.database import init_db
+    from app.data.database import close_db, init_db
     from app.services.question_importer import QuestionImporter
     from app.services.content_review import ContentReviewService
 
@@ -416,7 +416,30 @@ async def main():
 
     review = ContentReviewService()
     ids = [q["id"] for q in Q]
-    pub = await review.batch_publish(ids)
+    # Keep the production state machine intact: imported questions are draft,
+    # so they must pass the same review transition before publication.  Calling
+    # batch_publish directly would only produce opaque STATE errors and leave
+    # the gate bank unusable.
+    reviewed_ids = []
+    review_errors = []
+    for qid in ids:
+        try:
+            question = await review.get_question(qid)
+            if question is None:
+                raise RuntimeError("题目不存在")
+            if question.review_status == "draft":
+                question = await review.mark_reviewed(qid, operator_id="seed-gate-bank")
+            elif question.review_status not in {"reviewed", "published"}:
+                raise RuntimeError(f"不支持从 {question.review_status} 状态继续")
+            reviewed_ids.append(question.id)
+        except Exception as error:
+            review_errors.append({"question_id": qid, "error": str(error)[:200]})
+    print(f"[review] reviewed={len(reviewed_ids)} errors={len(review_errors)}")
+    if review_errors:
+        for error in review_errors[:10]:
+            print("  REVIEW_ERR", error)
+
+    pub = await review.batch_publish(reviewed_ids, operator_id="seed-gate-bank")
     print(f"[publish] published={len(pub['published'])} skipped={len(pub['skipped'])} "
           f"errors={len(pub['errors'])}")
     if pub["errors"]:
@@ -452,6 +475,7 @@ async def main():
         {"choice", "judge", "numeric_fill", "expression_fill"}
     )
     print("  GATE_PASS =", ok)
+    await close_db()
     return ok
 
 

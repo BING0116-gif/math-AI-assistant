@@ -9,69 +9,20 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminReviewApi, unwrap } from '@/api/adminReview'
 import ContentAIPartialBadge from '@/components/admin/ContentAIPartialBadge.vue'
-import katex from 'katex'
 import { renderMarkdown } from '@/utils/markdown'
 import AdminShell from '@/components/shell/AdminShell.vue'
 
-// 渲染题干/选项/答案/解析：
-// 1) 若文本已含 $...$ 或 $$...$$ 标记，走 markdown + KaTeX 插件（精确）
-// 2) 否则（PDF 解析器输出的纯 unicode 数学文本），整段走 KaTeX displayMode：
-//    KaTeX 会自动识别 sin/cos/arcsin/lg/ln/lim 等 math operator 和 x² 上标；
-//    失败片段降级为可读文本（无 katex-error 红字），中文等非数学字符自然以文本显示
+// 审核页的内容必须先按“普通文本 + Markdown + LaTeX”渲染。
+// 旧实现把整段中文题干交给 KaTeX displayMode，导致题号、选项和公式互相吞并。
 function renderMath(text) {
   if (!text) return ''
-  const s = String(text)
-  try {
-    if (/\$/.test(s)) {
-      // 已带 $ 标记：走 markdown-it 路径（自动包裹 LaTeX 命令后再渲染）
-      return renderMarkdown(s)
-    }
-    // unicode 数学文本：整段 KaTeX displayMode
-    // errorColor: '' 让 KaTeX 失败时降级为正常文本（不显示红字错误）
-    let html = katex.renderToString(s, {
-      displayMode: true,
-      throwOnError: false,
-      strict: 'ignore',
-      output: 'html',
-      errorColor: '',
-      minRuleThickness: 0.04,
-    })
-    // 把 .katex-error 元素（KaTeX 解析失败时返回的 span）替换为可读文本，
-    // 避免大段红字。KaTeX 实际渲染成功的部分保留（.katex-html 仍可读）。
-    const openTag = '<span class="katex-error"'
-    let result = ''
-    let cursor = 0
-    while (cursor < html.length) {
-      const idx = html.indexOf(openTag, cursor)
-      if (idx < 0) {
-        result += html.slice(cursor)
-        break
-      }
-      result += html.slice(cursor, idx)
-      // 找到对应的 </span>（KaTeX error span 内部不嵌套）
-      const endIdx = html.indexOf('</span>', idx)
-      if (endIdx < 0) {
-        result += html.slice(idx)
-        break
-      }
-      // 提取 span 内部纯文本，去掉 title 属性
-      const innerHTML = html.slice(idx, endIdx + 7)
-      const innerText = innerHTML
-        .replace(/<[^>]+title="[^"]*"[^>]*>/g, '') // 去掉 title 属性 span
-        .replace(/<[^>]+>/g, '') // 去掉所有标签
-      result += innerText
-      cursor = endIdx + 7
-    }
-    return result
-  } catch (e) {
-    return s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c]))
-  }
+  return renderMarkdown(String(text))
 }
 
 const router = useRouter()
 const activeTab = ref('candidates')
 const loading = ref(false)
-const importMode = ref('quick')
+const importMode = ref('auto')
 // 使用流程引导：首次进入显示，看完后可关闭（持久化到 localStorage）
 const showHelp = ref(localStorage.getItem('adminReview_help_dismissed') !== '1')
 const importing = ref(false)
@@ -86,11 +37,13 @@ const batches = ref([])
 const batchId = ref('')
 const batch = ref(null)
 const stats = ref(null)
+const BATCH_SELECTION_KEY = 'adminReview_selected_batch'
 
 // ── 候选 ──
 const candidates = ref([])
 const selectedId = ref('')
 const analysis = ref(null) // { latest, history }
+const showRawContent = ref(false)
 const gateFilter = ref('all')
 const dispositionFilter = ref('all')
 const selectedIds = ref([])
@@ -104,12 +57,13 @@ const previewDocId = ref('')
 const previewPage = ref(1)
 const previewUrl = ref('')
 const previewErr = ref('')
+const sourceRegionPreviews = ref([])
 
 // ── 候选在线编辑 ──
 const questionTypes = ['choice', 'judge', 'numeric_fill', 'expression_fill', 'calculation', 'proof', 'short_answer']
 const editing = ref(false)
 const editedHint = ref('')
-const editForm = reactive({ stem: '', options: '', answer: '', solution: '', type: 'choice', kp: '' })
+const editForm = reactive({ stem: '', options: '', answer: '', solution: '', type: 'choice', kp: '', difficulty: 3 })
 
 function startEdit() {
   if (!selectedCand.value) return
@@ -120,6 +74,7 @@ function startEdit() {
   editForm.solution = selectedCand.value.original_solution || ''
   editForm.type = selectedCand.value.detected_question_type || 'choice'
   editForm.kp = (selectedCand.value.suggested_knowledge_point_codes || []).join(',')
+  editForm.difficulty = selectedCand.value.suggested_difficulty || 3
 }
 
 function cancelEdit() {
@@ -142,6 +97,7 @@ async function saveEdit() {
     original_solution: editForm.solution,
     detected_question_type: editForm.type,
     suggested_knowledge_point_codes: editForm.kp.split(',').map((s) => s.trim()).filter(Boolean),
+    suggested_difficulty: Number(editForm.difficulty) || 3,
   }
   try {
     await adminReviewApi.updateCandidate(batchId.value, selectedId.value, patch)
@@ -173,6 +129,7 @@ async function uploadImport(event) {
     const key = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
     const data = unwrap(await adminReviewApi.createImport(file, importMode.value, key))
     batchId.value = data.batch.id
+    localStorage.setItem(BATCH_SELECTION_KEY, batchId.value)
     ElMessage.success(data.created ? '导入批次已创建' : '已恢复同一导入批次')
     await loadBatches()
     if (data.batch.parse_task_id) pollImportTask(data.batch.parse_task_id)
@@ -191,6 +148,29 @@ function pollImportTask(taskId) {
   }
   tick()
 }
+
+async function retryImport() {
+  if (!batchId.value) return
+  try {
+    const data = unwrap(await adminReviewApi.retryImport(batchId.value))
+    importTask.value = null
+    ElMessage.info('已重新投递解析任务')
+    pollImportTask(data.parse_task_id)
+  } catch (e) {
+    ElMessage.error(e.message || '重试失败')
+  }
+}
+
+const importProgress = computed(() => Math.max(0, Math.min(100, Number(importTask.value?.progress?.percent || 0))))
+const importStageLabel = computed(() => importTask.value?.progress?.stage_label || ({
+  pending: '等待解析', running: '解析进行中', retrying: '等待重试', succeeded: '解析完成',
+  partially_succeeded: '部分完成', failed: '解析失败', cancelled: '已取消',
+}[importTask.value?.status] || '准备解析'))
+const importProgressStatus = computed(() => {
+  if (['failed', 'cancelled'].includes(importTask.value?.status)) return 'exception'
+  if (['succeeded', 'partially_succeeded'].includes(importTask.value?.status)) return 'success'
+  return undefined
+})
 
 async function cancelImportTask() {
   if (!importTask.value?.id) return
@@ -229,8 +209,13 @@ async function loadBatches() {
     batches.value = unwrap(await adminReviewApi.listBatches()) || []
     if (batches.value.length) {
       if (!batchId.value || !batches.value.some((b) => b.id === batchId.value)) {
-        batchId.value = batches.value[0].id
+        const savedId = localStorage.getItem(BATCH_SELECTION_KEY)
+        const savedBatch = batches.value.find((b) => b.id === savedId)
+        const usableBatch = batches.value.find((b) => ['parsed', 'completed', 'parsing', 'pending'].includes(b.status))
+        const preferredBatch = savedBatch && savedBatch.status !== 'failed' ? savedBatch : usableBatch
+        batchId.value = preferredBatch?.id || savedBatch?.id || batches.value[0].id
       }
+      localStorage.setItem(BATCH_SELECTION_KEY, batchId.value)
       await selectBatch()
     }
   } catch (e) {
@@ -241,6 +226,7 @@ async function loadBatches() {
 }
 
 async function selectBatch() {
+  if (batchId.value) localStorage.setItem(BATCH_SELECTION_KEY, batchId.value)
   batch.value = batches.value.find((b) => b.id === batchId.value) || null
   previewDocId.value = batch.value?.source_document_id || ''
   selectedIds.value = []
@@ -284,17 +270,47 @@ async function loadProvider() {
 async function selectCandidate(cid) {
   if (!cid) return
   editing.value = false
+  showRawContent.value = false
   selectedId.value = cid
   const cand = candidates.value.find((c) => c.id === cid)
   if (cand) {
     previewPage.value = cand.source_page_start || 1
     await loadPage(previewPage.value)
+    await loadSourceRegionPreviews(cand)
   }
   try {
     analysis.value = unwrap(await adminReviewApi.candidateAnalysis(cid))
   } catch (e) {
     analysis.value = { candidate_id: cid, latest: null, history: [] }
   }
+}
+
+function clearSourceRegionPreviews() {
+  for (const item of sourceRegionPreviews.value) {
+    if (item.url) URL.revokeObjectURL(item.url)
+  }
+  sourceRegionPreviews.value = []
+}
+
+async function loadSourceRegionPreviews(candidate) {
+  clearSourceRegionPreviews()
+  if (!previewDocId.value || !candidate) return
+  const regions = (candidate.source_regions || []).filter((item) => item?.page && item?.bbox?.length === 4)
+  const fallback = regions.length
+    ? regions
+    : (candidate.source_page_start && candidate.source_bbox?.length === 4
+      ? [{ page: candidate.source_page_start, bbox: candidate.source_bbox }]
+      : [])
+  const loaded = []
+  for (const region of fallback) {
+    try {
+      const resp = await adminReviewApi.fetchPagePreview(previewDocId.value, region.page, region.bbox)
+      loaded.push({ page: region.page, url: URL.createObjectURL(resp.data) })
+    } catch {
+      // 题目截图失败时仍保留右侧整页预览，不阻塞审核。
+    }
+  }
+  sourceRegionPreviews.value = loaded
 }
 
 // ── AI 批量分析（异步任务 + 轮询）──
@@ -429,7 +445,9 @@ async function loadPage(page) {
   previewErr.value = ''
   previewPage.value = page
   try {
-    const resp = await adminReviewApi.fetchPagePreview(previewDocId.value, page)
+    const region = selectedCand.value?.source_regions?.find((item) => Number(item.page) === Number(page))
+    const bbox = region?.bbox || (selectedCand.value?.source_page_start === page ? selectedCand.value?.source_bbox : null)
+    const resp = await adminReviewApi.fetchPagePreview(previewDocId.value, page, bbox)
     previewUrl.value = URL.createObjectURL(resp.data)
   } catch {
     previewErr.value = `第 ${page} 页不存在或不可预览`
@@ -578,6 +596,47 @@ function typeLabel(t) {
   }[t] || t || '未知'
 }
 
+const warningLabels = {
+  contains_subquestions: '可能包含多个小问，需要确认题目边界',
+  answer_match_key_incomplete: 'PDF 未提供可匹配的原答案（待人工补录）',
+  answer_match_missing: 'PDF 未提供原答案（待人工补录）',
+  answer_roster_incomplete: 'PDF 答案区不完整（待人工补录）',
+  option_parse_uncertain: '选项切分不确定',
+  possible_answer_leak: '题干中可能混入答案标记',
+  fill_type_needs_review: '填空题类型需要人工确认',
+  page_mapping_uncertain: '来源页码不确定',
+  unrenderable_glyphs: 'PDF 中存在无法可靠渲染的字体字符，请对照原 PDF 修复',
+  question_number_gap: '题号不连续，可能存在漏题或题目粘连',
+  parser_fallback_mineru: '快速解析质量不足，已切换 MinerU 结果',
+}
+function warningLabel(code) {
+  return warningLabels[code] || code
+}
+function isAnswerSourceWarning(code) {
+  return ['answer_match_missing', 'answer_match_key_incomplete', 'answer_roster_incomplete', 'choice_answer_ambiguous'].includes(code)
+}
+function hasContentWarnings(warnings) {
+  return (warnings || []).some((warning) => !isAnswerSourceWarning(warning))
+}
+function hasUnrenderableGlyphs(candidate) {
+  return Boolean(candidate?.warnings?.includes('unrenderable_glyphs'))
+}
+function displayGateReasons(reasons) {
+  return (reasons || []).filter((reason) => !/答案缺失|原答案.*(缺失|未提供)|ground truth/i.test(String(reason)))
+}
+function difficultyLabel(value) {
+  return { 1: '简单', 2: '较简单', 3: '中等', 4: '较难', 5: '困难' }[value] || '未评估'
+}
+function verifierLabel(verifier) {
+  return { pass: '验证通过', doubtful: '验证存疑', fail: '验证失败' }[verifier?.verdict] || '未验证'
+}
+function answerSpecLabel(spec) {
+  if (!spec) return '—'
+  if (spec.correct !== undefined) return String(spec.correct)
+  if (spec.value !== undefined) return String(spec.value)
+  return spec.canonical || '—'
+}
+
 function dismissHelp() {
   showHelp.value = false
   try { localStorage.setItem('adminReview_help_dismissed', '1') } catch {}
@@ -610,6 +669,7 @@ onBeforeUnmount(() => {
   stopPolling()
   if (importTaskTimer) clearTimeout(importTaskTimer)
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  clearSourceRegionPreviews()
 })
 </script>
 
@@ -626,7 +686,7 @@ onBeforeUnmount(() => {
       <el-button size="small" text type="primary" @click="router.push('/admin/readiness')">就绪度</el-button>
       <span class="wb-spacer" />
       <el-select v-model="importMode" size="small" style="width: 110px" aria-label="PDF 解析模式">
-        <el-option label="快速解析" value="quick" /><el-option label="MinerU" value="mineru" />
+        <el-option label="智能按需解析" value="auto" /><el-option label="快速解析" value="quick" /><el-option label="MinerU" value="mineru" />
       </el-select>
       <label class="wb-upload" :class="{ 'is-disabled': importing }">
         {{ importing ? '上传中…' : '导入 PDF' }}
@@ -637,10 +697,20 @@ onBeforeUnmount(() => {
       </el-select>
       <el-button size="small" :loading="loading" @click="loadBatches">刷新</el-button>
     </header>
-    <div v-if="importTask" class="wb-import-status" role="status">
-      解析任务：{{ importTask.status }} · {{ importTask.progress?.done || 0 }}/{{ importTask.progress?.total || 0 }}
-      <el-button v-if="['pending','running','retrying'].includes(importTask.status)" size="small" @click="cancelImportTask">取消</el-button>
-      <span v-if="importTask.error_message" role="alert">{{ importTask.error_message }}</span>
+    <div v-if="importTask" class="wb-import-status" role="status" aria-live="polite">
+      <div class="wb-import-status__head">
+        <strong>PDF 解析进度</strong>
+        <span>{{ importStageLabel }} · {{ importProgress }}%</span>
+        <el-button v-if="['pending','running','retrying'].includes(importTask.status)" size="small" @click="cancelImportTask">取消</el-button>
+        <el-button v-if="importTask.status === 'failed'" size="small" type="primary" @click="retryImport">重试解析</el-button>
+      </div>
+      <el-progress :percentage="importProgress" :status="importProgressStatus" :stroke-width="8" :show-text="false" />
+      <div class="wb-import-status__meta">
+        <span v-if="importTask.progress?.total_pages">已处理 {{ importTask.progress.pages || 0 }}/{{ importTask.progress.total_pages }} 页</span>
+        <span v-if="importTask.progress?.questions">已识别 {{ importTask.progress.questions }} 道题</span>
+        <span>任务状态：{{ importTask.status }}</span>
+        <span v-if="importTask.error_message" class="wb-import-status__error" role="alert">{{ importTask.error_message }}</span>
+      </div>
     </div>
 
     <el-tabs v-model="activeTab" class="wb-tabs" @tab-change="(name) => name === 'operations' && loadOperations()">
@@ -715,9 +785,12 @@ onBeforeUnmount(() => {
             <template v-if="selectedId">
               <div class="wb-card">
                 <h3 class="wb-card-title">
-                  题干
+                  题目内容
                   <span class="wb-hint">（candidate #{{ selectedCand?.candidate_index }} · 页码 {{ selectedCand?.source_page_start }}）</span>
                   <span class="wb-spacer" />
+                  <el-button size="small" text @click="showRawContent = !showRawContent">
+                    {{ showRawContent ? '查看渲染' : '查看原文' }}
+                  </el-button>
                   <el-button v-if="!editing" size="small" type="primary" plain @click="startEdit">编辑</el-button>
                   <el-button v-else size="small" @click="cancelEdit">取消</el-button>
                 </h3>
@@ -733,6 +806,8 @@ onBeforeUnmount(() => {
                     </el-select>
                     <label class="wb-edit-kp">知识点 code</label>
                     <el-input v-model="editForm.kp" size="small" placeholder="逗号分隔" style="width: 200px" />
+                    <label class="wb-edit-kp">难度</label>
+                    <el-input-number v-model="editForm.difficulty" :min="1" :max="5" size="small" />
                   </div>
                   <div class="wb-edit-actions">
                     <el-button type="primary" size="small" @click="saveEdit">保存</el-button>
@@ -746,25 +821,42 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
                 <template v-else>
-                  <div class="wb-stem" v-html="renderMath(selectedCand?.stem) || '<span class=&quot;wb-empty-inline&quot;>（空）</span>'" />
-                  <div v-if="selectedCand?.options?.length" class="wb-options">
+                  <div v-if="hasUnrenderableGlyphs(selectedCand)" class="wb-source-fallback">
+                    <div class="wb-source-fallback__head">
+                      <strong>原题图兜底</strong>
+                      <span>PDF 字体映射异常，文本可能失真；以下显示原题高清裁剪图。</span>
+                    </div>
+                    <div v-if="sourceRegionPreviews.length" class="wb-source-fallback__list">
+                      <figure v-for="item in sourceRegionPreviews" :key="`${selectedCand.id}-${item.page}`" class="wb-source-fallback__figure">
+                        <figcaption>第 {{ item.page }} 页 · 当前题目区域</figcaption>
+                        <img :src="item.url" class="wb-source-fallback__img" alt="当前题目原题裁剪图" />
+                      </figure>
+                    </div>
+                    <img v-else-if="previewUrl" :src="previewUrl" class="wb-source-fallback__img" alt="原题高清裁剪图" />
+                    <div v-else class="wb-muted">正在加载原题图…</div>
+                  </div>
+                  <div v-else-if="showRawContent" class="wb-raw-content">{{ selectedCand?.stem || '（空）' }}</div>
+                  <div v-else class="wb-stem" v-html="renderMath(selectedCand?.stem) || '<span class=&quot;wb-empty-inline&quot;>（空）</span>'" />
+                  <div v-if="selectedCand?.options?.length && !hasUnrenderableGlyphs(selectedCand)" class="wb-options">
                     <div v-for="o in selectedCand.options" :key="o.id" class="wb-option">
-                      【{{ o.id }}】<span v-html="renderMath(o.text)" />
+                      <strong>【{{ o.id }}】</strong><span v-if="!showRawContent" v-html="renderMath(o.text)" /><span v-else>{{ o.text }}</span>
                     </div>
                   </div>
-                  <div v-if="selectedCand?.original_answer" class="wb-row">
-                    <span class="wb-k">答案（ground truth）</span>
-                    <span class="wb-v" v-html="renderMath(selectedCand.original_answer)" />
+                  <div class="wb-subsection">
+                    <h4>原题信息</h4>
+                    <div class="wb-row"><span class="wb-k">PDF 原答案</span><span class="wb-v" v-html="renderMath(selectedCand?.original_answer) || '未提供'" /></div>
+                    <div class="wb-rich-value" v-if="selectedCand?.original_solution" v-html="renderMath(selectedCand.original_solution)" />
+                    <div v-else class="wb-muted">原 PDF 未提供解析。答案不属于本阶段导入门禁，请在题目发布前人工补录并确认。</div>
                   </div>
-                  <div v-if="selectedCand?.original_solution" class="wb-row">
-                    <span class="wb-k">解析</span>
-                    <span class="wb-v wb-solution" v-html="renderMath(selectedCand.original_solution)" />
+                  <div class="wb-meta-grid">
+                    <div><span>题型</span><strong>{{ typeLabel(selectedCand?.detected_question_type) }}</strong></div>
+                    <div><span>来源页码</span><strong>第 {{ selectedCand?.source_page_start || '—' }} 页</strong></div>
+                    <div><span>候选状态</span><strong>{{ selectedCand?.status || '—' }}</strong></div>
+                    <div><span>候选知识点</span><strong>{{ selectedCand?.suggested_knowledge_point_codes?.join('、') || '待分析' }}</strong></div>
                   </div>
-                  <div v-if="selectedCand?.suggested_knowledge_point_codes?.length" class="wb-row">
-                    <span class="wb-k">候选知识点</span><span class="wb-v">{{ selectedCand.suggested_knowledge_point_codes.join(', ') }}</span>
-                  </div>
-                  <div v-if="selectedCand?.warnings?.length" class="wb-warn">
-                    ⚠ {{ selectedCand.warnings.join('；') }}
+                  <div v-if="hasContentWarnings(selectedCand?.warnings)" class="wb-warn">
+                    <strong>需要人工确认</strong>
+                    <ul><li v-for="warning in selectedCand.warnings" v-show="!isAnswerSourceWarning(warning)" :key="warning">{{ warningLabel(warning) }}</li></ul>
                   </div>
                 </template>
               </div>
@@ -787,7 +879,7 @@ onBeforeUnmount(() => {
                   <div class="wb-row"><span class="wb-k">Attempt</span><span class="wb-v">#{{ analysis.latest.attempt_no }}（{{ analysis.latest.status }}）</span></div>
                   <div class="wb-row">
                     <span class="wb-k">门禁原因</span>
-                    <span class="wb-v">{{ (analysis.latest.gate_reasons || []).join('；') || '—' }}</span>
+                    <span class="wb-v">{{ displayGateReasons(analysis.latest.gate_reasons).join('；') || '—' }}</span>
                   </div>
                   <div v-if="analysis.latest.partial" class="wb-row wb-partial-reasons">
                     <span class="wb-k">不完整原因</span>
@@ -796,15 +888,38 @@ onBeforeUnmount(() => {
                   <div v-if="analysis.latest.error_message" class="wb-warn">✗ {{ analysis.latest.error_message }}</div>
                   <div v-if="analysis.latest.analysis_json" class="wb-json">
                     <div class="wb-row"><span class="wb-k">题型</span><span class="wb-v">{{ typeLabel(analysis.latest.analysis_json.question_type) }}</span></div>
-                    <div class="wb-row"><span class="wb-k">难度</span><span class="wb-v">{{ analysis.latest.analysis_json.difficulty ?? '-' }}</span></div>
-                    <div class="wb-row"><span class="wb-k">置信度</span><span class="wb-v">{{ analysis.latest.analysis_json.confidence ?? '-' }}</span></div>
+                    <div class="wb-row"><span class="wb-k">难度</span><span class="wb-v">{{ difficultyLabel(analysis.latest.analysis_json.difficulty) }}（{{ analysis.latest.analysis_json.difficulty ?? '-' }} / 5）</span></div>
+                    <div class="wb-row"><span class="wb-k">置信度</span><span class="wb-v">{{ Math.round((analysis.latest.analysis_json.confidence ?? 0) * 100) }}%</span></div>
                     <div class="wb-row">
                       <span class="wb-k">知识点</span>
                       <span class="wb-v">{{ (analysis.latest.analysis_json.knowledge_point_codes || []).join(', ') || '—' }}</span>
                     </div>
-                    <div class="wb-row">
-                      <span class="wb-k">Flags</span>
-                      <span class="wb-v">{{ (analysis.latest.analysis_json.flags || []).join(', ') || '—' }}</span>
+                    <div class="wb-subsection wb-ai-answer">
+                      <h4>AI 结构化结果</h4>
+                      <div class="wb-ai-grid">
+                        <div class="wb-ai-field">
+                          <span class="wb-ai-label">AI 建议答案</span>
+                          <strong>{{ answerSpecLabel(analysis.latest.analysis_json.answer_spec) || '待人工确认' }}</strong>
+                        </div>
+                        <div class="wb-ai-field" :class="{ 'is-pending': !selectedCand?.original_answer }">
+                          <span class="wb-ai-label">答案状态</span>
+                          <strong>{{ selectedCand?.original_answer ? (analysis.latest.analysis_json.answer_check?.consistent ? '与原答案一致' : '需要人工核对') : 'PDF 未提供，待人工补录' }}</strong>
+                        </div>
+                      </div>
+                      <div v-if="analysis.latest.analysis_json.answer_check?.reason" class="wb-muted wb-answer-note">{{ analysis.latest.analysis_json.answer_check.reason }}</div>
+                      <div v-if="analysis.latest.analysis_json.analysis" class="wb-analysis-block">
+                        <span class="wb-ai-label">解题过程</span>
+                        <div class="wb-rich-value" v-html="renderMath(analysis.latest.analysis_json.analysis)" />
+                      </div>
+                      <div v-if="analysis.latest.analysis_json.common_mistakes?.length" class="wb-mistakes">
+                        <span class="wb-ai-label">常见错误</span>
+                        <ul><li v-for="(mistake, index) in analysis.latest.analysis_json.common_mistakes" :key="index" v-html="renderMath(typeof mistake === 'string' ? mistake : (mistake.description || mistake.reason || JSON.stringify(mistake)))" /></ul>
+                      </div>
+                      <div v-if="analysis.latest.verifier_json" class="wb-verifier">
+                        <span>独立校验：{{ verifierLabel(analysis.latest.verifier_json) }}</span>
+                        <span v-if="analysis.latest.verifier_json.issues?.length">{{ analysis.latest.verifier_json.issues.join('；') }}</span>
+                      </div>
+                      <div v-if="analysis.latest.analysis_json.flags?.length" class="wb-flags">风险标记：{{ analysis.latest.analysis_json.flags.join('、') }}</div>
                     </div>
                   </div>
                   <div v-if="analysis.history?.length > 1" class="wb-history">
@@ -951,7 +1066,12 @@ onBeforeUnmount(() => {
 .wb-upload { min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--r-m); background: var(--accent); color: white; cursor: pointer; }
 .wb-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .wb-upload.is-disabled { opacity: .55; cursor: not-allowed; }
-.wb-import-status { display: flex; align-items: center; gap: 12px; padding: 8px 20px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--type-sm); flex-shrink: 0; }
+.wb-import-status { display: flex; flex-direction: column; gap: 6px; padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: var(--type-sm); flex-shrink: 0; }
+.wb-import-status__head, .wb-import-status__meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.wb-import-status__head { justify-content: space-between; color: var(--ink-1); }
+.wb-import-status__head strong { color: var(--accent); }
+.wb-import-status__meta { color: var(--ink-2); font-size: var(--type-xs); }
+.wb-import-status__error { color: var(--danger); }
 .wb-title { font-size: var(--type-lg); margin: 0; font-weight: 500; }
 .wb-spacer { flex: 1; }
 .wb-tabs { flex: 1 1 0; min-height: 0; padding: 0 20px; display: flex; flex-direction: column; overflow: hidden; }
@@ -997,10 +1117,20 @@ onBeforeUnmount(() => {
 .wb-card-title { margin: 0 0 8px; font-size: var(--type-md); font-weight: 500; display: flex; align-items: center; gap: 8px; }
 .wb-partial-reasons { color: var(--amber); }
 .wb-hint { font-size: var(--type-xs); color: var(--ink-3); font-weight: 400; }
-.wb-stem { white-space: normal; margin: 0 0 8px; line-height: 1.7; }
-.wb-stem :deep(.katex) { font-size: 1.02em; }
+.wb-stem { white-space: normal; margin: 0 0 14px; line-height: 1.85; font-size: 16px; color: var(--ink-1); }
+.wb-stem :deep(.katex) { font-size: 1em; }
+.wb-stem :deep(p), .wb-rich-value :deep(p) { margin: 0 0 8px; }
+.wb-stem :deep(.katex-display), .wb-rich-value :deep(.katex-display) { overflow-x: auto; padding: 4px 0; }
+.wb-source-fallback { margin: 0 0 14px; padding: 10px; border: 1px solid var(--amber); border-radius: var(--r-s); background: color-mix(in srgb, var(--amber) 8%, var(--surface)); }
+.wb-source-fallback__head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; color: var(--ink-1); }
+.wb-source-fallback__head span { color: var(--ink-2); font-size: var(--type-xs); }
+.wb-source-fallback__list { display: grid; gap: 10px; }
+.wb-source-fallback__figure { margin: 0; padding: 8px; background: #fff; border-radius: 4px; }
+.wb-source-fallback__figure figcaption { margin-bottom: 6px; color: var(--ink-2); font-size: var(--type-xs); }
+.wb-source-fallback__img { display: block; width: 100%; max-height: 520px; object-fit: contain; object-position: top center; background: #fff; border-radius: 4px; }
+.wb-raw-content { white-space: pre-wrap; padding: 10px; background: var(--surface-2); border-radius: var(--r-s); color: var(--ink-2); font-family: var(--font-mono, monospace); line-height: 1.6; }
 .wb-options { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.wb-option { padding: 4px 8px; background: var(--surface-2); border-radius: var(--r-s); font-size: var(--type-sm); }
+.wb-option { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; background: var(--surface-2); border-radius: var(--r-s); font-size: 15px; line-height: 1.75; }
 .wb-option :deep(.katex) { font-size: 1em; }
 .wb-solution { display: block; }
 .wb-solution :deep(p) { margin: 4px 0; }
@@ -1015,7 +1145,32 @@ onBeforeUnmount(() => {
 .wb-edit-actions .el-alert { flex: 1; margin-left: 4px; }
 .wb-k { color: var(--ink-3); flex-shrink: 0; min-width: 90px; }
 .wb-v { color: var(--ink-1); word-break: break-all; }
-.wb-warn { margin-top: 6px; padding: 6px 8px; background: var(--amber); color: #fff; border-radius: var(--r-s); font-size: var(--type-sm); }
+.wb-warn { margin-top: 10px; padding: 9px 10px; background: color-mix(in srgb, var(--amber) 16%, var(--surface)); color: var(--ink-1); border: 1px solid var(--amber); border-radius: var(--r-s); font-size: var(--type-sm); }
+.wb-warn ul, .wb-mistakes ul { margin: 6px 0 0 18px; padding: 0; }
+.wb-warn li, .wb-mistakes li { margin: 3px 0; }
+.wb-subsection { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.wb-subsection h4 { margin: 0 0 7px; font-size: var(--type-sm); color: var(--ink-2); }
+.wb-rich-value { line-height: 1.8; font-size: 15px; color: var(--ink-1); }
+.wb-rich-value :deep(p) { margin: 0 0 10px; }
+.wb-rich-value :deep(ul), .wb-rich-value :deep(ol) { margin: 6px 0 10px 22px; }
+.wb-rich-value :deep(.katex) { font-size: 1em; }
+.wb-muted { color: var(--ink-3); font-size: var(--type-sm); }
+.wb-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.wb-meta-grid > div { padding: 8px; background: var(--surface-2); border-radius: var(--r-s); min-width: 0; }
+.wb-meta-grid span, .wb-meta-grid strong { display: block; }
+.wb-meta-grid span { color: var(--ink-3); font-size: var(--type-xs); margin-bottom: 3px; }
+.wb-meta-grid strong { font-size: var(--type-sm); font-weight: 500; word-break: break-word; }
+.wb-ai-answer { background: color-mix(in srgb, var(--accent-soft) 50%, var(--surface)); padding: 10px; border-radius: var(--r-s); border-top: 0; }
+.wb-ai-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.wb-ai-field { padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-s); }
+.wb-ai-field.is-pending { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--surface)); }
+.wb-ai-label { display: block; margin-bottom: 5px; color: var(--ink-2); font-size: var(--type-xs); font-weight: 600; letter-spacing: .02em; }
+.wb-ai-field strong { font-size: 16px; font-weight: 600; }
+.wb-answer-note { margin: 8px 0; padding: 7px 9px; background: var(--surface); border-radius: var(--r-s); }
+.wb-analysis-block { margin-top: 10px; padding: 10px 12px; background: var(--surface); border-radius: var(--r-s); }
+.wb-mistakes { margin-top: 8px; font-size: var(--type-sm); }
+.wb-verifier { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; padding: 8px; border-left: 3px solid var(--accent); background: var(--surface); font-size: var(--type-sm); }
+.wb-flags { margin-top: 8px; color: var(--amber); font-size: var(--type-sm); }
 .wb-json { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
 .wb-history { margin-top: 8px; }
 .wb-history__tag { margin-right: 4px; }
