@@ -475,7 +475,7 @@ class TestVisionToolAdapterInheritance:
     def test_adapter_description(self):
         mock_vt = MockVisionTool()
         adapter = VisionToolAdapter(mock_vt)
-        assert "Qwen-VL" in adapter.description
+        assert "DeepSeek-V4.1-Flash" in adapter.description
 
 
 class TestVisionToolAdapterExecute:
