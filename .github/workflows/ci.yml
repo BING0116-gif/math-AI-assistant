@@ -124,6 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DB_PASSWORD: ci-only-database-password
+      GRAFANA_ADMIN_PASSWORD: ci-only-grafana-password
       JWT_SECRET_KEY: ci-only-jwt-secret-with-sufficient-length
       ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       DASHSCOPE_API_KEY: ci-placeholder-not-used-by-health-check

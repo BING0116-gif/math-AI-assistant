@@ -245,7 +245,7 @@ python-dotenv==1.2.4
     # via pydantic-settings
 python-multipart==0.0.32
     # via -r requirements.txt
-pywin32==312
+pywin32==312 ; sys_platform == "win32"
     # via portalocker
 pyyaml==6.0.3
     # via
