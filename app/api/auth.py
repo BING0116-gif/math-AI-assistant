@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
+from asyncpg import PostgresError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.middleware.auth import (
     register_user,
@@ -80,8 +82,24 @@ async def register(request: RegisterRequest):
 @router.post("/login", responses={
     401: {"model": LoginError, "description": "用户名或密码错误"},
     423: {"model": LoginError, "description": "账户已临时锁定"},
+    503: {"model": LoginError, "description": "登录服务暂时不可用"},
 })
 async def login(payload: LoginRequest, request: Request):
+    try:
+        return await _login(payload, request)
+    except (SQLAlchemyError, PostgresError, ConnectionError, TimeoutError):
+        return JSONResponse(
+            status_code=503,
+            headers={"Retry-After": "5"},
+            content=LoginError(
+                code="AUTH_UNAVAILABLE",
+                message="登录服务暂时不可用，请稍后重试，无需修改密码",
+                retry_after_seconds=5,
+            ).model_dump(),
+        )
+
+
+async def _login(payload: LoginRequest, request: Request):
     try:
         validate_input(payload.username, "username", max_length=32)
     except SecurityValidationError as e:

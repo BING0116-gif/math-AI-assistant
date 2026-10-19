@@ -8,7 +8,6 @@
 - 单人休眠检测
 """
 
-import asyncio
 import logging
 import math
 import time
@@ -274,6 +273,8 @@ class MemoryScheduledTasks:
             logger.warning("[定时任务] 调度器已在运行")
             return
 
+        # Async DB pools belong to the application loop. Register coroutines
+        # directly so APScheduler does not execute them in new thread loops.
         self._scheduler = AsyncIOScheduler()
 
         # Durable SQL outbox; coroutine is executed on the application's loop.
@@ -302,12 +303,12 @@ class MemoryScheduledTasks:
                            (proactive.detect_repeated_errors, "detect_repeated_errors"),
                            (proactive.send_goal_deadline_reminder, "send_goal_deadline_reminder"),
                            (proactive.reconcile_plan_task_status, "reconcile_plan_task_status")):
-            self._scheduler.add_job(self._run_async(fn), "interval", minutes=15, id=job_id,
+            self._scheduler.add_job(fn, "interval", minutes=15, id=job_id,
                                     name=job_id, max_instances=1, coalesce=True, replace_existing=True)
 
         # 每日凌晨 2:00 执行记忆强度衰减
         self._scheduler.add_job(
-            self._run_async(self.decay_memory_strength),
+            self.decay_memory_strength,
             CronTrigger(hour=2, minute=0),
             id="decay_memory_strength",
             name="记忆强度衰减",
@@ -316,7 +317,7 @@ class MemoryScheduledTasks:
 
         # 每日凌晨 2:30 执行过期归档
         self._scheduler.add_job(
-            self._run_async(self.archive_expired_memories),
+            self.archive_expired_memories,
             CronTrigger(hour=2, minute=30),
             id="archive_expired_memories",
             name="过期记忆归档",
@@ -325,7 +326,7 @@ class MemoryScheduledTasks:
 
         # 每日凌晨 3:00 执行低强度归档
         self._scheduler.add_job(
-            self._run_async(self.archive_low_strength_memories),
+            self.archive_low_strength_memories,
             CronTrigger(hour=3, minute=0),
             id="archive_low_strength_memories",
             name="低强度记忆归档",
@@ -334,7 +335,7 @@ class MemoryScheduledTasks:
 
         # 每日凌晨 1:00 执行跨系统对账
         self._scheduler.add_job(
-            self._run_async(self.check_consistency),
+            self.check_consistency,
             CronTrigger(hour=1, minute=0),
             id="check_consistency",
             name="跨系统对账",
@@ -343,7 +344,7 @@ class MemoryScheduledTasks:
 
         # 每日凌晨 3:30 执行休眠检测
         self._scheduler.add_job(
-            self._run_async(self.detect_sleeping_users),
+            self.detect_sleeping_users,
             CronTrigger(hour=3, minute=30),
             id="detect_sleeping_users",
             name="休眠用户检测",
@@ -352,7 +353,7 @@ class MemoryScheduledTasks:
 
         # 阶段六 8.4:灰度护栏自动回缩,每 10 分钟评估一次
         self._scheduler.add_job(
-            self._run_async(self.evaluate_flag_guardrails),
+            self.evaluate_flag_guardrails,
             "interval",
             minutes=10,
             id="evaluate_flag_guardrails",
@@ -382,17 +383,6 @@ class MemoryScheduledTasks:
             self._scheduler.shutdown(wait=False)
             logger.info("[定时任务] 调度器已停止")
 
-    @staticmethod
-    def _run_async(async_fn):
-        """将异步函数包装为同步函数，并为每次执行创建新的协程。"""
-        def wrapper(*args, **kwargs):
-            loop = asyncio.new_event_loop()
-            try:
-                asyncio.set_event_loop(loop)
-                return loop.run_until_complete(async_fn(*args, **kwargs))
-            finally:
-                loop.close()
-        return wrapper
 
 
 # 全局单例
