@@ -12,10 +12,10 @@ from app.services.readiness_matrix import check_ai_analysis, check_vision_ocr
 
 
 def test_capability_table_contains_required_models():
-    assert MODEL_CAPABILITIES["deepseek-v4-flash"] == {
+    assert MODEL_CAPABILITIES["deepseek-flash"] == {
         "tool_call": True,
         "json_output": True,
-        "vision": False,
+            "vision": True,
     }
     assert MODEL_CAPABILITIES["qwen-vl-plus"] == {
         "tool_call": False,
@@ -26,10 +26,10 @@ def test_capability_table_contains_required_models():
 
 def test_unsupported_capability_fails_closed_before_request():
     with pytest.raises(ModelCapabilityError) as exc:
-        require_model_capabilities("deepseek-v4-flash", ("vision",))
+        require_model_capabilities("qwen-vl-plus", ("tool_call",))
 
     assert exc.value.code == "MODEL_CAPABILITY_UNSUPPORTED"
-    assert "vision" in str(exc.value)
+    assert "tool_call" in str(exc.value)
 
 
 def test_unknown_model_capability_fails_closed():
@@ -42,11 +42,10 @@ def test_unknown_model_capability_fails_closed():
 def test_vision_tool_does_not_silently_fallback_from_non_vision_model():
     from tools.vision_tool import VisionTool
 
-    tool = VisionTool(model="deepseek-v4-flash", api_key="test-key")
+    tool = VisionTool(model="unregistered-model", api_key="test-key")
     with pytest.raises(ModelCapabilityError) as exc:
         tool.recognize(("image/png", "base64"))
-
-    assert exc.value.code == "MODEL_CAPABILITY_UNSUPPORTED"
+    assert exc.value.code == "MODEL_CAPABILITY_UNKNOWN"
 
 
 @pytest.mark.asyncio
@@ -76,14 +75,14 @@ async def test_llm_service_rejects_unsupported_request_without_calling_provider(
 
 @pytest.mark.asyncio
 async def test_vision_provider_status_warns_for_non_vision_model(monkeypatch):
-    monkeypatch.setattr(settings, "VISION_MODEL", "deepseek-v4-flash", raising=False)
+    monkeypatch.setattr(settings, "VISION_MODEL", "unregistered-model", raising=False)
     monkeypatch.setattr(settings, "DASHSCOPE_API_KEY", "sk-" + "v" * 30, raising=False)
 
     result = await check_vision_ocr()
 
     assert result.status == "warning"
     assert "模型能力不匹配" in result.reason
-    assert result.details["model_capability"]["error_code"] == "MODEL_CAPABILITY_UNSUPPORTED"
+    assert result.details["model_capability"]["error_code"] == "MODEL_CAPABILITY_UNKNOWN"
 
 
 @pytest.mark.asyncio

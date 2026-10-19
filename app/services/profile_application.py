@@ -142,6 +142,11 @@ class ProfileSnapshot:
 
     def to_compact_json(self, max_length: int = 800) -> str:
         """紧凑 JSON 格式（用于 Agent Prompt 注入）。"""
+        raw_patterns = self.error_pattern_list
+        if not raw_patterns and isinstance(self.error_patterns, dict):
+            raw_patterns = self.error_patterns.get("common_error_reasons") or self.error_patterns.get("common_errors") or []
+        if not isinstance(raw_patterns, list):
+            raw_patterns = []
         compact = {
             "cr": self.correct_rate,
             "wp": [
@@ -157,8 +162,8 @@ class ProfileSnapshot:
                 for s in self.skills
             ],
             "ep": [
-                {"p": e["pattern"], "f": e["frequency"]}
-                for e in self.error_patterns
+                {"p": e.get("pattern") or e.get("reason", ""), "f": e.get("frequency", e.get("count", 0))}
+                for e in raw_patterns if isinstance(e, dict)
             ],
         }
         text = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))

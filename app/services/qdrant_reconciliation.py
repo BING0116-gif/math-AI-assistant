@@ -88,6 +88,11 @@ async def reconcile(kind: str, *, user_id: str | None = None, client: Any = None
         # The scroll below provides the authoritative transport error.
         pass
     points = await _scroll(client, collection)
+    # A user-scoped memory reconciliation must not treat other users' valid
+    # vectors as stale rows for the requested user.  Global reconciliation
+    # (user_id=None) still sees the complete collection.
+    if kind == "memory" and user_id:
+        points = [point for point in points if str((point.payload or {}).get("user_id")) == str(user_id)]
     report = ReconciliationReport(kind=kind, collection=collection, expected=len(expected), actual=len(points))
     seen: set[str] = set()
     version = _expected_version(kind)

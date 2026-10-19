@@ -22,6 +22,8 @@ from app.api.paper_api import question_template_router, router as paper_router
 from app.api.paper_student_api import router as paper_student_router
 from app.api.practice_api import router as practice_router
 from app.api.assessment_api import router as assessment_router
+from app.api.chapter_diagnostic_api import router as chapter_diagnostic_router
+from app.api.subjective_scoring_api import router as subjective_scoring_router
 from app.api.exam_api import router as exam_router
 from app.api.data_api import router as data_router
 from app.api.error_api import router as error_router
@@ -39,6 +41,7 @@ from app.api.legacy_import_api import router as legacy_import_router
 from app.api.readiness_api import router as readiness_router
 from app.api.admin_overview_api import router as admin_overview_router
 from app.api.admin_agent_metrics_api import router as admin_agent_metrics_router
+from app.api.admin_learning_effectiveness_api import router as admin_learning_effectiveness_router
 from app.api.quality_admin_api import router as quality_admin_router
 from app.api.notes_api import router as notes_router
 from app.api.student_paper_api import router as student_paper_router
@@ -93,6 +96,8 @@ def _register_routers(target_app: FastAPI) -> None:
         paper_student_router,
         practice_router,
         assessment_router,
+        chapter_diagnostic_router,
+        subjective_scoring_router,
         exam_router,
         learning_hub_router,
         learning_path_router,
@@ -100,6 +105,7 @@ def _register_routers(target_app: FastAPI) -> None:
         readiness_router,
         admin_overview_router,
         admin_agent_metrics_router,
+        admin_learning_effectiveness_router,
         quality_admin_router,
         notes_router,
         student_paper_router,

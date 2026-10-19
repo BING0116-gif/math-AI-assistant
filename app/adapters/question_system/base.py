@@ -115,3 +115,11 @@ class BaseQuestionSystemAdapter:
     def check_health(self) -> bool:
         """检查出题系统是否可用。"""
         raise NotImplementedError
+
+    def delete_question(self, question_id: str) -> bool:
+        """删除/撤回远程题目；实现必须是幂等的。"""
+        raise NotImplementedError
+
+    def retract_question(self, question_id: str) -> bool:
+        """撤回题目但保留审计记录。"""
+        raise NotImplementedError

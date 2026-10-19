@@ -185,7 +185,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { BookOpen, BookX, ChevronRight, MessageCircle, Network, Target } from 'lucide-vue-next'
 import AppShell from '@/components/shell/AppShell.vue'
-import KnowledgeGraph2D from '@/components/knowledge/KnowledgeGraph2D.vue'
+
 import { useEntranceAnimation } from '@/composables/useEntranceAnimation'
 import { getCourseLearningMap, getCourseTree, getKnowledgePoint, getKnowledgePointLearning, listCourses } from '@/api/knowledge'
 import { useErrorBookStore } from '@/stores/errorBookStore'
@@ -199,6 +199,7 @@ const authStore = useAuthStore()
 const { openLogin } = useLoginDialog()
 // Three.js is the primary knowledge-space view. The 2D dependency path remains
 // available as a complementary, keyboard-friendly view for precise sequencing.
+const KnowledgeGraph2D = defineAsyncComponent(() => import('@/components/knowledge/KnowledgeGraph2D.vue'))
 const KnowledgeGalaxy = defineAsyncComponent(() => import('@/components/knowledge/KnowledgeGalaxy.vue'))
 const tree = ref(null)
 const loading = ref(true)

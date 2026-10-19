@@ -73,7 +73,7 @@ def is_enabled(flag: str, user_key: str | None = None) -> bool:
     return base and bucket_percent(flag, user_key) < percent
 
 
-async def _recent_run_quality(window: int = 50) -> float:
+async def _recent_run_quality(window: int = 50) -> dict[str, float | int]:
     """近 window 条已结束 run 中失败+超时占比(护栏信号,与用户无关)。"""
     try:
         from sqlalchemy import select
@@ -83,42 +83,53 @@ async def _recent_run_quality(window: int = 50) -> float:
 
         async with get_db_session() as db:
             rows = list((await db.execute(
-                select(AIInteractionRun.status)
+                select(AIInteractionRun.status, AIInteractionRun.latency_ms, AIInteractionRun.estimated_cost)
                 .where(AIInteractionRun.status != "started")
                 .order_by(AIInteractionRun.created_at.desc())
                 .limit(window)
             )).scalars())
         if not rows:
-            return 0.0
-        bad = sum(1 for status in rows if status in {"failed", "timeout", "failed_l4"})
-        return bad / len(rows)
+            return {"runs": 0, "failure_rate": 0.0, "p95_latency_ms": 0.0, "cost": 0.0}
+        bad = sum(1 for status, _, _ in rows if status in {"failed", "timeout", "failed_l4"})
+        latencies = sorted(float(latency or 0) for _, latency, _ in rows)
+        p95 = latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))]
+        return {"runs": len(rows), "failure_rate": bad / len(rows), "p95_latency_ms": p95, "cost": sum(float(cost or 0) for _, _, cost in rows)}
     except Exception as exc:
         logger.warning(f"[FLAGS] 护栏信号查询失败(按健康处理): {exc}")
-        return 0.0
+        return {"runs": 0, "failure_rate": 0.0, "p95_latency_ms": 0.0, "cost": 0.0}
 
 
 # 护栏自动回缩内存态:flag → 置 0 时间;进程内即时生效(短 TTL 语义的 v1)
 _ROLLBACK_AT: Dict[str, str] = {}
 
 
-async def evaluate_flag_guardrails(*, failure_rate_threshold: float = 0.08) -> Dict[str, Any]:
+async def evaluate_flag_guardrails(*, failure_rate_threshold: float = 0.08, p95_latency_ms_threshold: float = 15000.0, cost_threshold: float = 100.0, dry_run: bool = False) -> Dict[str, Any]:
     """8.4 护栏自动回缩:越线 → 该 flag 放量置 0 + 审计日志。
 
     由调度器周期调用;返回报告供运维与看板消费。
     """
     rolled_back: Dict[str, int] = {}
     quality = await _recent_run_quality()
-    if quality > failure_rate_threshold:
+    # Backward-compatible seam for callers/tests that provide the old scalar signal.
+    if isinstance(quality, (int, float)):
+        quality = {"runs": 0, "failure_rate": float(quality), "p95_latency_ms": 0.0, "cost": 0.0}
+    reasons = []
+    if quality["failure_rate"] > failure_rate_threshold: reasons.append("failure_rate")
+    if quality["p95_latency_ms"] > p95_latency_ms_threshold: reasons.append("p95_latency")
+    if quality["cost"] > cost_threshold: reasons.append("cost")
+    if reasons:
         table = _rollout_table()
         for flag, percent in table.items():
             if percent > 0 and flag in FLAG_REGISTRY:
-                _ROLLBACK_AT[flag] = datetime.now(timezone.utc).isoformat()
                 rolled_back[flag] = percent
+                if not dry_run:
+                    _ROLLBACK_AT[flag] = datetime.now(timezone.utc).isoformat()
                 logger.warning(
-                    f"[FLAGS] 护栏越线(近 50 run 失败率 {quality:.1%}),灰度自动回缩: "
+                    f"[FLAGS] 护栏越线({','.join(reasons)}),灰度自动回缩: "
                     f"flag={flag} rollout {percent}% -> 0%"
                 )
                 try:
+                    if dry_run: continue
                     from app.security.audit import get_audit_logger
 
                     get_audit_logger().log_modification(
@@ -129,7 +140,17 @@ async def evaluate_flag_guardrails(*, failure_rate_threshold: float = 0.08) -> D
                     )
                 except Exception:
                     pass
-    return {"recent_bad_rate": round(quality, 4), "threshold": failure_rate_threshold, "rolled_back": rolled_back}
+    return {"dry_run": dry_run, "signals": quality, "recent_bad_rate": round(float(quality["failure_rate"]), 4), "thresholds": {"failure_rate": failure_rate_threshold, "p95_latency_ms": p95_latency_ms_threshold, "cost": cost_threshold}, "reasons": reasons, "rolled_back": rolled_back}
+
+
+def rollback_flag(flag: str, *, dry_run: bool = True) -> dict[str, Any]:
+    """Return or apply an explicit emergency rollback; never changes student data."""
+    if flag not in FLAG_REGISTRY:
+        raise ValueError(f"unknown feature flag: {flag}")
+    previous = _rollout_table().get(flag, 0)
+    if not dry_run:
+        _ROLLBACK_AT[flag] = datetime.now(timezone.utc).isoformat()
+    return {"flag": flag, "previous_rollout_percent": previous, "new_rollout_percent": 0, "dry_run": dry_run, "data_action": "none; retain immutable events and projections"}
 
 
 def flag_status() -> Dict[str, Any]:

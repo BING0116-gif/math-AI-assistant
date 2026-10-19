@@ -762,8 +762,10 @@ class ContentAIProviderFactory:
             # qwen/auto are historical configuration values; they must never
             # activate a DashScope request in production.
             return DeepSeekContentAIProvider(
-                api_key=settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY,
-                model=settings.DEEPSEEK_MODEL or settings.LLM_MODEL,
+                # This provider has its own explicit credential boundary.  Do
+                # not let a generic chat key silently activate content AI.
+                api_key=settings.DEEPSEEK_API_KEY,
+                model=settings.DEEPSEEK_MODEL,
             )
         return MockContentAIProvider()
 
@@ -771,7 +773,7 @@ class ContentAIProviderFactory:
         from app.models.content_ai import ContentAIProviderStatusData
 
         qwen_key = False
-        deepseek_key = bool((settings.DEEPSEEK_API_KEY or settings.LLM_API_KEY or "").strip())
+        deepseek_key = bool((settings.DEEPSEEK_API_KEY or "").strip())
         if self._mode == MOCK_PROVIDER_NAME:
             return ContentAIProviderStatusData(
                 mode=self._mode,

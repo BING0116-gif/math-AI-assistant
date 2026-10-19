@@ -41,6 +41,16 @@ describe('practice behavior §5.1', () => {
     expect(payload.idempotency_key).toBeTruthy()
   })
 
+  it('restores submitted answers and clears answers from the previous session', async () => {
+    practiceApi.get.mockResolvedValue(wrapped({ session_id: 'restored', questions: [{ question_id: 'q1' }], answers: { q1: 'B' }, feedback: { q1: { correct: false } } }))
+    const store = usePracticeStore()
+    store.answers = { stale: 'A' }
+    store.currentIndex = 4
+    await store.loadSession('restored')
+    expect(store.answers).toEqual({ q1: 'B' })
+    expect(store.currentIndex).toBe(0)
+  })
+
   it('gates retries by behavior limits and latest correctness', () => {
     const store = usePracticeStore()
     store.session = { session_id: 's1', config: { behavior: 'immediate' }, questions: [{ question_id: 'q1' }] }

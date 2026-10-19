@@ -10,9 +10,9 @@
   color-scheme: light;
 
   /* 画布与表面 */
-  --bg: #F4F5F8;
-  --bg-soft: #FAFAFC;
-  --side: #FAFAFC;
+  --bg: #F6F5F2;
+  --bg-soft: #FBFAF8;
+  --side: #FBFAF8;
   --surface: #FFFFFF;
   --surface-2: #F7F8FA;
   --overlay: rgba(9, 11, 15, .5);

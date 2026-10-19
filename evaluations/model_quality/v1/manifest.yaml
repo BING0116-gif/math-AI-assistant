@@ -1,6 +1,6 @@
 schema_version: '1.0'
-dataset_version: 1.1.0
-dataset_hash: 036313bae85f440ce65aaecf1fdd5167138defc77d8ef7ece0e81f3b5d5654ba
+dataset_version: 1.1.1
+dataset_hash: be3efabc1a0afad91d5739754dd14203771fbc900b5e3b4855817751641878f2
 title: Phase 3 Step 3.4 AI Tutor 模型质量评测集
 course_scope:
 - 大学高等数学

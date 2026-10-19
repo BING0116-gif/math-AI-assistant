@@ -51,8 +51,13 @@ def upgrade() -> None:
     op.create_index("ix_async_task_status", "async_tasks", ["status"])
     op.create_index("ix_async_task_claim", "async_tasks", ["status", "lease_until", "queued_at"])
     op.create_index("ix_async_task_resource", "async_tasks", ["resource_type", "resource_id"])
+    recreate = "always" if op.get_bind().dialect.name == "sqlite" else "never"
     for table in TASK_TABLES:
-        with op.batch_alter_table(table, recreate="always") as batch:
+        # All supported production databases can add this nullable column and
+        # FK in place.  Rebuilding self-referencing tables (notably
+        # content_ai_analysis_runs) fails because the temporary table's FK is
+        # created before its primary-key uniqueness is available.
+        with op.batch_alter_table(table, recreate=recreate) as batch:
             batch.add_column(sa.Column("task_id", sa.String(36), nullable=True))
             batch.create_foreign_key(f"fk_{table}_async_task", "async_tasks", ["task_id"], ["id"], ondelete="SET NULL")
             batch.create_index(f"ix_{table}_task_id", ["task_id"])
@@ -70,8 +75,9 @@ def upgrade() -> None:
             bind.execute(sa.text(f"UPDATE {table} SET task_id = :task_id WHERE id = :id"), {"task_id": task_id, "id": row["id"]})
 
 def downgrade() -> None:
+    recreate = "always" if op.get_bind().dialect.name == "sqlite" else "never"
     for table in reversed(TASK_TABLES):
-        with op.batch_alter_table(table, recreate="always") as batch:
+        with op.batch_alter_table(table, recreate=recreate) as batch:
             batch.drop_index(f"ix_{table}_task_id")
             batch.drop_constraint(f"fk_{table}_async_task", type_="foreignkey")
             batch.drop_column("task_id")

@@ -226,7 +226,7 @@ class TestFactory:
 
     def test_qwen_status_unavailable_without_key(self):
         st = ContentAIProviderFactory("qwen").provider_status()
-        assert st.provider == "qwen"
+        assert st.provider == "deepseek"
         assert st.available is False
         # 即使真 key 缺失，也应暴露 unavailable 原因
         assert st.reason in ("not_implemented", "missing_api_key")
@@ -382,7 +382,7 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "b7c8d9e0f1a3"  # quality-loop fields on top of student papers & diagnostics
+        assert script.get_current_head() == "hi60718293a7"  # current ORM reconciliation head
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3
@@ -439,7 +439,7 @@ class TestDeepSeekProvider:
     def test_available_with_key(self):
         p = DeepSeekContentAIProvider(api_key="sk-test", model="deepseek-chat")
         assert p.is_available() is True
-        assert p.model == "deepseek-chat"
+        assert p.model == "deepseek-flash"
         assert p.name == DEEPSEEK_PROVIDER_NAME
 
     def test_parse_json_strips_fences_and_recovers(self):

@@ -1,4 +1,5 @@
 <script setup>
+import '@/styles/apply-pages.css'
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppShell from '@/components/shell/AppShell.vue'
@@ -6,7 +7,7 @@ import { useStudentPaperStore } from '@/stores/studentPaperStore'
 const router=useRouter(),store=useStudentPaperStore()
 onMounted(()=>store.list().catch(()=>{}))
 </script>
-<template><AppShell><template #topbar-title>我的试卷</template><main class="page"><header><div><button class="back" @click="router.push('/apply')">返回学以致用</button><h1>我的试卷</h1><p>保存、调整并重复使用你自己的试卷。</p></div><button class="primary" @click="router.push('/apply/papers/new')">新建试卷</button></header><p v-if="store.error" class="error">{{store.error}}</p><p v-if="store.loading">正在加载…</p><section v-else class="grid"><article v-for="paper in store.items" :key="paper.paper_id"><div><span class="status">{{paper.status==='ready'?'可使用':'草稿'}}</span><h2>{{paper.title}}</h2><p>{{paper.question_count}} 题 · {{paper.total_score}} 分 · 约 {{paper.estimated_minutes}} 分钟</p></div><div class="actions"><button @click="router.push(`/apply/papers/${paper.paper_id}`)">查看</button><button @click="router.push(`/apply/papers/${paper.paper_id}/edit`)">编辑</button></div></article><div v-if="!store.items.length" class="empty"><h2>还没有学生试卷</h2><p>从智能蓝图开始，生成后仍可逐题替换和排序。</p><button class="primary" @click="router.push('/apply/papers/new')">生成第一份试卷</button></div></section></main></AppShell></template>
+<template><AppShell><template #topbar-title>我的试卷</template><main class="page apply-screen"><header><div><button class="back" @click="router.push('/apply')">返回学以致用</button><h1>我的试卷</h1><p>保存、调整并重复使用你自己的试卷。</p></div><button class="primary" @click="router.push('/apply/papers/new')">新建试卷</button></header><p v-if="store.error" class="error">{{store.error}}</p><p v-if="store.loading">正在加载…</p><section v-else class="grid"><article v-for="paper in store.items" :key="paper.paper_id"><div><span class="status">{{paper.status==='ready'?'可使用':'草稿'}}</span><h2>{{paper.title}}</h2><p>{{paper.question_count}} 题 · {{paper.total_score}} 分 · 约 {{paper.estimated_minutes}} 分钟</p></div><div class="actions"><button @click="router.push(`/apply/papers/${paper.paper_id}`)">查看</button><button @click="router.push(`/apply/papers/${paper.paper_id}/edit`)">编辑</button></div></article><div v-if="!store.items.length" class="empty"><h2>还没有学生试卷</h2><p>从智能蓝图开始，生成后仍可逐题替换和排序。</p><button class="primary" @click="router.push('/apply/papers/new')">生成第一份试卷</button></div></section></main></AppShell></template>
 <style scoped>
 .page { max-width: 1040px; margin: auto; padding: 36px 24px 72px; }
 .page > header { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }

@@ -6,9 +6,9 @@ import re
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
-from app.data.models import Base, Question
+from app.data.models import Question
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "math_ai.db")
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "seed_questions.csv")
@@ -91,7 +91,13 @@ def parse_csv_line(line: str):
 
 
 def import_csv():
-    Base.metadata.create_all(engine)
+    # Production schema is owned by Alembic; seed import must never create a
+    # partial schema that can diverge from the application models.
+    if not inspect(engine).has_table("questions"):
+        raise RuntimeError(
+            "数据库尚未完成 Alembic 迁移，请先执行 "
+            "alembic -c app/data/alembic.ini upgrade head"
+        )
 
     imported = 0
     skipped = 0

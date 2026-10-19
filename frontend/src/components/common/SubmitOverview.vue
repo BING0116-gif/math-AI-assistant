@@ -13,6 +13,8 @@ const props = defineProps({
   currentIndex: { type: Number, default: 0 },
   submitting: { type: Boolean, default: false },
   title: { type: String, default: '交卷前总览' },
+  actionLabel: { type: String, default: '交卷' },
+  pendingLabel: { type: String, default: '未作答' },
 })
 const emit = defineEmits(['confirm', 'cancel'])
 
@@ -28,7 +30,7 @@ const unansweredCount = computed(() => props.questions.filter((item) => !isAnswe
       <header>
         <h2>{{ title }}</h2>
         <p :class="unansweredCount ? 'warn' : 'ok'" aria-live="polite">
-          {{ unansweredCount ? `还有 ${unansweredCount} 题未作答，未作答按错误计分` : '全部题目已作答' }}
+          {{ unansweredCount ? `还有 ${unansweredCount} 题${pendingLabel}，${pendingLabel}按错误计分` : '全部题目已完成' }}
         </p>
       </header>
       <div class="grid">
@@ -44,7 +46,7 @@ const unansweredCount = computed(() => props.questions.filter((item) => !isAnswe
       <footer>
         <BaseButton variant="secondary" size="lg" @click="emit('cancel')">继续作答</BaseButton>
         <BaseButton variant="danger" size="lg" :disabled="submitting" @click="emit('confirm')">
-          {{ submitting ? '正在交卷…' : unansweredCount ? `仍要交卷（${unansweredCount} 题未答）` : '确认交卷' }}
+          {{ submitting ? '正在提交…' : unansweredCount ? `仍要${actionLabel}（${unansweredCount} 题未完成）` : `确认${actionLabel}` }}
         </BaseButton>
       </footer>
     </section>

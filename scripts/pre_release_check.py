@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(label: str, command: list[str], cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
+    if os.name == "nt" and command and command[0] in {"npm", "npx"}:
+        command = [f"{command[0]}.cmd", *command[1:]]
     print(f"[pre-release] {label}: {' '.join(command)}", flush=True)
     try:
         completed = subprocess.run(command, cwd=cwd, check=False, env=env)
@@ -67,7 +69,22 @@ def main() -> int:
     check_configuration()
     check_pinned_images()
     run("Python compile", [sys.executable, "-m", "compileall", "-q", "app", "agent_core", "tools", "scripts"])
-    run("affected pytest", [sys.executable, "-m", "pytest", "tests/test_phase3_migration.py", "tests/test_question_templates.py::test_migration_chain_upgrades_clean_sqlite", "tests/test_alembic_logging_hygiene.py", "-q"])
+    run(
+        "affected pytest",
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/test_phase3_migration.py",
+            "tests/test_question_templates.py::test_migration_chain_upgrades_clean_sqlite",
+            "tests/test_alembic_logging_hygiene.py",
+            "tests/test_learning_effectiveness.py",
+            "tests/test_feature_flags.py",
+            "tests/test_p0_stability.py::test_behavior_event_is_durable_and_idempotent",
+            "tests/test_rag_recommender.py::test_recommender_fallback",
+            "-q",
+        ],
+    )
     run("Alembic heads", [sys.executable, "-m", "alembic", "-c", "app/data/alembic.ini", "heads"])
     # `alembic check` requires an up-to-date database. Use a disposable SQLite
     # database so the gate never reads or mutates data/math_ai.db.

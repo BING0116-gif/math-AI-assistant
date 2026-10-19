@@ -8,7 +8,9 @@ $resolved = [System.IO.Path]::GetFullPath($BackupPath)
 $dbUser = if ($env:DB_USER) { $env:DB_USER } else { 'mathai' }
 $dbName = if ($env:DB_NAME) { $env:DB_NAME } else { 'math_ai' }
 if ($Action -eq 'backup') {
-  docker compose exec -T db pg_dump -U $dbUser -d $dbName -Fc | Set-Content -LiteralPath $resolved -AsByteStream
+  # Native stdout redirection preserves the custom-format dump bytes. Piping
+  # through Set-Content coerces the stream and produces an invalid archive.
+  docker compose exec -T db pg_dump -U $dbUser -d $dbName -Fc > $resolved
   Get-FileHash -LiteralPath $resolved -Algorithm SHA256
   exit
 }

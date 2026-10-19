@@ -1,0 +1,13 @@
+{
+  "captured_at": "2026-10-14",
+  "command": "npm run build:budget",
+  "initial_gzip_kb": 231.46,
+  "largest_chunk": { "file": "assets/mathlive-BQlG_-Uv.js", "gzip_kb": 222.70 },
+  "chunks": {
+    "mathlive": { "raw_kb": 819.11, "gzip_kb": 222.70 },
+    "charts": { "raw_kb": 599.28, "gzip_kb": 204.36 },
+    "three": { "raw_kb": 514.63, "gzip_kb": 129.63 },
+    "knowledge_graph": { "raw_kb": 489.87, "gzip_kb": 158.39 },
+    "math_rendering": { "raw_kb": 383.40, "gzip_kb": 136.17 }
+  }
+}

@@ -49,7 +49,7 @@ function onFallbackInput(event) {
       class="math-field"
       :value="initialLatex"
       virtual-keyboard-mode="manual"
-      :read-only="disabled"
+      :read-only="disabled ? '' : null"
       :aria-label="numeric ? '数值答案（支持公式键盘）' : '表达式答案（支持公式键盘）'"
       @input="onFieldInput"
     />

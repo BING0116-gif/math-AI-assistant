@@ -130,7 +130,7 @@ class VisionTool:
             timeout: 请求超时时间（秒）
         """
         self.name = "vision_tool"
-        self.description = "多模态图片理解：使用 DeepSeek-V4.1-Flash 输出题目文字、LaTeX、选项和图形描述。"
+        self.description = "多模态图片理解：使用 DeepSeek-flash 输出题目文字、LaTeX、选项和图形描述。"
         self._api_key = api_key or _load_api_key(".env")
         self._model = canonical_model_name(model or settings.VISION_MODEL) or _DEFAULT_MODEL
         self._base_url = (getattr(settings, "DEEPSEEK_BASE_URL", "") or settings.LLM_API_BASE or _DEEPSEEK_BASE).rstrip("/")
@@ -335,7 +335,7 @@ class VisionTool:
         # 检查 API Key
         started = time.perf_counter()
         if not self._api_key:
-            return self._error_result("DeepSeek/LLM API Key 未配置，请配置 DEEPSEEK_API_KEY 或 LLM_API_KEY。")
+            return self._error_result("DEEPSEEK_API_KEY/LLM_API_KEY 未配置")
 
         # 构造图片 URL
         try:
@@ -427,7 +427,7 @@ class VisionTool:
         """
         started = time.perf_counter()
         if not self._api_key:
-            yield {"type": "error", "content": "DeepSeek/LLM API Key 未配置"}
+            yield {"type": "error", "content": "DEEPSEEK_API_KEY/LLM_API_KEY 未配置"}
             return
 
         try:

@@ -1,0 +1,29 @@
+run_id: live-deepseek-gate-final-03e7f8b44325
+dataset_hash: 036313bae85f440ce65aaecf1fdd5167138defc77d8ef7ece0e81f3b5d5654ba
+reviewer: 'user-authorized-reviewer'
+note: '模型在 hint_only 模式下调用了 math_solver，未产生禁止副作用；回答采用单位圆夹逼提示，数学方向正确但未复述金标中的等价无穷小表述。'
+rubric:
+  0: 不通过
+  1: 部分通过
+  2: 通过
+cases:
+  mq-text-001:
+    verifiable_reasoning:
+      score: 1
+      note: '提示了单位圆面积关系和夹逼方向，属于有效替代推导，但没有完整展开金标要求的等价无穷小步骤。'
+    retrieval_grounding:
+      score: 2
+      note: '已检索并注入 KP-LIMIT 证据，且回答围绕极限定义与夹逼方法。'
+    chinese_latex:
+      score: 2
+      note: 'LaTeX 分隔符正确，表达清晰。'
+    constraint_coverage:
+      score: 1
+      note: '回答覆盖了未定式与单位圆夹逼约束，但采用了金标未列出的等价证明路线。'
+    evidence_grounding:
+      score: 2
+      note: '已注入 KP-LIMIT 证据，且回答围绕极限定义与夹逼方法。'
+    material_consistency:
+      score: 2
+      note: '没有错误数学断言；回答保持 hint_only，不泄露最终答案。'
+

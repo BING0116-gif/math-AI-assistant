@@ -43,7 +43,7 @@ export function useDashboardMetrics(learningDashboard: Ref<any>, period: Ref<str
     const today = learningDashboard.value?.today
     return [today?.primary, ...(today?.alternatives || [])]
       .filter(Boolean)
-      .map((task: any) => ({ ...task, done: false }))
+      .map((task: any) => ({ ...task, done: Boolean(task.done) }))
   })
   const completedTasks = computed(() => todayTasks.value.filter((task: any) => task.done).length)
   const totalTasks = computed(() => todayTasks.value.length)

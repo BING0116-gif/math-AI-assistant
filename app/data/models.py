@@ -224,6 +224,10 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    learning_goals = relationship(
+        "LearningGoal", back_populates="user", cascade="all, delete-orphan"
+    )
+
     sessions = relationship(
         "ChatSession", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
     )
@@ -242,6 +246,8 @@ class LearningRecord(Base):
     user_id = Column(
         String(36), ForeignKey("users.id"), nullable=False, index=True
     )
+
+
     question_id = Column(String(20), ForeignKey("questions.id"), nullable=True, index=True)
 
     user = relationship("User", back_populates="learning_records")
@@ -273,6 +279,110 @@ class LearningRecord(Base):
         Index("idx_learning_user_time", "user_id", "created_at"),
         Index("idx_learning_event_type", "event_type", "created_at"),
         Index("idx_learning_errors", "user_id", "category", postgresql_where="is_correct = FALSE"),
+    )
+
+
+class LearningGoal(Base):
+    """Explicit student goal; progress is always derived from learning facts."""
+    __tablename__ = "learning_goals"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    goal_type = Column(String(32), nullable=False)
+    target_value = Column(Float, nullable=False)
+    target_knowledge_point = Column(String(128), nullable=True)
+    deadline = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), nullable=False, default="active")
+    metadata_ = Column("metadata", JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="learning_goals")
+    __table_args__ = (
+        Index("ix_learning_goals_user_status", "user_id", "status"),
+        CheckConstraint("goal_type IN ('minutes','attempts','mastery')", name="ck_learning_goal_type"),
+        CheckConstraint("target_value > 0", name="ck_learning_goal_target_positive"),
+    )
+
+
+class LearningPlan(Base):
+    """A durable, owner-scoped daily plan generated from an active goal."""
+    __tablename__ = "learning_plans"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    plan_date = Column(DateTime(timezone=True), nullable=False, index=True)
+    goal_id = Column(String(36), ForeignKey("learning_goals.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(20), nullable=False, default="active")
+    estimated_minutes = Column(Integer, nullable=False, default=0)
+    completed_minutes = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        UniqueConstraint("user_id", "plan_date", name="uq_learning_plans_user_date"),
+        Index("ix_learning_plans_user_status", "user_id", "status"),
+        CheckConstraint("status IN ('active','completed','expired','cancelled')", name="ck_learning_plan_status"),
+    )
+
+
+class LearningPlanTask(Base):
+    """A recoverable task in a daily plan; all reads and writes are owner scoped."""
+    __tablename__ = "learning_plan_tasks"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    plan_id = Column(String(36), ForeignKey("learning_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_type = Column(String(32), nullable=False)
+    knowledge_point = Column(String(128), nullable=True)
+    question_id = Column(String(20), ForeignKey("questions.id", ondelete="SET NULL"), nullable=True)
+    sequence = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    attempt_count = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    failure_reason = Column(Text, nullable=True)
+    estimated_minutes = Column(Integer, nullable=False, default=5)
+    __table_args__ = (
+        UniqueConstraint("plan_id", "sequence", name="uq_learning_plan_task_sequence"),
+        CheckConstraint("status IN ('pending','in_progress','completed','skipped','failed','expired')", name="ck_learning_plan_task_status"),
+        Index("ix_learning_plan_tasks_user_status", "user_id", "status"),
+    )
+
+
+class LearningAutomationPreference(Base):
+    """Per-user opt-out for proactive learning actions."""
+    __tablename__ = "learning_automation_preferences"
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    allowed_channel = Column(String(20), nullable=False, default="in_app")
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class ProactiveLearningAction(Base):
+    """Auditable proactive action with evidence, cooldown and retry lifecycle."""
+    __tablename__ = "proactive_learning_actions"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    action_type = Column(String(40), nullable=False)
+    trigger = Column(String(60), nullable=False)
+    evidence = Column(JSON, nullable=False, default=dict)
+    frequency_key = Column(String(200), nullable=False)
+    cooldown_hours = Column(Integer, nullable=False, default=24)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String(24), nullable=False, default="pending")
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    result = Column(JSON, nullable=True)
+    last_error = Column(Text, nullable=True)
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        UniqueConstraint("user_id", "frequency_key", name="uq_proactive_action_frequency"),
+        CheckConstraint("status IN ('pending','delivered','failed','dead','cancelled','expired')", name="ck_proactive_action_status"),
+        Index("ix_proactive_actions_user_status", "user_id", "status"),
+        Index("ix_proactive_actions_expiry", "expires_at", "status"),
     )
 
 
@@ -748,6 +858,8 @@ class AIInteractionRun(Base):
     knowledge_point_codes = Column(JSON, nullable=False, default=list)
     tool_names = Column(JSON, nullable=False, default=list)
     model = Column(String(100), nullable=True)
+    provider = Column(String(60), nullable=True)
+    request_id = Column(String(128), nullable=True, index=True)
     prompt_version = Column(String(80), nullable=True)
     latency_ms = Column(Integer, nullable=True)
     token_usage = Column(JSON, nullable=True)
@@ -763,6 +875,8 @@ class AIInteractionRun(Base):
     modified_by_user = Column(Boolean, nullable=False, default=False, server_default="false")
     status = Column(String(20), nullable=False, default="started", index=True)
     error_code = Column(String(100), nullable=True)
+    fallback_reason = Column(String(200), nullable=True)
+    quality_flags = Column(JSON, nullable=True)
     output_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
@@ -1909,6 +2023,56 @@ class PracticeDiagnosticEvent(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_practice_diagnostic_owner_key"),
         UniqueConstraint("attempt_id", "step_index", name="uq_practice_diagnostic_attempt_step"),
+    )
+
+
+class SubjectiveEvaluation(Base):
+    """Immutable, owner-scoped AI evaluation of a text solution.
+
+    This is evidence only: it never overwrites PracticeAttempt or mastery state.
+    """
+    __tablename__ = "subjective_evaluations"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(String(20), ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    attempt_id = Column(String(36), ForeignKey("practice_attempts.id", ondelete="SET NULL"), nullable=True, index=True)
+    answer_snapshot = Column(Text, nullable=False)
+    reference_snapshot = Column(JSON, nullable=False, default=dict)
+    dimension_scores = Column(JSON, nullable=False, default=dict)
+    verdict = Column(String(32), nullable=False)
+    rationale = Column(JSON, nullable=False, default=dict)
+    review_status = Column(String(20), nullable=False, default="not_required")
+    model = Column(String(100), nullable=True)
+    prompt_version = Column(String(40), nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_subjective_eval_owner_idem"),
+        CheckConstraint("verdict IN ('certainly_correct','probably_correct','needs_human_review','unable_to_determine')", name="ck_subjective_eval_verdict"),
+        CheckConstraint("review_status IN ('not_required','pending','resolved')", name="ck_subjective_eval_review_status"),
+        Index("ix_subjective_eval_owner_question", "user_id", "question_id", "created_at"),
+    )
+
+
+class MasteryCorrectionEvent(Base):
+    """Append-only student report about an evidence label or knowledge-point link."""
+    __tablename__ = "mastery_correction_events"
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    knowledge_point_code = Column(String(100), nullable=False, index=True)
+    correction_type = Column(String(30), nullable=False)
+    original_value = Column(String(200), nullable=True)
+    proposed_value = Column(String(200), nullable=False)
+    reason = Column(Text, nullable=False, default="")
+    evidence_snapshot = Column(JSON, nullable=False, default=dict)
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_mastery_correction_owner_idem"),
+        CheckConstraint("correction_type IN ('error_type','knowledge_point')", name="ck_mastery_correction_type"),
+        Index("ix_mastery_correction_owner_point", "user_id", "knowledge_point_code", "created_at"),
     )
 
 

@@ -10,7 +10,7 @@ import ReminderBell from '@/components/shell/ReminderBell.vue'
 import SignOutButton from '@/components/shell/SignOutButton.vue'
 import SignOutOverlay from '@/components/shell/SignOutOverlay.vue'
 import {
-  Plus, Search, LayoutDashboard, UserRound, Network, FileText, Target, BookX,
+  Plus, Search, LayoutDashboard, UserRound, Network, FileText, Target, BookX, Bell,
   PanelLeftClose, PanelLeftOpen, Sun, Moon, Menu, X, Trash2, ShieldCheck,
 } from 'lucide-vue-next'
 import { formatRelativeTime } from '@/utils/dateTime'
@@ -29,6 +29,7 @@ const searchInputRef = ref<HTMLInputElement | null>(null)
 // navItems 数据结构不变(6 项);icon 值对应 lucide 组件(§6.4)
 const navItems = [
   { to: '/dashboard', label: '学习看板', icon: LayoutDashboard },
+  { to: '/notifications', label: '通知中心', icon: Bell },
   { to: '/profile', label: '记忆画像', icon: UserRound },
   { to: '/knowledge', label: '知识星球', icon: Network },
   { to: '/notes', label: '智能笔记', icon: FileText },

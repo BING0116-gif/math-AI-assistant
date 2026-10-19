@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import type { EChartsOption } from 'echarts'
 import { currentChartTheme, graphic, init, type ECharts } from '@/utils/charts'
 import AppShell from '@/components/shell/AppShell.vue'
-import { getLearningDashboard } from '@/api/learning'
+import { getLearningDashboard, getMasteryEvidence, reportMasteryCorrection } from '@/api/learning'
 import { apiErrorMessage } from '@/utils/apiError'
 import { useDashboardMetrics } from '@/composables/useDashboardMetrics'
 import { chartAnimation, chartVar, useChartTheme } from '@/composables/useChartTheme'
@@ -24,6 +24,31 @@ const learningDashboard = ref<any>(null)
 const learningError = ref('')
 const period = ref('7d')
 const loading = ref(true)
+const evidencePanel = ref<any>(null)
+const correctionReason = ref('')
+const correctionValue = ref('')
+const correctionType = ref<'error_type' | 'knowledge_point'>('error_type')
+const correctionBusy = ref(false)
+const evidenceError = ref('')
+async function openEvidence(code: string) {
+  evidenceError.value = ''
+  try {
+    const { data } = await getMasteryEvidence(code)
+    evidencePanel.value = data?.data ?? data
+  } catch (error) { evidenceError.value = apiErrorMessage(error) }
+}
+async function submitCorrection() {
+  if (!evidencePanel.value || !correctionValue.value.trim() || correctionBusy.value) return
+  correctionBusy.value = true
+  try {
+    await reportMasteryCorrection(evidencePanel.value.knowledge_point_code, {
+      correction_type: correctionType.value, proposed_value: correctionValue.value.trim(), reason: correctionReason.value,
+      idempotency_key: `mastery-correction-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    })
+    correctionValue.value = ''; correctionReason.value = ''
+    evidencePanel.value.correctionSubmitted = true
+  } catch (error) { evidenceError.value = apiErrorMessage(error) } finally { correctionBusy.value = false }
+}
 
 const bodyEl = ref<HTMLElement | null>(null)
 const trendChartEl = ref<HTMLElement | null>(null)
@@ -35,6 +60,7 @@ const {
   greeting, greetingSub, learningHours, weekStudyDaysDisplay, masteredPoints,
   accuracyRate, weakPoints, chapterMastery, todayTasks, completedTasks,
   totalTasks, trendData, periodText,
+  goalItems, overallGoalProgress,
 } = useDashboardMetrics(learningDashboard, period)
 
 const { bindChart, refreshAll, disposeAll } = useChartTheme()
@@ -450,6 +476,7 @@ onBeforeUnmount(() => {
                     <span class="bn">{{ wp.category }}</span>
                     <span class="progress"><i class="rose" :style="{ width: wp.rate + '%' }"></i></span>
                     <span class="bv weak-rate"><b>{{ wp.rate }}%</b></span>
+                    <button class="more evidence-link" type="button" @click="openEvidence(wp.code)">证据</button>
                   </div>
                 </div>
                 <p v-else class="caption chapter-empty">暂无薄弱知识点记录，完成练习后这里会显示需要加强的考点</p>
@@ -458,6 +485,17 @@ onBeforeUnmount(() => {
                     <Crosshair class="ic-15" :stroke-width="1.75" />去强化「{{ weakPoints[0].category }}」
                   </button>
                 </div>
+              </div>
+              <div v-if="evidencePanel" class="evidence-overlay" role="dialog" aria-modal="true" @click.self="evidencePanel = null">
+                <section class="card evidence-panel">
+                  <div class="card-head"><span class="t-3">{{ evidencePanel.knowledge_point_code }} 的掌握度证据</span><button class="more" type="button" @click="evidencePanel = null">关闭</button></div>
+                  <p>掌握度 {{ Math.round(evidencePanel.mastery * 100) }}% · 置信度 {{ Math.round(evidencePanel.confidence * 100) }}% · {{ evidencePanel.evidence_count }} 次证据</p>
+                  <p v-if="evidenceError" class="error-message" role="alert">{{ evidenceError }}</p>
+                  <p v-if="evidencePanel.change_reason?.reason">变化原因：{{ evidencePanel.change_reason.reason }}</p>
+                  <ul class="evidence-items"><li v-for="item in evidencePanel.evidence" :key="item.attempt_id">{{ item.occurred_at }} · {{ item.correct ? '答对' : '答错' }} · {{ item.error_type || '无错误标签' }} · {{ item.question }}</li></ul>
+                  <p v-if="evidencePanel.correctionSubmitted" class="caption">已记录你的修正，原始掌握度事实保持不变。</p>
+                  <form v-else class="correction-form" @submit.prevent="submitCorrection"><label>修正类型<select v-model="correctionType"><option value="error_type">错误类型</option><option value="knowledge_point">知识点归属</option></select></label><label>建议值<input v-model="correctionValue" maxlength="200" required></label><label>原因（可选）<textarea v-model="correctionReason" maxlength="1000" rows="2"></textarea></label><button class="btn btn-primary" :disabled="correctionBusy">{{ correctionBusy ? '提交中…' : '报告修正' }}</button></form>
+                </section>
               </div>
             </div>
 
@@ -502,6 +540,20 @@ onBeforeUnmount(() => {
                     <Play class="ic-15" :stroke-width="1.75" />开始今日任务
                   </button>
                 </div>
+              </div>
+
+              <div class="card" data-testid="learning-goals-card">
+                <div class="card-head">
+                  <span class="t-3">学习目标</span>
+                  <span v-if="goalItems.length" class="tag tag-soft-teal">{{ overallGoalProgress }}%</span>
+                </div>
+                <div v-if="goalItems.length" class="task-list">
+                  <div v-for="goal in goalItems" :key="goal.id" class="task">
+                    <div class="goal-row"><strong>{{ goal.title }}</strong><span>{{ goal.percent }}%</span></div>
+                    <span class="progress"><i :style="{ width: goal.percent + '%' }"></i></span>
+                  </div>
+                </div>
+                <p v-else class="caption task-empty">还没有设置学习目标，可通过学习目标接口创建。</p>
               </div>
 
               <div class="card ai-card">
@@ -712,4 +764,5 @@ onBeforeUnmount(() => {
     gap: 12px;
   }
 }
+.evidence-link{margin-left:6px;font-size:12px}.evidence-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.32)}.evidence-panel{width:min(680px,100%);max-height:85vh;overflow:auto;padding:22px}.evidence-items{padding-left:18px;display:grid;gap:8px;max-height:220px;overflow:auto}.correction-form{display:grid;gap:10px;margin-top:16px}.correction-form label{display:grid;gap:5px;color:var(--ink-2)}.correction-form input,.correction-form select,.correction-form textarea{padding:9px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--ink-1);font:inherit}
 </style>

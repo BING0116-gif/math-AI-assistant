@@ -62,9 +62,9 @@ class TestVisionToolBasics:
         tool = VisionTool(api_key=mock_api_key)
 
         assert tool._api_key == mock_api_key
-        assert tool._model == "qwen-vl-plus"
+        assert tool._model == "deepseek-flash"
         assert tool.name == "vision_tool"
-        assert "qwen-vl" in tool.description.lower()
+        assert "deepseek" in tool.description.lower()
 
     def test_init_with_custom_model(self, mock_api_key):
         """测试使用自定义模型初始化。"""
@@ -72,7 +72,7 @@ class TestVisionToolBasics:
 
         tool = VisionTool(model="qwen-vl-max", api_key=mock_api_key)
 
-        assert tool._model == "qwen-vl-max"
+        assert tool._model == "deepseek-flash"
 
     def test_init_without_api_key(self, monkeypatch):
         """测试未提供 API Key 时的行为。"""
@@ -146,12 +146,12 @@ class TestVisionToolBasics:
 
         # 指定模型
         models = tool._get_models_to_try("qwen-vl-max")
-        assert models[0] == "qwen-vl-max"
-        assert "qwen-vl-plus" in models
+        assert models[0] == "deepseek-flash"
+        assert models == ["deepseek-flash"]
 
         # 默认模型
         models = tool._get_models_to_try(None)
-        assert models[0] == "qwen-vl-plus"
+        assert models == ["deepseek-flash"]
 
 
 class TestVisionToolRecognize:
@@ -175,7 +175,7 @@ class TestVisionToolRecognize:
         result = tool.recognize(temp_image)
 
         assert result["success"] is True
-        assert result["model_used"] == "qwen-vl-plus"
+        assert result["model_used"] == "deepseek-flash"
         assert "【题目】" in result["raw_response"]
         assert "llm_description" in result
 

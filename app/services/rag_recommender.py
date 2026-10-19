@@ -91,6 +91,26 @@ class RAGRecommender:
                 request.target_category, user_skills, user_profile
             )
 
+            # Cold-start users must enter the diagnostic flow. Never invent a
+            # subject (the old implementation defaulted to ``导数``), because
+            # that silently creates non-personalized recommendations.
+            if not target_category:
+                total_time = (time.time() - start_time) * 1000
+                return RecommendationResult(
+                    questions=[],
+                    ai_analysis={"status": "cold_start", "message": "请先完成基础诊断"},
+                    meta={
+                        "target_category": None,
+                        "recommended_difficulty": None,
+                        "retrieval_method": "cold_start",
+                        "requires_diagnostic": True,
+                        "total_ms": total_time,
+                    },
+                    request_id=request.request_id or f"rec_{int(time.time()*1000)}",
+                    generated_at=datetime.now(timezone.utc).isoformat(),
+                    processing_time_ms=total_time,
+                )
+
             recommended_difficulty = await self._difficulty_estimator.estimate(
                 user_id=request.user_id, category=target_category,
                 context=request.context, profile=user_profile,
@@ -244,7 +264,8 @@ class RAGRecommender:
         weak_points = user_profile.get("weak_points", [])
         if weak_points:
             return weak_points[0].get("category", "导数"), [w.get("category", "") for w in weak_points]
-        return "导数", []
+        preferred = user_profile.get("preferences", {}).get("preferred_category")
+        return (str(preferred), []) if preferred else ("", [])
 
     async def _sql_retrieval(
         self, category: str, difficulty: int, exclude_ids: List[str], count: int
@@ -386,9 +407,23 @@ class RAGRecommender:
 
     async def _get_fallback_recommendation(self, request: RecommendationRequest) -> RecommendationResult:
         logger.info(f"[降级推荐] user={request.user_id}")
+        category = (request.target_category or "").strip()
+        if not category:
+            return RecommendationResult(
+                questions=[], ai_analysis={"status": "cold_start", "message": "请先完成基础诊断"},
+                meta={"target_category": None, "recommended_difficulty": None,
+                      "retrieval_method": "cold_start", "requires_diagnostic": True},
+                request_id=request.request_id or f"rec_{int(time.time()*1000)}",
+                generated_at=datetime.now(timezone.utc).isoformat(),
+            )
         try:
             async with self._session_factory() as db:
-                query = select(Question).where(and_(Question.is_active == True, Question.difficulty == 3, Question.review_status == "published"))
+                query = select(Question).where(and_(
+                    Question.is_active == True,
+                    Question.review_status == "published",
+                    Question.category == category,
+                    Question.difficulty.between(2, 4),
+                ))
                 if request.exclude_ids:
                     query = query.where(Question.id.notin_(request.exclude_ids))
                 query = query.limit(request.count)
@@ -399,7 +434,7 @@ class RAGRecommender:
         return RecommendationResult(
             questions=[self._question_to_dict(q) for q in questions],
             ai_analysis={},
-            meta={"target_category": request.target_category or "auto", "recommended_difficulty": 3, "retrieval_method": "fallback"},
+            meta={"target_category": category, "recommended_difficulty": 3, "retrieval_method": "category_safe_fallback"},
             request_id=request.request_id or f"rec_{int(time.time()*1000)}",
             generated_at=datetime.now(timezone.utc).isoformat(),
         )

@@ -5,6 +5,7 @@
  * Authorization 头由拦截器从 authStore 统一注入，禁止各模块手动拼接 token。
  */
 import axios from 'axios'
+import { useAuthStore } from '@/stores/authStore'
 
 const api = axios.create({
   baseURL: '/api',
@@ -111,7 +112,6 @@ api.interceptors.response.use(
     isRefreshing = true
 
     try {
-      const { useAuthStore } = await import('@/stores/authStore')
       const store = useAuthStore()
       const success = await store.refresh()
 
@@ -159,7 +159,6 @@ api.interceptors.response.use(
  */
 async function clearSessionOnce() {
   try {
-    const { useAuthStore } = await import('@/stores/authStore')
     const auth = useAuthStore()
     auth.clearSession({ reason: 'expired' })
   } catch {

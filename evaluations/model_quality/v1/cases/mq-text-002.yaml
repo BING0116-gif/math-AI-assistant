@@ -1,6 +1,6 @@
 case_id: mq-text-002
 schema_version: '1.0'
-case_version: 1.1.0
+case_version: 1.1.1
 status: approved
 primary_category: text
 expected_failure_class: weak_evidence
@@ -57,6 +57,7 @@ tool_expectation:
   - math_solver
   allowed_tools:
   - math_solver
+  - math_verify
   - search_questions
   - vision_tool
   forbidden_tools:

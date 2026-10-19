@@ -8,7 +8,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.data.models import Base, OutboxEvent, User
+from app.data.models import Base, LearningRecord, OutboxEvent, User
 from app.lifespan import validate_runtime_security
 from app.services.safe_math import SafeExpressionError, expressions_equivalent, parse_safe_expression
 
@@ -175,6 +175,33 @@ async def test_outbox_failure_is_retried_without_losing_sql_fact(monkeypatch):
         row = await db.get(OutboxEvent, event_id)
         assert row.status == "pending" and row.attempts == 1 and "boom" in row.last_error
         assert await db.get(User, "outbox-user") is not None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_behavior_event_is_durable_and_idempotent(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    import app.data.database as database
+    import app.services.outbox as outbox_module
+    monkeypatch.setattr(database, "async_session_factory", factory)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with factory() as db:
+        db.add(User(id="behavior-user", username="behavior", email="behavior@example.test", password_hash="x"))
+        await db.commit()
+    event = {"event_type": "problem_solving", "question_content": "求极限", "category": "极限", "sub_categories": ["重要极限"], "tools_used": ["math_solver"], "time_spent": 1.5, "created_at": "2026-10-15T00:00:00+00:00", "is_correct": None}
+    assert await outbox_module.enqueue_learning_record(user_id="behavior-user", event_data=event, event_id="behavior-1", session_factory=factory)
+    assert await outbox_module.process_outbox_batch() == {"claimed": 1, "completed": 1}
+    async with factory() as db:
+        rows = list((await db.execute(select(LearningRecord).where(LearningRecord.user_id == "behavior-user"))).scalars())
+        assert len(rows) == 1
+        assert rows[0].tools_used == "math_solver" and rows[0].time_spent == 1
+    # Duplicate delivery is absorbed by the event idempotency claim.
+    assert await outbox_module.enqueue_learning_record(user_id="behavior-user", event_data=event, event_id="behavior-1", session_factory=factory)
+    assert await outbox_module.process_outbox_batch() == {"claimed": 0, "completed": 0}
+    async with factory() as db:
+        assert len(list((await db.execute(select(LearningRecord).where(LearningRecord.user_id == "behavior-user"))).scalars())) == 1
     await engine.dispose()
 
 

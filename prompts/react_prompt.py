@@ -36,10 +36,10 @@ class ReActPromptTemplate:
         tools_list = "、".join(names) if names else "无专用工具"
         ask_student_rules = """\n6. ask_student：仅在题目缺必要条件或需学生选择路径时使用；每轮最多 1 次，调用后停止推理等待回答
    禁止索要答案/确认计算结果/猜测缺失条件；题目信息完整时不要调用""" if "ask_student" in names else ""
-        math_verify_rules = """\n7. math_verify：可程序验证的根、方程组解、导数、定积分、极限、函数值、矩阵或简单概率，发布前调用
+        math_verify_rules = """\n7. math_verify：仅在已经得到明确候选结论，且该结论可由程序验证时调用；优先先用 math_solver 得到候选结果，再传入“结论 + 检查事实”验证。不要单独为了展示工具而调用，也不要在仅需识图或澄清时调用
    只传“结论 + 检查事实”，禁止传私有推理；failed 时最多重推并再验证 1 次，仍失败不得发布为已验证
    inconclusive 可保留答案但必须提示“未完全验证”，绝不能声称 verified""" if "math_verify" in names else ""
-        math_visualize_rules = """\n8. math_visualize：先自主判断图形是否能解释题目中的关系、变化、几何意义或易错点；有明显教学增益时主动调用，即使用户没有说“画图”，纯文本能更清楚时不要调用
+        math_visualize_rules = """\n8. math_visualize：只有用户明确要求画图，或图形对理解当前关系确有不可替代的教学增益时调用；识图、检查推导或纯计算不要调用。check_my_work/review 模式默认不调用，除非学生明确要求图示
    图必须绑定当前题目的函数/点/区间/参数和讲解步骤，不能生成与题目无关的装饰图；query 写清“图要帮助学生理解什么”
    切线(tangent_line)与积分面积(area_under_curve)只传 type 并说明教学目的，坐标与验证数据由服务端可信模板提供，不要传 spec
    其余类型(function_plot/vector_plot/sequence_plot/geometry_plot)才传已采样坐标的 spec；交互只传白名单 parameter_slider/step_sequence 的预计算 frames 与 steps，不传表达式
@@ -63,7 +63,9 @@ Action Input: {{"query": "具体问题", "parameters": {{}}}}
 2. 简单问答（T1-T3场景）→ 直接回答，不使用工具
 3. 计算/画图/识别（T4-T5场景）→ 按需使用工具
 4. 工具失败时手动推导，不重复调用同一工具
-5. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}{math_visualize_rules}{math_animate_rules}"""
+5. math_solver：涉及极限、导数、积分、方程或需要核算的数学结论时，优先传入结构化 parameters 调用；不要把自然语言推理过程当作表达式。
+6. 涉及修改掌握度、画像、错题记录、作答记录或绕过审计的请求，必须直接拒绝并且不调用任何工具。
+7. 最多进行 3 次工具调用{ask_student_rules}{math_verify_rules}{math_visualize_rules}{math_animate_rules}"""
 
     @staticmethod
     def build_observation(result_text: str) -> str:

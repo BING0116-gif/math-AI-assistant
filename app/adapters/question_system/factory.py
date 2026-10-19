@@ -39,6 +39,9 @@ def get_question_system_adapter() -> BaseQuestionSystemAdapter:
         base_url = os.getenv("QUESTION_SYSTEM_BASE_URL", "")
         _adapter_instance = RemoteQuestionSystemAdapter(
             api_key=api_key, base_url=base_url
+            , signing_secret=os.getenv("QUESTION_SYSTEM_SIGNING_SECRET", ""),
+            timeout=float(os.getenv("QUESTION_SYSTEM_TIMEOUT_SECONDS", "5")),
+            max_retries=int(os.getenv("QUESTION_SYSTEM_MAX_RETRIES", "2")),
         )
         logger.info(f"[适配器工厂] 创建 Remote 适配器 (base_url={base_url})")
     else:

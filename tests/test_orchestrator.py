@@ -46,6 +46,20 @@ async def test_routes_general_question_to_solve_and_keeps_existing_strategy_path
     assert context["capability_strategy_policy"] == "existing_complexity_strategy"
 
 
+@pytest.mark.asyncio
+async def test_review_mode_without_student_work_routes_math_question_to_solve():
+    legacy_strategy = object()
+    selector = AsyncMock(return_value=legacy_strategy)
+    orchestrator = MathOrchestrator(selector)
+    context = {"tutor_mode": "review"}
+
+    route = await orchestrator.route("求极限 lim(x→0) sin(x)/x", "student-1:session-1", context)
+
+    assert route.manifest.name == "solve"
+    assert "math_solver" in context["capability_allowed_tools"]
+    assert "error_book_analysis" not in context["capability_allowed_tools"]
+
+
 def test_capability_tool_sets_are_independent_and_mode_is_an_additional_boundary():
     solve = SolveCapability().manifest
     diagnose = DiagnoseErrorCapability().manifest

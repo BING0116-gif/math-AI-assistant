@@ -88,7 +88,7 @@ async def test_recommender_fallback():
     recommender = RAGRecommender()
     result = await recommender._get_fallback_recommendation(RecommendationRequest(user_id="test", target_category="导数", count=3))
     assert isinstance(result, RecommendationResult)
-    assert result.meta.get("retrieval_method") == "fallback"
+    assert result.meta.get("retrieval_method") == "category_safe_fallback"
 
 
 @pytest.mark.asyncio

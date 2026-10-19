@@ -91,6 +91,9 @@ async def create_exam(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
         if not version or version.status != "published" or version.course_id != config["course_id"]: raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程与发布版本不匹配")
         point_stmt = select(KnowledgePoint).where(KnowledgePoint.version_id == version.id)
         chapters, codes = set(config.get("chapter_ids") or []), set(config.get("knowledge_point_codes") or [])
+        if chapters:
+            from app.services.chapter_scope import expand_chapter_scope
+            chapters = await expand_chapter_scope(db, chapters, version.course_id, version.id)
         if chapters and codes: point_stmt = point_stmt.where(or_(KnowledgePoint.chapter_id.in_(chapters), KnowledgePoint.code.in_(codes)))
         elif chapters: point_stmt = point_stmt.where(KnowledgePoint.chapter_id.in_(chapters))
         else: point_stmt = point_stmt.where(KnowledgePoint.code.in_(codes))

@@ -96,7 +96,7 @@ if (-not $SkipBuild) {
     } finally {
         Pop-Location
     }
-    docker build -f frontend/Dockerfile.runtime -t mathaiassistant-frontend:latest frontend
+    docker build -f frontend/Dockerfile.runtime -t mathaiassistant-frontend:1.6.0 frontend
     if ($LASTEXITCODE -ne 0) { throw "Frontend runtime image build failed." }
     docker compose --project-directory $ProjectRoot build web
     if ($LASTEXITCODE -ne 0) { throw "Web image build failed." }

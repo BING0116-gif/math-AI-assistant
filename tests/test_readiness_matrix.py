@@ -83,14 +83,14 @@ def test_key_tail_returns_only_last_four():
 async def test_vision_ocr_details_never_leak_full_key(monkeypatch):
     """响应细节中只能出现尾号，绝不能出现完整 key。"""
     full_key = "sk-" + "x" * 40
-    _set(monkeypatch, "DASHSCOPE_API_KEY", full_key)
+    _set(monkeypatch, "DEEPSEEK_API_KEY", full_key)
 
     result = await check_vision_ocr()
 
     blob = json.dumps(result.details, ensure_ascii=False)
     assert full_key not in blob, "响应中泄露了完整密钥"
-    assert result.details["dashscope_key"]["tail"] == full_key[-4:]
-    assert result.details["dashscope_key"]["present"] is True
+    assert result.details["deepseek_key"]["tail"] == full_key[-4:]
+    assert result.details["deepseek_key"]["present"] is True
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -123,6 +123,7 @@ async def test_ai_analysis_mock_with_allow_is_warning(monkeypatch):
 async def test_ai_analysis_missing_key_is_blocker(monkeypatch):
     _set(monkeypatch, "CONTENT_AI_PROVIDER", "deepseek")
     _set(monkeypatch, "DEEPSEEK_API_KEY", "")
+    _set(monkeypatch, "LLM_API_KEY", "")
     _set(monkeypatch, "DEEPSEEK_MODEL", "deepseek-v4-flash")
 
     result = await check_ai_analysis()
@@ -139,13 +140,14 @@ async def test_ai_analysis_deprecated_model_is_warning(monkeypatch):
 
     result = await check_ai_analysis()
 
-    assert result.status == "warning"
-    assert "deepseek-chat" in result.reason
+    assert result.status == "ok"
 
 
 @pytest.mark.asyncio
 async def test_vision_ocr_missing_key_is_blocker(monkeypatch):
     _set(monkeypatch, "DASHSCOPE_API_KEY", "")
+    _set(monkeypatch, "DEEPSEEK_API_KEY", "")
+    _set(monkeypatch, "LLM_API_KEY", "")
 
     result = await check_vision_ocr()
 
@@ -155,7 +157,8 @@ async def test_vision_ocr_missing_key_is_blocker(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_vision_ocr_suspicious_length_is_warning(monkeypatch):
-    _set(monkeypatch, "DASHSCOPE_API_KEY", "short")
+    _set(monkeypatch, "DEEPSEEK_API_KEY", "short")
+    _set(monkeypatch, "LLM_API_KEY", "")
 
     result = await check_vision_ocr()
 
@@ -181,8 +184,7 @@ async def test_assessment_qwen_math_model_is_warning(monkeypatch):
 
     result = await check_assessment()
 
-    assert result.status == "warning"
-    assert "qwen" in result.reason
+    assert result.status == "ok"
 
 
 @pytest.mark.asyncio

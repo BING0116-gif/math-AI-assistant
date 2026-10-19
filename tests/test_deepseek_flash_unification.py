@@ -9,11 +9,11 @@ from tools.vision_tool import VisionTool
 
 
 def test_legacy_model_names_are_compatibility_aliases_only():
-    assert canonical_model_name("deepseek-flash") == "deepseek-v4.1-flash"
-    assert canonical_model_name("deepseek-v4-flash") == "deepseek-v4.1-flash"
-    assert canonical_model_name("qwen-vl-plus") == "deepseek-v4.1-flash"
-    assert MODEL_CAPABILITIES["deepseek-v4.1-flash"]["vision"] is True
-    assert MODEL_CAPABILITIES["deepseek-v4.1-flash"]["json_output"] is True
+    assert canonical_model_name("deepseek-flash") == "deepseek-flash"
+    assert canonical_model_name("deepseek-v4-flash") == "deepseek-flash"
+    assert canonical_model_name("qwen-vl-plus") == "deepseek-flash"
+    assert MODEL_CAPABILITIES["deepseek-flash"]["vision"] is True
+    assert MODEL_CAPABILITIES["deepseek-flash"]["json_output"] is True
 
 
 def test_vision_tool_parses_markdown_json_without_logging_image_data():
@@ -39,7 +39,7 @@ def test_truncated_vision_json_is_not_marked_valid():
 def test_pdf_parser_uses_deepseek_defaults(monkeypatch):
     monkeypatch.setattr("app.services.vision_pdf_parser.settings.DEEPSEEK_API_KEY", "test-key")
     parser = VisionPDFParser()
-    assert parser.model == "deepseek-v4.1-flash"
+    assert parser.model == "deepseek-flash"
     assert "deepseek.com" in parser.api_base
 
 
@@ -55,4 +55,4 @@ def test_qwen_provider_setting_cannot_activate_qwen(monkeypatch):
     monkeypatch.setattr("app.services.content_ai_provider.settings.DEEPSEEK_API_KEY", "test-key")
     provider = ContentAIProviderFactory("qwen").get_provider()
     assert isinstance(provider, DeepSeekContentAIProvider)
-    assert provider.model == "deepseek-v4.1-flash"
+    assert provider.model == "deepseek-flash"

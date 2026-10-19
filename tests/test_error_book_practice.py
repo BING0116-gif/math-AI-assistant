@@ -16,6 +16,20 @@ from app.data.models import (
 from app.services.practice_service import PracticeError, create_error_book_session, start_session, submit_attempt
 
 
+@pytest.mark.asyncio
+async def test_error_book_api_maps_question_limit_to_service(monkeypatch):
+    from starlette.requests import Request
+    import app.api.practice_api as api
+    async def create(user_id, *, course_id, version_id, behavior, order_mode, max_questions, random_seed, idempotency_key):
+        assert user_id == 'qa-user'
+        assert max_questions == 7
+        return {'session_id': 'qa-session'}
+    monkeypatch.setattr(api, 'create_error_book_session', create)
+    request = Request({'type': 'http', 'state': {'user_id': 'qa-user'}})
+    result = await api.post_session_from_error_book(request, api.CreateFromErrorBookRequest(question_limit=7, idempotency_key='error-book-api-key'))
+    assert result['data']['session_id'] == 'qa-session'
+
+
 async def _seed(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     @event.listens_for(engine.sync_engine, "connect")

@@ -67,6 +67,12 @@ const routes = [
     meta: { title: '学习看板 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
   },
   {
+    path: '/notifications',
+    name: 'Notifications',
+    component: () => import('@/views/NotificationCenterView.vue'),
+    meta: { title: '通知中心 - 数学AI助手', transition: 'slide-fade', requiresAuth: true },
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/ProfileView.vue'),
@@ -89,6 +95,9 @@ const routes = [
   { path: '/apply/assessment', name: 'AssessmentSetup', redirect: '/apply/papers/new?source=ai', meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/assessment/sessions/:sessionId', name: 'AssessmentSession', component: () => import('@/views/AssessmentSessionView.vue'), meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/assessment/sessions/:sessionId/result', name: 'AssessmentResult', component: () => import('@/views/AssessmentResultView.vue'), meta: { title: '智能组卷报告 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/chapter-diagnostics/new', name: 'ChapterDiagnosticSetup', component: () => import('@/views/ChapterDiagnosticSetupView.vue'), meta: { title: '开始章节诊断 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/chapter-diagnostics/:sessionId', name: 'ChapterDiagnostic', component: () => import('@/views/ChapterDiagnosticView.vue'), meta: { title: '章节诊断 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
+  { path: '/chapter-diagnostics/:sessionId/result', name: 'ChapterDiagnosticResult', component: () => import('@/views/ChapterDiagnosticResultView.vue'), meta: { title: '章节诊断报告 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/papers', name: 'StudentPapers', component: () => import('@/views/StudentPapersView.vue'), meta: { title: '我的试卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/papers/new', name: 'StudentPaperCreate', component: () => import('@/views/StudentPaperCreateView.vue'), meta: { title: '智能组卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },
   { path: '/apply/papers/:paperId/edit', name: 'StudentPaperEditor', component: () => import('@/views/StudentPaperEditorView.vue'), meta: { title: '编辑试卷 - 数学AI助手', transition: 'slide-fade', requiresAuth: true } },

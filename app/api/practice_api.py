@@ -135,7 +135,7 @@ async def post_session_from_error_book(request: Request, body: CreateFromErrorBo
             _user_id(request),
             course_id=body.course_id, version_id=body.version_id,
             behavior=body.behavior, order_mode=body.order_mode,
-            question_limit=body.question_limit, random_seed=body.random_seed,
+            max_questions=body.question_limit, random_seed=body.random_seed,
             idempotency_key=body.idempotency_key,
         )}
     except PracticeError as error:

@@ -21,15 +21,24 @@ LEGACY_MODE_ALIASES = {
 MODE_TOOL_POLICY: dict[str, dict[str, Any]] = {
     "tutor_free": {"allow": "*", "deny": frozenset()},
     "hint_only": {
-        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "skill_profile", "ask_student", "math_visualize", "math_animate"}),
+        # Hint mode must stay a single-step teaching turn: computation and
+        # retrieval are available, while recommendation/profile/visual output
+        # tools are intentionally withheld from the model.
+        # Asking a focused Socratic question is part of hint delivery; keep it
+        # available while still excluding profile, grading, and visualization
+        # side paths.
+        "allow": frozenset({"vision_tool", "search_questions", "math_solver", "ask_student"}),
         "deny": frozenset({"explain_question", "error_book_analysis", "math_verify"}),
     },
     "guided": {
-        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "skill_profile", "ask_student", "math_verify", "math_visualize", "math_animate"}),
+        "allow": frozenset({"vision_tool", "search_questions", "recommend_questions", "ask_student", "math_solver", "math_verify", "math_visualize", "math_animate"}),
         "deny": frozenset({"explain_question", "error_book_analysis"}),
     },
     "review": {
-        "allow": frozenset({"vision_tool", "search_questions", "skill_profile", "ask_student", "math_verify", "math_visualize", "math_animate", "error_book_analysis"}),
+        # Review checks the student's supplied work. Keep deterministic solving
+        # and clarification available, but avoid standalone verification or
+        # visualization calls that do not inspect the submitted steps.
+        "allow": frozenset({"vision_tool", "search_questions", "skill_profile", "ask_student", "math_solver", "error_book_analysis"}),
         "deny": frozenset({"explain_question", "recommend_questions"}),
     },
 }

@@ -85,6 +85,23 @@ async def test_guardrail_keeps_rollout_when_healthy(monkeypatch):
     assert flags_module._ROLLBACK_AT == {}
 
 
+@pytest.mark.asyncio
+async def test_guardrail_dry_run_does_not_mutate(monkeypatch):
+    monkeypatch.setattr("app.config.settings.settings.MODEL_ROUTING_ENABLED", True)
+    monkeypatch.setattr("app.config.settings.settings.FEATURE_FLAG_ROLLOUT", {"model_routing": 25})
+    monkeypatch.setattr(flags_module, "_recent_run_quality", _async_return({"runs": 10, "failure_rate": 0.2, "p95_latency_ms": 1, "cost": 0}))
+    report = await evaluate_flag_guardrails(dry_run=True)
+    assert report["dry_run"] is True and report["rolled_back"] == {"model_routing": 25}
+    assert flags_module._ROLLBACK_AT == {}
+
+
+def test_explicit_rollback_dry_run_is_non_mutating(monkeypatch):
+    monkeypatch.setattr("app.config.settings.settings.FEATURE_FLAG_ROLLOUT", {"model_routing": 10})
+    result = flags_module.rollback_flag("model_routing", dry_run=True)
+    assert result["new_rollout_percent"] == 0
+    assert flags_module._ROLLBACK_AT == {}
+
+
 def test_flag_status_shape():
     status = flag_status()
     assert "model_routing" in status and "memory_conflict" in status

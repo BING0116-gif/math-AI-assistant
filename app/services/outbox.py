@@ -12,7 +12,7 @@ from sqlalchemy import func, or_, select, update
 
 from app.config.settings import settings
 from app.data.database import get_db_session
-from app.data.models import KnowledgePoint, KnowledgePointResource, Memory, OutboxEvent, Question
+from app.data.models import EventIdempotency, KnowledgePoint, KnowledgePointResource, LearningRecord, Memory, OutboxEvent, Question
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,35 @@ async def enqueue_outbox(
     db.add(event)
     await db.flush()
     return event
+
+
+async def enqueue_learning_record(
+    *, user_id: str, event_data: dict[str, Any], event_id: str | None,
+    session_factory=None,
+) -> bool:
+    """Persist a chat/behavior fact as a durable outbox event.
+
+    The request commits the outbox row before returning. A scheduler retries
+    the actual LearningRecord insert after crashes or database outages, so
+    behavior signals cannot disappear with an in-memory queue.
+    """
+    if not user_id:
+        return False
+    import uuid
+    factory = session_factory or get_db_session
+    stable_id = str(event_id or uuid.uuid4().hex)
+    payload = dict(event_data)
+    payload["user_id"] = user_id
+    payload["event_id"] = stable_id
+    key = f"learning-record:{user_id}:{stable_id}"
+    async with factory() as db:
+        await enqueue_outbox(
+            db, event_type="learning.record", aggregate_type="learning_record",
+            aggregate_id=stable_id, user_id=user_id,
+            payload=payload, idempotency_key=key,
+        )
+        await db.commit()
+    return True
 
 
 def _question_embedding_text(question: Question) -> str:
@@ -170,6 +199,45 @@ async def _handle_learning_refresh(event: OutboxEvent) -> None:
         raise RuntimeError("profile refresh failed")
 
 
+async def _handle_learning_record(event: OutboxEvent) -> None:
+    """Materialize one durable behavior event into LearningRecord idempotently."""
+    payload = dict(event.payload or {})
+    user_id = event.user_id or str(payload.get("user_id") or "")
+    event_id = str(payload.get("event_id") or event.aggregate_id)
+    if not user_id:
+        raise RuntimeError("learning record event is missing user_id")
+    allowed = {
+        "user_id", "question_id", "event_type", "question_content", "category",
+        "sub_categories", "difficulty", "user_answer", "correct_answer", "is_correct",
+        "time_spent", "hint_count", "tools_used", "error_category", "error_reason",
+        "correction_suggestion", "metadata_", "created_at",
+    }
+    values = {key: value for key, value in payload.items() if key in allowed}
+    values["user_id"] = user_id
+    values["question_content"] = str(values.get("question_content") or "")
+    values["category"] = str(values.get("category") or "未分类")
+    if isinstance(values.get("sub_categories"), list):
+        values["sub_categories"] = ",".join(str(item) for item in values["sub_categories"])
+    if isinstance(values.get("tools_used"), list):
+        values["tools_used"] = ",".join(str(item) for item in values["tools_used"])
+    if values.get("time_spent") is not None:
+        values["time_spent"] = int(float(values["time_spent"]))
+    if isinstance(values.get("created_at"), str):
+        values["created_at"] = datetime.fromisoformat(values["created_at"].replace("Z", "+00:00"))
+    if values.get("is_correct") == "":
+        values["is_correct"] = None
+    async with get_db_session() as db:
+        async with db.begin():
+            existing = await db.scalar(select(EventIdempotency).where(EventIdempotency.event_id == event_id))
+            if existing is not None:
+                return
+            db.add(EventIdempotency(
+                event_id=event_id, event_type=str(values.get("event_type") or "learning_record")[:64],
+                processed_at=int(datetime.now(timezone.utc).timestamp()), status="processed",
+            ))
+            db.add(LearningRecord(**values))
+
+
 async def _handle_review_complete(event: OutboxEvent) -> None:
     from app.services.learning_hub import complete_review
     payload = event.payload or {}
@@ -188,6 +256,7 @@ _HANDLERS = {
     "memory.vector.upsert": _handle_memory_upsert,
     "memory.vector.delete": _handle_memory_delete,
     "learning.refresh": _handle_learning_refresh,
+    "learning.record": _handle_learning_record,
     "review.complete": _handle_review_complete,
 }
 

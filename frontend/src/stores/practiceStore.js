@@ -74,10 +74,14 @@ export const usePracticeStore = defineStore('practice', () => {
     try {
       session.value = unwrapPractice(await practiceApi.get(sessionId))
       feedback.value = session.value.feedback || {}
+      answers.value = session.value.answers || Object.fromEntries(
+        Object.entries(feedback.value).filter(([, result]) => result.submissions?.length)
+          .map(([id, result]) => [id, result.submissions.at(-1).answer]),
+      )
       // 恢复上次离开时的题目位置（刷新/换设备回到当前题）
       const resumeId = session.value.recovery_snapshot?.current_question_id
       const index = session.value.questions?.findIndex((item) => item.question_id === resumeId) ?? -1
-      if (index >= 0) currentIndex.value = index
+      currentIndex.value = index >= 0 ? index : 0
       return session.value
     }
     catch (e) { error.value = messageOf(e); throw e } finally { loading.value = false }

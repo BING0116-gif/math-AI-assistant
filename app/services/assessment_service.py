@@ -404,6 +404,9 @@ async def _plan_assessment(user_id: str, config: dict[str, Any], planner: Assess
         if not version or version.course_id != config["course_id"]: raise PracticeError("COURSE_VERSION_NOT_AVAILABLE", "课程与版本不匹配")
         stmt = select(KnowledgePoint).where(KnowledgePoint.version_id == version.id)
         chapter_ids = set((config.get("scope") or {}).get("chapter_ids") or [])
+        from app.services.chapter_scope import expand_chapter_scope
+        if chapter_ids:
+            chapter_ids = await expand_chapter_scope(db, chapter_ids, version.course_id, version.id)
         if chapter_ids: stmt = stmt.where(KnowledgePoint.chapter_id.in_(chapter_ids))
         points = list((await db.execute(stmt)).scalars())
         if not points: raise PracticeError("VALIDATION_FAILED", "检测范围没有知识点")
@@ -411,10 +414,12 @@ async def _plan_assessment(user_id: str, config: dict[str, Any], planner: Assess
     signals = await _signals(user_id, points)
     requested_chapter = config.get("current_chapter_id") or signals.get("inferred_current_chapter_id")
     if requested_chapter:
-        if requested_chapter not in {point.chapter_id for point in points}:
+        async with get_db_session() as db:
+            current_scope = await expand_chapter_scope(db, {requested_chapter}, config["course_id"], config["version_id"])
+        if not current_scope & {point.chapter_id for point in points}:
             raise PracticeError("VALIDATION_FAILED", "当前章节不属于所选检测范围")
         signals["inferred_current_chapter_id"] = requested_chapter
-        signals["current_chapter_codes"] = [point.code for point in points if point.chapter_id == requested_chapter]
+        signals["current_chapter_codes"] = [point.code for point in points if point.chapter_id in current_scope]
     signals["assessment_request"] = {"goal": config["goal"], "intensity": config["intensity"], "duration_minutes": config["duration_minutes"]}
     planned = await (planner or AssessmentBlueprintPlanner()).plan(signals, inventory, config["question_count"])
     plan = AssessmentPlan.model_validate(planned["plan"])

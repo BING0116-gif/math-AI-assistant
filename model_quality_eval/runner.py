@@ -327,10 +327,12 @@ async def _persisted_run_evidence(session_factory, run_id: str, session_id: str,
 
 
 async def _seed_live_fixtures(run_id: str) -> dict[str, str]:
+    import json
+    import time
     from sqlalchemy import select
 
     from app.data.database import async_session_factory
-    from app.data.models import Chapter, ChatMessage, ChatSession, Course, KnowledgeGraphVersion, KnowledgePoint, User
+    from app.data.models import Chapter, ChatMessage, ChatSession, Course, KnowledgeGraphVersion, KnowledgePoint, User, UserProfile
 
     if async_session_factory is None:
         raise RuntimeError("evaluation database is not initialised")
@@ -351,6 +353,15 @@ async def _seed_live_fixtures(run_id: str) -> dict[str, str]:
                 Course(id=ids["course"], code=f"mq-{suffix}", name="高等数学评测", subject="math"),
                 KnowledgeGraphVersion(id=ids["version"], course_id=ids["course"], version="1.0", name="评测版本", status="published"),
                 Chapter(id=ids["chapter"], course_id=ids["course"], version_id=ids["version"], code="MQ-C1", name="函数极限连续"),
+            ])
+            await db.flush()
+            # A chat is allowed to read an existing materialized profile, but
+            # the quality cases must not count first-read materialization as a
+            # student-data side effect. Seed the disposable profiles up front.
+            profile_json = lambda user_id: json.dumps({"user_id": user_id, "summary_text": "评测夹具"}, ensure_ascii=False)
+            db.add_all([
+                UserProfile(user_id=ids["user_a"], summary_text="评测夹具", full_profile_json=profile_json(ids["user_a"]), updated_at=int(time.time())),
+                UserProfile(user_id=ids["user_b"], summary_text="评测夹具", full_profile_json=profile_json(ids["user_b"]), updated_at=int(time.time())),
             ])
             await db.flush()
             canary_session = ChatSession(
@@ -539,6 +550,7 @@ async def run_live(
         budget_exhausted = False
         timeout_exhausted = False
         token_exhausted = False
+        telemetry_missing = False
         for case in cases:
             current_cost = accumulated_cost(results, stability_runs)
             current_tokens = accumulated_tokens(results, stability_runs)
@@ -546,7 +558,7 @@ async def run_live(
                 budget_exhausted = True
                 break
             if current_tokens is None and (results or stability_runs):
-                token_exhausted = True
+                telemetry_missing = True
                 break
             if current_tokens is not None and current_tokens >= token_budget:
                 token_exhausted = True
@@ -575,7 +587,10 @@ async def run_live(
                 if current_cost is None or current_cost >= budget:
                     budget_exhausted = True
                     break
-                if current_tokens is None or current_tokens >= token_budget:
+                if current_tokens is None:
+                    telemetry_missing = True
+                    break
+                if current_tokens >= token_budget:
                     token_exhausted = True
                     break
             if result.hard_failures or result.weighted_score < 85:
@@ -601,13 +616,25 @@ async def run_live(
                         stability_runs=stability_runs,
                     )
                     current_cost = accumulated_cost(results, stability_runs)
+                    # A missing telemetry record on a stability retry must not
+                    # prevent the remaining cases from running. Drop that
+                    # retry from budget arithmetic, retain the final report's
+                    # telemetry_missing flag, and continue with the next case.
+                    if stability.execution.token_usage is None or stability.execution.estimated_cost is None:
+                        telemetry_missing = True
+                        stability_runs.pop()
+                        continue
                     if current_cost is None or current_cost >= budget:
                         budget_exhausted = True
                         break
-                    if accumulated_tokens(results, stability_runs) is None or accumulated_tokens(results, stability_runs) >= token_budget:
+                    current_tokens = accumulated_tokens(results, stability_runs)
+                    if current_tokens is None:
+                        telemetry_missing = True
+                        break
+                    if current_tokens >= token_budget:
                         token_exhausted = True
                         break
-                if budget_exhausted:
+                if budget_exhausted or telemetry_missing:
                     break
         model = next((result.execution.model for result in results if result.execution.model), None)
         prompt = next((result.execution.prompt_version for result in results if result.execution.prompt_version), None)
@@ -625,10 +652,11 @@ async def run_live(
         report["summary"]["token_budget"] = token_budget
         report["summary"]["tokens_spent"] = accumulated_tokens(results, stability_runs)
         report["summary"]["timeout_seconds"] = timeout_seconds
-        if budget_exhausted or token_exhausted or timeout_exhausted or len(results) < len(cases):
+        if budget_exhausted or token_exhausted or timeout_exhausted or telemetry_missing or len(results) < len(cases):
             report["status"] = "incomplete"
             report["reason"] = (
                 "EVAL_TIMEOUT_REACHED" if timeout_exhausted else
+                "EVAL_TELEMETRY_MISSING" if telemetry_missing else
                 "EVAL_TOKEN_BUDGET_REACHED" if token_exhausted else
                 "EVAL_COST_BUDGET_REACHED" if budget_exhausted else
                 "EVAL_COST_MISSING"

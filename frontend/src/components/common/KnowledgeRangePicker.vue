@@ -64,12 +64,14 @@ function togglePoint(code) {
 <template>
   <div class="krange">
     <article v-for="u in units" :key="u.chapter.id" class="unit" :class="{ open: openId === u.chapter.id, whole: isWholeUnit(u) }">
-      <header class="unit-head" :aria-expanded="openId === u.chapter.id ? 'true' : 'false'" @click="toggleOpen(u)">
+      <header class="unit-head">
+        <button type="button" class="unit-expander" :aria-expanded="openId === u.chapter.id" @click="toggleOpen(u)">
         <ChevronRight v-if="openId !== u.chapter.id" class="chev" :size="16" :stroke-width="1.75" aria-hidden="true" />
         <ChevronDown v-else class="chev" :size="16" :stroke-width="1.75" aria-hidden="true" />
         <strong>{{ u.chapter.name }}</strong>
         <span class="meta">{{ u.total }} 个知识点<template v-if="isWholeUnit(u)"> · 整单元</template><template v-else-if="unitPickedCount(u)"> · 已选 {{ unitPickedCount(u) }}</template></span>
-        <label class="whole" @click.stop>
+        </button>
+        <label class="whole">
           <input type="checkbox" :checked="isWholeUnit(u)" @change="toggleWhole(u)" />
           <span>整单元</span>
         </label>
@@ -90,6 +92,7 @@ function togglePoint(code) {
 </template>
 <style scoped>
 .krange{display:grid;gap:10px}
+.unit-expander{display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap;min-width:0;min-height:48px;border:0;background:transparent;padding:0;color:inherit;font:inherit;text-align:left;cursor:pointer}.unit-expander:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
 .unit{border:1px solid var(--border);border-radius:12px;background:var(--surface);transition:border-color .15s ease,background .15s ease}
 .unit:hover{background:var(--surface-2)}
 .unit.open{border-color:var(--border-strong);background:var(--surface);box-shadow:var(--shadow-1)}

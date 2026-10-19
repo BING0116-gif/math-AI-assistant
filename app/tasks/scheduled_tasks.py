@@ -294,6 +294,17 @@ class MemoryScheduledTasks:
         self._scheduler.add_job(queue_expired_note_cleanup, "interval", hours=1, id="queue_expired_note_cleanup", replace_existing=True)
         self._scheduler.add_job(process_note_cleanup_tasks, "interval", minutes=10, id="process_note_cleanup_tasks", replace_existing=True)
 
+        # Phase 3 proactive learning: all jobs create only durable, in-app actions.
+        from app.services import proactive_learning as proactive
+        for fn, job_id in ((proactive.generate_due_reviews, "generate_due_reviews"),
+                           (proactive.refresh_daily_plans, "refresh_daily_plans"),
+                           (proactive.detect_learning_stall, "detect_learning_stall"),
+                           (proactive.detect_repeated_errors, "detect_repeated_errors"),
+                           (proactive.send_goal_deadline_reminder, "send_goal_deadline_reminder"),
+                           (proactive.reconcile_plan_task_status, "reconcile_plan_task_status")):
+            self._scheduler.add_job(self._run_async(fn), "interval", minutes=15, id=job_id,
+                                    name=job_id, max_instances=1, coalesce=True, replace_existing=True)
+
         # 每日凌晨 2:00 执行记忆强度衰减
         self._scheduler.add_job(
             self._run_async(self.decay_memory_strength),

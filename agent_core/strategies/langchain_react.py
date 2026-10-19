@@ -724,6 +724,7 @@ class LangChainReActStrategy(AgentStrategy):
                 await facade.record_event(
                     user_id=context["user_id"],
                     event_data=event.to_dict(),
+                    durable=True,
                 )
                 logger.info(
                     f"学习记忆自动持久化: user={context.get('user_id')} "

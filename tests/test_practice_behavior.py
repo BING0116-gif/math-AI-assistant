@@ -25,6 +25,25 @@ def _base_config(**overrides):
     return config
 
 
+@pytest.mark.asyncio
+async def test_whole_unit_includes_descendant_points_and_rejects_foreign_scope(monkeypatch):
+    engine, factory = await _seed(monkeypatch)
+    try:
+        async with factory() as db:
+            db.add(Chapter(id="unit-1", course_id="course-1", version_id="version-1", code="unit", name="第一单元"))
+            await db.flush()
+            child = await db.get(Chapter, "chapter-1")
+            child.parent_id = "unit-1"
+            await db.commit()
+        session = await create_session("user-1", _base_config(chapter_ids=["unit-1"]))
+        assert len(session["questions"]) == 5
+        assert session["config"]["resolved_knowledge_point_codes"] == ["limit"]
+        with pytest.raises(PracticeError, match="当前课程版本"):
+            await create_session("user-1", _base_config(chapter_ids=["foreign-unit"], idempotency_key="foreign-unit-key"))
+    finally:
+        await engine.dispose()
+
+
 async def _seed(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     @event.listens_for(engine.sync_engine, "connect")
@@ -66,6 +85,8 @@ async def test_immediate_behavior_allows_single_retry_with_dual_record(monkeypat
     first = await submit_attempt("user-1", sid, qid, "B", "attempt-1")
     assert first["correct"] is False
     assert first["retry_count"] == 0 and len(first["submissions"]) == 1
+    restored = await get_session("user-1", sid)
+    assert restored["answers"][qid] == "B"
     retry = await submit_attempt("user-1", sid, qid, "A", "attempt-2")
     assert retry["correct"] is True and retry["correct_answer"] == "A"
     assert retry["retry_count"] == 1

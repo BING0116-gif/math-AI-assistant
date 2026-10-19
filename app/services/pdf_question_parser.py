@@ -185,26 +185,128 @@ class PDFQuestionParser:
         """解析题目PDF，提取所有题目。优先使用 PyMuPDF (fitz)，回退到 pdfplumber"""
         questions: List[ParsedQuestion] = []
         
-        # 策略1：PyMuPDF (fitz) — 对数学公式 PDF 提取效果更好
+        # 策略1：pdfplumber 保留行布局和题目/选项边界，适合教材式中文试题。
+        # PyMuPDF 的 span 顺序会把分式、上下标和页眉拆散，容易把公式中的数字
+        # 误判为新题号；因此只作为回退方案。
         try:
-            import fitz  # PyMuPDF
-            full_text = self._extract_with_fitz(pdf_path)
+            # 教材式试卷常把 A/B/C 卷和答案解析放在同一个 PDF 中。
+            # 按页保留边界并识别“自测题 A/B/C”版本，可以避免把答案页、公式
+            # 上下标中的孤立数字切成伪题目。
+            page_questions = self._parse_page_aware_pdf(pdf_path)
+            if page_questions:
+                logger.info("page-aware PDF extraction produced %s questions", len(page_questions))
+                return page_questions
+            full_text = self._extract_with_pdfplumber(pdf_path)
             if full_text and len(full_text.strip()) > 50:
-                logger.info(f"PyMuPDF 提取成功，文本长度: {len(full_text)}")
+                logger.info(f"pdfplumber 提取成功，文本长度: {len(full_text)}")
                 questions = self._split_into_questions(full_text)
                 if questions:
                     return questions
         except ImportError:
-            logger.info("PyMuPDF 未安装，回退到 pdfplumber")
+            logger.info("pdfplumber 未安装，回退到 PyMuPDF")
         except Exception as e:
-            logger.warning(f"PyMuPDF 提取失败: {e}，回退到 pdfplumber")
+            logger.warning(f"pdfplumber 提取失败: {e}，回退到 PyMuPDF")
         
         # 策略2：pdfplumber（回退）
-        logger.info("使用 pdfplumber 提取文本")
-        full_text = self._extract_with_pdfplumber(pdf_path)
+        logger.info("使用 PyMuPDF 提取文本")
+        full_text = self._extract_with_fitz(pdf_path)
         questions = self._split_into_questions(full_text)
         
         return questions
+
+    def _parse_page_aware_pdf(self, pdf_path: str) -> List[ParsedQuestion]:
+        """Parse common Chinese textbook test PDFs without consuming answer pages."""
+        with pdfplumber.open(pdf_path) as pdf:
+            pages = [(page.extract_text() or "").splitlines() for page in pdf.pages]
+        if not pages:
+            return []
+
+        variant_pattern = re.compile(r"自测题\s*([ABC])(?:\s|答案|解答|$)")
+        has_variants = any(
+            any(variant_pattern.search(line) and "解答" not in line for line in lines)
+            for lines in pages
+        )
+        segments: List[List[str]] = []
+        if has_variants:
+            current: Optional[List[str]] = None
+            answer_mode = False
+            for lines in pages:
+                for line in lines:
+                    match = variant_pattern.search(line)
+                    if match and ("解答" in line or "答案" in line):
+                        answer_mode = True
+                        continue
+                    if match and "解答" not in line:
+                        if current is not None:
+                            segments.append(current)
+                        current = []
+                        answer_mode = False
+                        continue
+                    if current is not None and not answer_mode:
+                        # “解答与提示”页直到下一个版本标题前全部忽略。
+                        if "解答与提示" not in line:
+                            current.append(line)
+            if current is not None:
+                segments.append(current)
+        else:
+            segments = [[line for page in pages for line in page]]
+
+        result: List[ParsedQuestion] = []
+        for segment in segments:
+            result.extend(self._split_page_aware_segment(segment))
+        return result
+
+    def _split_page_aware_segment(self, lines: List[str]) -> List[ParsedQuestion]:
+        section_pattern = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]\s*(.+)$")
+        current_section = ""
+        expected_number = 1
+        current: Optional[Tuple[int, List[str]]] = None
+        result: List[ParsedQuestion] = []
+
+        def flush() -> None:
+            nonlocal current
+            if current is None:
+                return
+            number, content_lines = current
+            content = "\n".join(x for x in content_lines if x).strip()
+            if len(content) >= 12:
+                qtype = self._infer_question_type(content, current_section or "解答题")
+                result.append(ParsedQuestion(
+                    number=number,
+                    content=content,
+                    question_type=qtype,
+                    raw_text=content,
+                ))
+            current = None
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or re.search(r"第\s*\d+\s*页", line):
+                continue
+            if line.startswith("微积分学习辅导与提高"):
+                continue
+            if "解答与提示" in line:
+                continue
+            section_match = section_pattern.match(line)
+            if section_match:
+                flush()
+                current_section = section_match.group(1)
+                expected_number = 1
+                continue
+            question_match = re.match(r"^(\d+)\s*[．.、)]\s*(.*)$", line)
+            if question_match:
+                number = int(question_match.group(1))
+                remainder = question_match.group(2).strip()
+                # 只接受章节内的下一个题号；这会过滤公式分式中的孤立数字。
+                if number == expected_number or (number == 1 and expected_number > 1 and current_section):
+                    flush()
+                    current = (number, [remainder] if remainder else [])
+                    expected_number = number + 1
+                    continue
+            if current is not None:
+                current[1].append(line)
+        flush()
+        return result
 
     def _extract_with_fitz(self, pdf_path: str) -> str:
         """用 PyMuPDF (fitz) 提取 PDF 文本，对数学公式支持更好"""
@@ -319,28 +421,11 @@ class PDFQuestionParser:
                 i += 1
                 continue
             
-            # 检测是否是大题节标题
-            section_type = self._detect_section_type(line)
-            if section_type:
-                # 先保存之前的题目
-                if current_content_lines:
-                    q = self._build_question_from_buffer(
-                        current_q_number, current_content_lines,
-                        current_options, current_section_type, sub_questions
-                    )
-                    if q:
-                        questions.append(q)
-                    current_content_lines = []
-                    current_options = []
-                    sub_questions = []
-                
-                current_section_type = section_type
-                i += 1
-                continue
-            
             # 检测是否是新题目的开始
             q_num = self._detect_question_number(line)
-            if q_num is not None and q_num > 0:
+            # 同一题干的公式拆行可能再次出现较小题号；只有递增题号，或
+            # 明确从 1 开始的新小节，才创建新题。
+            if q_num is not None and q_num > 0 and (q_num == 1 or q_num > current_q_number):
                 # 先保存之前的题目
                 if current_content_lines:
                     q = self._build_question_from_buffer(
@@ -358,6 +443,24 @@ class PDFQuestionParser:
                 clean_line = self._strip_question_prefix(line, q_num)
                 if clean_line:
                     current_content_lines.append(clean_line)
+                i += 1
+                continue
+
+            # 检测是否是大题节标题。必须放在题号判断之后，避免
+            # “7．选择……”被当成节标题而吞掉题干。
+            section_type = self._detect_section_type(line)
+            if section_type:
+                if current_content_lines:
+                    q = self._build_question_from_buffer(
+                        current_q_number, current_content_lines,
+                        current_options, current_section_type, sub_questions
+                    )
+                    if q:
+                        questions.append(q)
+                    current_content_lines = []
+                    current_options = []
+                    sub_questions = []
+                current_section_type = section_type
                 i += 1
                 continue
             
@@ -450,9 +553,15 @@ class PDFQuestionParser:
         """检测行首的题号，返回数字或None"""
         stripped = line.strip()
         
-        # 匹配 "1." "2." "3、" 等
-        m = re.match(r'^(\d+)[\.\、\s]', stripped)
+        # 只接受明确题号标点（1．/1./1、）。不能把公式拆行后的孤立数字
+        # 当成题号，否则教材 PDF 的分式上下标会制造大量伪题目。
+        m = re.match(r'^(\d+)[\.\。\、．\)](?!\d)', stripped)
         if m:
+            remainder = stripped[m.end():].strip()
+            # PDF 公式抽取常把分式/上下标单独输出为“2．”或“3．2”；
+            # 过短且没有题干线索的行不是新题目。
+            if len(remainder) < 8 and not re.search(r'[\u4e00-\u9fff]|[?？（）()]', remainder):
+                return None
             return int(m.group(1))
         
         # 匹配 "(1)" "(2)" 但排除选项

@@ -24,6 +24,7 @@ from app.data.models import (
 from app.services.paper_generator import _grade_one
 from app.services.error_classification import classify_error
 from app.services.error_review import capture_wrong_attempt
+from app.services.chapter_scope import expand_chapter_scope
 
 SUPPORTED_TYPES = {"choice", "multi_choice", "judge", "numeric_fill", "expression_fill"}
 # ---- §5.1 答题行为配置（Moodle-style behaviour）：仅影响放行/重试/反馈时序，不改判分事实 ----
@@ -91,6 +92,7 @@ def _session_payload(session: PracticeSession) -> dict[str, Any]:
         # Returning it here makes a refresh recover the exact submitted state
         # without exposing material for unanswered questions.
         "feedback": feedback,
+        "answers": {attempt.question_id: attempt.user_answer for attempt in session.attempts},
     }
 
 
@@ -206,9 +208,7 @@ async def create_session(user_id: str, config: dict[str, Any]) -> dict[str, Any]
         by_code = {p.code: p for p in points}
         chosen_codes = set(explicit_codes)
         if chapter_ids:
-            valid_chapters = {p.chapter_id for p in points}
-            if not chapter_ids <= valid_chapters:
-                raise PracticeError("VALIDATION_FAILED", "所选章节不属于当前课程版本")
+            chapter_ids = await expand_chapter_scope(db, chapter_ids, course_id, version_id)
             chapter_codes = {p.code for p in points if p.chapter_id in chapter_ids}
             if explicit_codes and not explicit_codes <= chapter_codes:
                 raise PracticeError("VALIDATION_FAILED", "所选知识点不属于所选章节")
@@ -682,8 +682,10 @@ async def recent_sessions(user_id: str, limit: int = 8) -> dict[str, Any]:
     for session in sessions:
         prefix = "assessment" if session.mode == "assessment" else "exam" if session.mode == "exam" else "practice"
         result_suffix = "report" if session.mode == "exam" else "result"
-        answered = len(session.draft_answers) if session.mode == "exam" else len(session.attempts)
-        rows.append({"session_id": session.id, "mode": session.mode, "status": session.status, "total": len(session.questions), "answered": answered, "correct": sum(int(a.correct) for a in session.attempts), "updated_at": session.updated_at, "result_path": f"/apply/{prefix}/sessions/{session.id}/{result_suffix}" if session.status == "completed" else None, "resume_path": f"/apply/{prefix}/sessions/{session.id}" if session.status != "completed" else None})
+        diagnostic_kind = (session.config_snapshot or {}).get("diagnostic_kind")
+        base_path = f"/chapter-diagnostics/{session.id}" if diagnostic_kind else f"/apply/{prefix}/sessions/{session.id}"
+        answered = sum(d.answer not in (None, "", []) for d in session.draft_answers) if session.mode in {"exam", "assessment"} else len(session.attempts)
+        rows.append({"session_id": session.id, "mode": session.mode, "diagnostic_kind": diagnostic_kind, "status": session.status, "total": len(session.questions), "answered": answered, "correct": sum(int(a.correct) for a in session.attempts), "updated_at": session.updated_at, "result_path": f"{base_path}/{result_suffix}" if session.status == "completed" else None, "resume_path": base_path if session.status != "completed" else None})
     return {"unfinished": [row for row in rows if row["status"] != "completed"], "completed": [row for row in rows if row["status"] == "completed"]}
 
 

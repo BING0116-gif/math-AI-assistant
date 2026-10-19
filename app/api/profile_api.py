@@ -473,7 +473,7 @@ async def track_learning_behavior(
         )
 
         facade = MemoryPersistenceFacade()
-        success = await facade.record_event(user_id, tracked)
+        success = await facade.record_event(user_id, tracked, durable=True)
 
         return {
             "success": True,

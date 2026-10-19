@@ -9,11 +9,12 @@ from sqlalchemy import func, or_, select
 from app.data.database import get_db_session
 from app.data.models import (
     Chapter, KnowledgePoint, LearningActivitySession, PracticeAttempt, Question,
-    QuestionKnowledgePoint, ReviewSchedule, ReviewScheduleAction,
+    QuestionKnowledgePoint, ReviewSchedule, ReviewScheduleAction, ErrorItem,
 )
 
 from app.services.learning_projection import read_learning_states, state_evidence
 from app.services.mastery_evidence import evidence_summary
+from app.services.learning_goals import list_goals
 
 RECOMMENDATION_VERSION = "today-rules-v1"
 SPACED_INTERVALS = (1, 3, 7, 15)
@@ -156,7 +157,7 @@ async def complete_review(user_id: str, schedule_id: int, *, attempt_id: str, id
         return result
 
 
-async def today_hub(user_id: str, *, limit: int = 5) -> dict[str, Any]:
+async def today_hub(user_id: str, *, limit: int = 5, available_minutes: int | None = None) -> dict[str, Any]:
     """Build a bounded, explainable task list without LLM/Qdrant."""
     now = datetime.now(timezone.utc)
     async with get_db_session() as db:
@@ -177,19 +178,39 @@ async def today_hub(user_id: str, *, limit: int = 5) -> dict[str, Any]:
             .group_by(KnowledgePoint.code)
         )).all()
         pool = dict(pool_rows)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_attempts = list((await db.execute(select(PracticeAttempt).where(
+            PracticeAttempt.user_id == user_id, PracticeAttempt.submitted_at >= day_start,
+        ))).scalars())
+        recent_errors = list((await db.execute(select(ErrorItem).where(
+            ErrorItem.user_id == user_id, ErrorItem.is_mastered.is_(False),
+        ).order_by(ErrorItem.updated_at.desc()).limit(50))).scalars())
+
+    completed_codes = {
+        code for attempt in today_attempts
+        for code in ((attempt.grading_snapshot or {}).get("knowledge_point_codes") or [])
+    }
+    error_counts: dict[str, int] = {}
+    for item in recent_errors:
+        for code in (item.knowledge_point_codes or item.categories or []):
+            error_counts[str(code)] = error_counts.get(str(code), 0) + 1
 
     tasks: list[dict[str, Any]] = []
     used: set[str] = set()
     def add(kind: str, code: str, evidence: list[dict[str, Any]], priority: int) -> None:
         if code in used or len(tasks) >= limit:
             return
+        estimated = 12 if kind == "review" else 15
+        if available_minutes is not None and sum(int(item["estimated_minutes"]) for item in tasks) + estimated > available_minutes:
+            return
         count = int(pool.get(code, 0))
         tasks.append({
             "id": f"{kind}:{code}", "type": kind, "title": f"{names.get(code, code)}",
             "target_knowledge_point": {"code": code, "name": names.get(code, code)},
             "reason": "；".join(item["text"] for item in evidence), "evidence": evidence,
-            "estimated_minutes": 12 if kind == "review" else 15,
+            "estimated_minutes": estimated,
             "priority": priority, "available_question_count": count,
+            "done": code in completed_codes,
             "start": {"route": "/apply/practice", "query": {"knowledge_point": code}} if count else None,
             "degradation": None if count else {"code": "QUESTION_POOL_EMPTY", "message": "该知识点暂无可用正式题目，请先复习讲义或选择其他任务"},
         })
@@ -198,10 +219,13 @@ async def today_hub(user_id: str, *, limit: int = 5) -> dict[str, Any]:
     for row in schedules:
         add("review", row.knowledge_point_code, [{"type": "due_review", "text": f"复习已到期，当前间隔 {row.interval_days} 天", "value": row.due_at.isoformat()}], 100)
     for state in states:
-        add("weakness", state.knowledge_point_code, [
+        evidence = [
             {"type": "mastery", "text": f"掌握度 {round(state.mastery * 100)}%", "value": state.mastery, **state_evidence(state)},
             {"type": "attempts", "text": f"来自 {state.attempts_count} 次真实作答", "value": state.attempts_count},
-        ], 80)
+        ]
+        if error_counts.get(state.knowledge_point_code):
+            evidence.append({"type": "recent_error", "text": f"错题本中有 {error_counts[state.knowledge_point_code]} 道未掌握错题", "value": error_counts[state.knowledge_point_code]})
+        add("weakness", state.knowledge_point_code, evidence, 80)
     cold_start = not states
     if cold_start:
         tasks.append({
@@ -209,6 +233,7 @@ async def today_hub(user_id: str, *, limit: int = 5) -> dict[str, Any]:
             "target_knowledge_point": None, "reason": "还没有足够学习证据，先用基础诊断了解你的起点",
             "evidence": [{"type": "cold_start", "text": "当前没有已完成作答", "value": 0}],
             "estimated_minutes": 15, "priority": 100, "available_question_count": sum(pool.values()),
+            "done": False,
             "start": {"route": "/apply/assessment", "query": {}} if sum(pool.values()) else None,
             "degradation": None if sum(pool.values()) else {"code": "QUESTION_POOL_EMPTY", "message": "正式题库暂不可用，请联系管理员发布题目"},
         })
@@ -267,6 +292,7 @@ async def unified_dashboard(user_id: str, *, period: str = "7d") -> dict[str, An
     cold = not states
     weak = states[:3]
     strong = list(reversed(states[-3:])) if states else []
+    goals = await list_goals(user_id)
     return {
         "generated_at": now, "state_version": states[0].calculation_version if states else "uks-rules-v1",
         "period": period,
@@ -290,7 +316,8 @@ async def unified_dashboard(user_id: str, *, period: str = "7d") -> dict[str, An
         "trend": trend,
         "heatmap": [{"date": item["date"], "active_seconds": item["active_seconds"], "attempts": item["attempts"]} for item in trend],
         "chapter_mastery": chapter_mastery,
-        "goals": {"status": "not_configured", "items": [], "message": "尚未设置学习目标"},
+        "goals": {"status": "configured" if goals else "not_configured", "items": goals,
+                  "message": "按已设置目标计算" if goals else "尚未设置学习目标"},
         "data_quality": {"status": "complete", "sources": ["practice_attempts", "learning_activity_sessions", "user_knowledge_states"], "message": "仅统计服务端已确认的学习事实"},
         "today": hub,
     }

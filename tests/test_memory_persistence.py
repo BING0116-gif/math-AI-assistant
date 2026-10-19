@@ -114,6 +114,13 @@ class TestMemoryPersistenceFacade:
         compact = profile.to_compact_json(max_length=1000)
         assert len(compact) <= 1000
 
+    def test_compact_json_accepts_analyzer_error_dict(self):
+        profile = UserProfile(error_patterns={
+            "common_error_reasons": [{"reason": "符号错误", "count": 2}],
+        })
+        compact = profile.to_compact_json()
+        assert "符号错误" in compact
+
     def test_intent_persistence_map(self):
         facade = MemoryPersistenceFacade()
         assert facade.should_persist("problem_solving") == True

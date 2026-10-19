@@ -9,6 +9,17 @@ from app.services.practice_service import PracticeError, start_session, submit_a
 from app.services.student_paper_service import create_paper, finalize_paper, get_paper, launch_paper, update_paper
 
 
+@pytest.mark.asyncio
+async def test_reorder_response_matches_the_persisted_question_order(student_db):
+    from app.services.student_paper_service import reorder_questions
+    paper = await create_paper('u1', {'title':'排序验收', 'course_id':'c1', 'version_id':'v1', 'question_ids':['Q0','Q1']})
+    requested = [row['item_id'] for row in reversed(paper['questions'])]
+    changed = await reorder_questions('u1', paper['paper_id'], requested, paper['revision'])
+    assert [row['item_id'] for row in changed['questions']] == requested
+    assert [row['position'] for row in changed['questions']] == [1, 2]
+    assert [row['item_id'] for row in (await get_paper('u1', paper['paper_id']))['questions']] == requested
+
+
 @pytest_asyncio.fixture
 async def student_db(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

@@ -1,0 +1,104 @@
+[
+  {
+    "file": "4e068e81320b-cb.pdf",
+    "answer": null,
+    "success": false,
+    "questions": 0,
+    "with_answers": 0,
+    "with_analysis": 0,
+    "warnings": [],
+    "errors": [
+      "未从题目PDF中解析出任何题目"
+    ]
+  },
+  {
+    "file": "第一章自测题2010-1-20.pdf",
+    "answer": "第一章函数与极限自测题 答案与提示.pdf",
+    "success": true,
+    "questions": 133,
+    "with_answers": 133,
+    "with_analysis": 133,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第七章无穷级数.pdf",
+    "answer": "第七章无穷级数自测试题 答案与提示.pdf",
+    "success": true,
+    "questions": 265,
+    "with_answers": 264,
+    "with_analysis": 264,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第三章中值定理与导数的应用自测题.pdf",
+    "answer": "第三章中值定理与导数的应用自测题 答案与提示.pdf",
+    "success": true,
+    "questions": 56,
+    "with_answers": 56,
+    "with_analysis": 53,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第二章自测题2010-1-20.pdf",
+    "answer": "第二章导数与微分自测题A答案与提示.pdf",
+    "success": true,
+    "questions": 101,
+    "with_answers": 101,
+    "with_analysis": 91,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第五章定积分.pdf",
+    "answer": null,
+    "success": true,
+    "questions": 187,
+    "with_answers": 0,
+    "with_analysis": 0,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第八章微分方程自测题.pdf",
+    "answer": "第八章微分方程自测题 答案与提示.pdf",
+    "success": true,
+    "questions": 118,
+    "with_answers": 108,
+    "with_analysis": 108,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第六章多元函数.pdf",
+    "answer": null,
+    "success": true,
+    "questions": 172,
+    "with_answers": 0,
+    "with_analysis": 0,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "第四章_不定积分自测题.pdf",
+    "answer": "第四章不定积分自测题 答案与提示.pdf",
+    "success": true,
+    "questions": 169,
+    "with_answers": 160,
+    "with_analysis": 149,
+    "warnings": [],
+    "errors": []
+  },
+  {
+    "file": "高等数学（二）期末核心考点大全.pdf",
+    "answer": null,
+    "success": true,
+    "questions": 50,
+    "with_answers": 0,
+    "with_analysis": 0,
+    "warnings": [],
+    "errors": []
+  }
+]

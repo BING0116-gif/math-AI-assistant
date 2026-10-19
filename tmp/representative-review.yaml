@@ -1,0 +1,50 @@
+run_id: live-deepseek-representative-gated-e6eb6fffbfea
+dataset_hash: 036313bae85f440ce65aaecf1fdd5167138defc77d8ef7ece0e81f3b5d5654ba
+reviewer: ''
+note: ''
+rubric:
+  0: 不通过
+  1: 部分通过
+  2: 通过
+cases:
+  mq-text-001:
+    verifiable_reasoning:
+      score: null
+      note: ''
+    retrieval_grounding:
+      score: null
+      note: ''
+    chinese_latex:
+      score: null
+      note: ''
+    constraint_coverage:
+      score: null
+      note: ''
+    evidence_grounding:
+      score: null
+      note: ''
+    material_consistency:
+      score: null
+      note: ''
+  mq-text-002:
+    final_correctness:
+      score: null
+      note: ''
+    verifiable_reasoning:
+      score: null
+      note: ''
+    retrieval_grounding:
+      score: null
+      note: ''
+    chinese_latex:
+      score: null
+      note: ''
+    constraint_coverage:
+      score: null
+      note: ''
+    evidence_grounding:
+      score: null
+      note: ''
+    material_consistency:
+      score: null
+      note: ''

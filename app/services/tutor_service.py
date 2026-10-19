@@ -161,6 +161,10 @@ async def complete_ai_run(run_id: str, *, status: str, metadata: dict[str, Any] 
         if run is None: return
         run.status = status; run.error_code = error_code; run.completed_at = datetime.now(timezone.utc)
         run.model = data.get("model")
+        run.provider = data.get("provider")
+        run.request_id = data.get("request_id")
+        run.fallback_reason = data.get("fallback_reason")
+        run.quality_flags = data.get("quality_flags")
         if data.get("prompt_version") is not None: run.prompt_version = data["prompt_version"]
         run.tool_names = sorted(set(data.get("tool_names") or [])); run.latency_ms = data.get("latency_ms")
         run.token_usage = data.get("token_usage"); run.estimated_cost = data.get("estimated_cost")

@@ -33,6 +33,11 @@ describe('MathFieldInput §5.2', () => {
     const field = wrapper.find('math-field')
     expect(field.exists()).toBe(true)
     expect(field.attributes('virtual-keyboard-mode')).toBe('manual')
+    expect(field.attributes('read-only')).toBeUndefined()
+    await wrapper.setProps({ disabled: true })
+    expect(field.attributes('read-only')).toBeDefined()
+    await wrapper.setProps({ disabled: false })
+    expect(field.attributes('read-only')).toBeUndefined()
   })
 
   it('emits gradeable math text from a latex input event', async () => {

@@ -109,6 +109,10 @@ async def test_completed_review_requires_owned_attempt_and_advances_schedule():
     with pytest.raises(LearningHubError) as denied:
         await complete_review("hub-user-b", schedule_id, attempt_id="hub-attempt", idempotency_key="complete-hub-other")
     assert denied.value.code == "REVIEW_NOT_FOUND"
+    from app.services.learning_hub import today_hub
+    refreshed = await today_hub("hub-user-a")
+    review_task = next(item for item in [refreshed["primary"], *refreshed["alternatives"]] if item and item["target_knowledge_point"] and item["target_knowledge_point"]["code"] == "CALC")
+    assert review_task["done"] is True
 
 
 @pytest.mark.asyncio
@@ -165,3 +169,15 @@ async def test_personal_forgetting_curve_stays_hidden_without_required_evidence(
     assert profile["forgetting_curve"]["status"] == "collecting"
     assert profile["forgetting_curve"]["observations"] == []
     assert profile["forgetting_curve"]["required"] == {"distinct_intervals": 3, "span_days": 7}
+
+
+@pytest.mark.asyncio
+async def test_mastery_evidence_and_correction_are_owner_scoped_and_idempotent():
+    from app.services.mastery_correction import mastery_evidence, report_correction
+    mine = await mastery_evidence("hub-user-a", "CALC")
+    assert mine["knowledge_point_code"] == "CALC"
+    first = await report_correction(user_id="hub-user-a", code="CALC", correction_type="error_type", proposed_value="CONCEPT_CONFUSION", reason="题目标签不准确", idempotency_key="mastery-correction-01")
+    second = await report_correction(user_id="hub-user-a", code="CALC", correction_type="error_type", proposed_value="CONCEPT_CONFUSION", reason="题目标签不准确", idempotency_key="mastery-correction-01")
+    assert first == second
+    other = await mastery_evidence("hub-user-b", "CALC")
+    assert other["evidence_count"] == 0

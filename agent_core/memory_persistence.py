@@ -76,6 +76,12 @@ class UserProfile:
         }
 
     def to_compact_json(self, max_length: int = 800) -> str:
+        # 兼容画像分析器的字典结构（common_error_reasons）与旧版列表结构。
+        raw_patterns = self.error_patterns
+        if isinstance(raw_patterns, dict):
+            raw_patterns = raw_patterns.get("common_error_reasons") or raw_patterns.get("common_errors") or []
+        if not isinstance(raw_patterns, list):
+            raw_patterns = []
         compact = {
             "cr": self.correct_rate,
             "wp": [
@@ -91,8 +97,8 @@ class UserProfile:
                 for s in self.skills
             ],
             "ep": [
-                {"p": e["pattern"], "f": e["frequency"]}
-                for e in self.error_patterns
+                {"p": e.get("pattern") or e.get("reason", ""), "f": e.get("frequency", e.get("count", 0))}
+                for e in raw_patterns if isinstance(e, dict)
             ],
         }
         text = json.dumps(compact, ensure_ascii=False, separators=(",", ":"))
@@ -163,6 +169,7 @@ class MemoryPersistenceFacade:
         event_data: Dict[str, Any],
         *,
         event_id: Optional[str] = None,
+        durable: bool = False,
     ) -> bool:
         """记录一条学习事件（异步批量写入）。
 
@@ -206,6 +213,15 @@ class MemoryPersistenceFacade:
         # 批量写入时会被过滤掉，不会落库）
         if event_id:
             event_data["event_id"] = event_id
+
+        if durable:
+            # Chat/behavior facts may influence the profile and must survive a
+            # process restart. Route them through the SQL outbox.
+            from app.services.outbox import enqueue_learning_record
+            return await enqueue_learning_record(
+                user_id=user_id, event_data=event_data, event_id=event_id,
+                session_factory=self._session_factory,
+            )
 
         # [P0-02] 懒启动批量写入worker（首次调用时才启动，确保有事件循环）
         self._ensure_batch_worker_started()

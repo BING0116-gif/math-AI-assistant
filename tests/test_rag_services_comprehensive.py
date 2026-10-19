@@ -499,7 +499,7 @@ class TestRAGRecommenderCore:
     async def test_determine_target_default(self):
         rec = RAGRecommender()
         target, weak = await rec._determine_target("", {}, {})
-        assert target == "导数"
+        assert target == ""
         assert weak == []
 
     def test_default_analysis(self):
@@ -520,7 +520,7 @@ class TestRAGRecommenderFallback:
             RecommendationRequest(user_id="test", target_category="导数", count=3)
         )
         assert isinstance(result, RecommendationResult)
-        assert result.meta.get("retrieval_method") == "fallback"
+        assert result.meta.get("retrieval_method") == "category_safe_fallback"
         assert result.meta.get("recommended_difficulty") == 3
 
     @pytest.mark.asyncio
@@ -689,7 +689,7 @@ class TestRAGRecommenderRecommend:
                 user_id="test", target_category="导数", count=3,
             ))
             assert isinstance(result, RecommendationResult)
-            assert result.meta["retrieval_method"] == "fallback"
+            assert result.meta["retrieval_method"] == "category_safe_fallback"
             assert "error" in result.meta
 
 

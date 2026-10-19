@@ -1,7 +1,8 @@
 <script setup>
+import '@/styles/apply-pages.css'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ListChecks, Timer, Sparkles, RotateCcw } from 'lucide-vue-next'
+import { ListChecks, Timer, Sparkles, RotateCcw, ClipboardCheck } from 'lucide-vue-next'
 import AppShell from '@/components/shell/AppShell.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import { practiceApi, unwrapPractice } from '@/api/practice'
@@ -28,7 +29,7 @@ onMounted(async () => {
     pendingErrorCount.value = items.filter((item) => item && item.is_mastered === false && item.question_id).length
   } catch { pendingErrorCount.value = null }
 })
-const modeName = (mode) => mode === 'assessment' ? '智能组卷' : mode === 'exam' ? '自主考试' : '专项练习'
+const modeName = (mode, diagnosticKind) => diagnosticKind ? (diagnosticKind === 'retest' ? '章节复测' : '章节诊断') : mode === 'assessment' ? '智能组卷' : mode === 'exam' ? '自主考试' : '专项练习'
 const openRow = (row) => router.push(row.resume_path || row.result_path)
 async function startErrorPractice() {
   if (errorPracticeBusy.value) return
@@ -43,17 +44,22 @@ async function startErrorPractice() {
 </script>
 <template>
   <AppShell><template #topbar-title>学以致用</template>
-    <main class="apply-hub">
+    <main class="apply-hub apply-screen">
       <header class="page-head">
         <span class="eyebrow">学以致用</span>
         <h1 class="t-1">把理解变成掌握</h1>
         <p class="sub">专项巩固、手动组卷考试，或让系统依据真实学习记录生成个性化试卷。</p>
       </header>
-      <section class="mode-grid">
+      <div class="hub-links"><button @click="router.push('/apply/papers')">我的试卷</button><button v-if="recent.unfinished.length" @click="openRow(recent.unfinished[0])">继续上次练习</button></div><section class="mode-grid">
         <article class="card mode-card">
           <span class="mode-icon brand" aria-hidden="true"><ListChecks :size="20" :stroke-width="1.75" /></span>
-          <h2 class="t-2">专项练习</h2><p>自己选范围 · 即时反馈 · 不使用 AI</p>
+          <h2 class="t-2">专项练习</h2><p>选定知识范围，按自己的节奏练习</p>
           <BaseButton variant="primary" size="lg" @click="router.push('/apply/practice')">开始专项练习</BaseButton>
+        </article>
+        <article class="card mode-card diagnostic-card">
+          <span class="mode-icon brand" aria-hidden="true"><ClipboardCheck :size="20" :stroke-width="1.75" /></span>
+          <h2 class="t-2">章节诊断</h2><p>先测薄弱点 · 推荐学习资源 · 学完复测对比</p>
+          <BaseButton variant="primary" size="lg" @click="router.push('/chapter-diagnostics/new')">开始章节诊断</BaseButton>
         </article>
         <article class="card mode-card">
           <span class="mode-icon accent" aria-hidden="true"><Timer :size="20" :stroke-width="1.75" /></span>
@@ -62,27 +68,28 @@ async function startErrorPractice() {
         </article>
         <article class="card mode-card">
           <span class="mode-icon teal" aria-hidden="true"><Sparkles :size="20" :stroke-width="1.75" /></span>
-          <h2 class="t-2">智能组卷</h2><p>学习画像规划蓝图 · 正式题库选题 · AI 失败可降级</p>
+          <h2 class="t-2">智能组卷</h2><p>根据学习情况规划试卷，支持逐题调整</p>
           <BaseButton variant="primary" size="lg" @click="router.push('/apply/assessment')">生成智能试卷</BaseButton>
         </article>
         <article class="card mode-card error-card">
           <span class="mode-icon rose" aria-hidden="true"><RotateCcw :size="20" :stroke-width="1.75" /></span>
           <h2 class="t-2">错题重练<span v-if="pendingErrorCount" class="badge" aria-label="待重练错题数">{{pendingErrorCount}}</span></h2>
           <p>未掌握错题自动成卷 · 优先巩固最近错误</p>
-          <BaseButton variant="danger" size="lg" :disabled="errorPracticeBusy" @click="startErrorPractice">{{errorPracticeBusy?'正在生成…':pendingErrorCount===0?'暂无可重练错题':'开始错题重练'}}</BaseButton>
+          <BaseButton variant="danger" size="lg" :disabled="errorPracticeBusy || pendingErrorCount===0" @click="startErrorPractice">{{errorPracticeBusy?'正在生成…':pendingErrorCount===0?'暂无可重练错题':'开始错题重练'}}</BaseButton>
           <p v-if="errorPracticeMessage" class="error-message" role="alert">{{errorPracticeMessage}}</p>
         </article>
+        <article class="card mode-card"><span class="mode-icon brand" aria-hidden="true"><ListChecks :size="20" /></span><h2 class="t-2">我的试卷</h2><p>保存自己的试卷，随时编辑、练习或测试</p><BaseButton variant="secondary" size="lg" @click="router.push('/apply/papers')">查看我的试卷</BaseButton></article>
       </section>
       <p v-if="loading" class="status" aria-live="polite">正在加载最近记录…</p>
       <p v-else-if="loadError" class="status">{{ loadError }}</p>
       <section v-else class="recent" aria-label="最近学习记录">
         <div class="card recent-card">
           <h2 class="t-2">最近未完成</h2><p v-if="!recent.unfinished.length" class="empty">没有未完成会话</p>
-          <button v-for="row in recent.unfinished" :key="row.session_id" class="session-row" @click="openRow(row)"><span><strong>{{ modeName(row.mode) }}</strong><small>{{ row.answered }} / {{ row.total }} 已作答</small></span><span>继续</span></button>
+          <button v-for="row in recent.unfinished" :key="row.session_id" class="session-row" @click="openRow(row)"><span><strong>{{ modeName(row.mode, row.diagnostic_kind) }}</strong><small>{{ row.answered }} / {{ row.total }} 已作答</small></span><span>继续</span></button>
         </div>
         <div class="card recent-card">
           <h2 class="t-2">最近结果</h2><p v-if="!recent.completed.length" class="empty">完成练习后，结果会显示在这里</p>
-          <button v-for="row in recent.completed" :key="row.session_id" class="session-row" @click="openRow(row)"><span><strong>{{ modeName(row.mode) }}</strong><small>{{ row.correct }} / {{ row.total }} 正确</small></span><span>查看</span></button>
+          <button v-for="row in recent.completed" :key="row.session_id" class="session-row" @click="openRow(row)"><span><strong>{{ modeName(row.mode, row.diagnostic_kind) }}</strong><small>{{ row.correct }} / {{ row.total }} 正确</small></span><span>查看</span></button>
         </div>
       </section>
     </main>

@@ -1,8 +1,11 @@
 <script setup>
+import '@/styles/apply-pages.css'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppShell from '@/components/shell/AppShell.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import { ensureKnowledgeNames, kpLabel } from '@/utils/knowledgeNames'
+import QuestionReview from '@/components/common/QuestionReview.vue'
 import { renderMarkdown } from '@/utils/markdown'
 import { errorCategoryLabel } from '@/utils/errorCategories'
 import { useExamStore } from '@/stores/examStore'
@@ -10,6 +13,7 @@ import { useExamStore } from '@/stores/examStore'
 const route = useRoute()
 const router = useRouter()
 const store = useExamStore()
+const loadError = ref('')
 const summary = ref(null)
 const summaryState = ref('idle')
 const duration = computed(() => {
@@ -17,7 +21,7 @@ const duration = computed(() => {
   return seconds == null ? '未记录' : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
 })
 
-onMounted(() => store.loadReport(route.params.sessionId))
+onMounted(async () => { ensureKnowledgeNames(); try { await store.loadReport(route.params.sessionId) } catch { loadError.value = '报告暂时无法加载，请稍后重试。' } })
 
 function practice() {
   const config = store.report?.next_practice_config
@@ -57,7 +61,7 @@ async function requestSummary() {
 <template>
   <AppShell>
     <template #topbar-title>考试报告</template>
-    <main v-if="store.report" class="report">
+    <main v-if="store.report" class="report apply-screen">
       <p class="eyebrow">{{ store.report.completion_reason === 'timeout' ? '到时自动交卷' : '自主考试已完成' }}</p>
       <h1 class="t-1 report-score"><span v-count-up="{ value: store.report.score }">{{ store.report.score }}</span> / {{ store.report.max_score }} 分</h1>
       <p>正确率 {{ Math.round(store.report.accuracy * 100) }}% · 答对 {{ store.report.correct }} / {{ store.report.total }} 题 · 用时 {{ duration }}</p>
@@ -67,7 +71,7 @@ async function requestSummary() {
           <h2 class="t-2">知识点表现</h2>
           <p v-if="!store.report.knowledge_breakdown.length">暂无知识点统计</p>
           <div v-for="row in store.report.knowledge_breakdown" :key="row.knowledge_point_code" class="metric">
-            <span>{{ row.knowledge_point_code }}</span><strong>{{ Math.round(row.accuracy * 100) }}%</strong>
+            <span>{{ kpLabel(row.knowledge_point_code) }}</span><strong>{{ Math.round(row.accuracy * 100) }}%</strong>
           </div>
         </section>
         <section class="card card-pad">
@@ -93,17 +97,7 @@ async function requestSummary() {
 
       <section class="items">
         <h2 class="t-2">逐题结果</h2>
-        <details v-for="item in store.report.questions" :key="item.question_id" :class="['card', item.correct ? 'ok' : 'bad']">
-          <summary><span>第 {{ item.position }} 题 · {{ item.correct ? '答对' : item.error_category === 'UNANSWERED' ? '未作答' : '待改进' }}</span><strong>{{ item.score_awarded }} / {{ item.max_score }} 分</strong></summary>
-          <div class="body">
-            <div class="math" v-html="renderMarkdown(item.content)" />
-            <p>你的答案：{{ Array.isArray(item.your_answer) ? item.your_answer.join('、') : (item.your_answer || '未作答') }}</p>
-            <p>正确答案：{{ item.correct_answer }}</p>
-            <p v-if="item.scoring" class="scoring-note">多选计分：{{ scoringLabel(item.scoring) }} · 本题得分比例 {{ Math.round((item.partial_credit ?? (item.correct ? 1 : 0)) * 100) }}%</p>
-            <div v-if="item.analysis" class="math" v-html="renderMarkdown(item.analysis)" />
-            <BaseButton variant="secondary" size="sm" @click="tutor(item)">向 Tutor 追问</BaseButton>
-          </div>
-        </details>
+        <QuestionReview v-for="item in store.report.questions" :key="item.question_id" :item="item"><BaseButton variant="secondary" size="sm" @click="tutor(item)">向 Tutor 追问</BaseButton></QuestionReview>
       </section>
 
       <footer>
@@ -111,7 +105,7 @@ async function requestSummary() {
         <BaseButton variant="primary" size="lg" @click="router.push('/apply')">返回学以致用</BaseButton>
       </footer>
     </main>
-    <p v-else class="loading" role="status">正在生成结构化报告…</p>
+    <p v-else-if="loadError" class="loading" role="alert">{{loadError}}</p><p v-else class="loading" role="status">正在生成结构化报告…</p>
   </AppShell>
 </template>
 

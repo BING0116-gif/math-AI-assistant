@@ -29,8 +29,14 @@ class DiagnoseErrorCapability(Capability):
     )
 
     def matches(self, user_input: str, context: Mapping[str, Any]) -> bool:
-        # review 是明确的“检查学生工作”模式；其它模式要求出现诊断意图，避免
-        # 将普通求解错误路由为诊断。
-        if context.get("tutor_mode") == "review":
+        # review 只有在用户明确要求诊断，或上下文确实带有学生推导时才
+        # 进入诊错链路。普通数学题即使携带 review 模式，也应走 solve，
+        # 否则会暴露错题分析工具并错过 math_solver。
+        if self._DIAGNOSIS_MARKERS.search(str(user_input or "")):
             return True
-        return bool(self._DIAGNOSIS_MARKERS.search(str(user_input or "")))
+        if context.get("tutor_mode") != "review":
+            return False
+        return any(
+            context.get(key)
+            for key in ("student_work", "student_answer", "student_solution", "submitted_work")
+        )

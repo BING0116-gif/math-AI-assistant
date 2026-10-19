@@ -57,7 +57,7 @@ def _paper_payload(paper: StudentPaper, *, include_questions: bool = True) -> di
                     "estimated_time", "knowledge_point_codes",
                 )},
             }
-            for row in paper.questions
+            for row in sorted(paper.questions, key=lambda item: item.position)
         ]
     return payload
 

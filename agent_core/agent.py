@@ -752,7 +752,7 @@ class MathAgent:
                     },
                 )
                 await self._persistence_facade.record_event(
-                    user_id=effective_user_id, event_data=tracked
+                    user_id=effective_user_id, event_data=tracked, durable=True
                 )
             except Exception as e:
                 logger.warning(f"行为追踪记录失败（非致命）: {e}")
@@ -850,7 +850,7 @@ class MathAgent:
                     },
                 )
                 await self._persistence_facade.record_event(
-                    user_id=effective_user_id, event_data=tracked
+                    user_id=effective_user_id, event_data=tracked, durable=True
                 )
             except Exception as e:
                 logger.warning(f"行为追踪记录失败（非致命）: {e}")
@@ -1161,7 +1161,7 @@ class MathAgent:
                     },
                 )
                 await self._persistence_facade.record_event(
-                    user_id=effective_user_id, event_data=tracked
+                    user_id=effective_user_id, event_data=tracked, durable=True
                 )
             except Exception as e:
                 logger.warning(f"流式行为追踪记录失败（非致命）: {e}")
@@ -1402,7 +1402,7 @@ class MathAgent:
                     metadata={"has_image": bool(image_path)},
                 )
                 await self._persistence_facade.record_event(
-                    user_id=effective_user_id, event_data=tracked
+                    user_id=effective_user_id, event_data=tracked, durable=True
                 )
             except Exception as e:
                 logger.warning(f"多模态行为追踪记录失败（非致命）: {e}")

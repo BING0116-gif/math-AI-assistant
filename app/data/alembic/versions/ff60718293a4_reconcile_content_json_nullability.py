@@ -55,14 +55,22 @@ def _backfill_nulls() -> None:
 def upgrade() -> None:
     _backfill_nulls()
 
-    with op.batch_alter_table("content_ai_analysis_runs") as batch:
+    # SQLite has no ALTER COLUMN support.  Use Alembic's table rebuild there;
+    # PostgreSQL can keep the in-place form, which avoids rebuilding the
+    # self-referencing analysis-runs table.
+    recreate = "always" if op.get_bind().dialect.name == "sqlite" else "never"
+
+    # PostgreSQL can alter JSON nullability in place.  Forcing ``never`` avoids
+    # Alembic's table-rebuild path, which tries to drop the self-referencing
+    # primary key before its parent_run_id foreign key.
+    with op.batch_alter_table("content_ai_analysis_runs", recreate=recreate) as batch:
         batch.alter_column(
             "gate_reasons",
             existing_type=sa.JSON(),
             nullable=False,
         )
 
-    with op.batch_alter_table("content_import_candidates") as batch:
+    with op.batch_alter_table("content_import_candidates", recreate=recreate) as batch:
         batch.alter_column(
             "warnings",
             existing_type=sa.JSON(),
@@ -74,7 +82,7 @@ def upgrade() -> None:
             nullable=False,
         )
 
-    with op.batch_alter_table("import_batches") as batch:
+    with op.batch_alter_table("import_batches", recreate=recreate) as batch:
         batch.alter_column(
             "stats",
             existing_type=sa.JSON(),
@@ -83,14 +91,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("import_batches") as batch:
+    recreate = "always" if op.get_bind().dialect.name == "sqlite" else "never"
+
+    with op.batch_alter_table("import_batches", recreate=recreate) as batch:
         batch.alter_column(
             "stats",
             existing_type=sa.JSON(),
             nullable=True,
         )
 
-    with op.batch_alter_table("content_import_candidates") as batch:
+    with op.batch_alter_table("content_import_candidates", recreate=recreate) as batch:
         batch.alter_column(
             "suggested_knowledge_point_codes",
             existing_type=sa.JSON(),
@@ -102,7 +112,7 @@ def downgrade() -> None:
             nullable=True,
         )
 
-    with op.batch_alter_table("content_ai_analysis_runs") as batch:
+    with op.batch_alter_table("content_ai_analysis_runs", recreate=recreate) as batch:
         batch.alter_column(
             "gate_reasons",
             existing_type=sa.JSON(),

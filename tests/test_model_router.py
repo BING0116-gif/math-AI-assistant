@@ -24,14 +24,14 @@ def test_disabled_router_keeps_primary():
 
 def test_enabled_router_sends_simple_tiers_to_light_model(monkeypatch):
     router = ModelRouter(enabled=True)
-    assert router.resolve_model("knowledge", primary_model="deepseek-chat") == "deepseek-v4-flash"
-    assert router.resolve_model("quick", primary_model="deepseek-chat") == "deepseek-v4-flash"
+    assert router.resolve_model("knowledge", primary_model="deepseek-chat") == "deepseek-flash"
+    assert router.resolve_model("quick", primary_model="deepseek-chat") == "deepseek-flash"
     # 主力档映射回主模型,不产生切换
-    assert router.resolve_model("solution", primary_model="deepseek-chat") == "deepseek-chat"
+    assert router.resolve_model("solution", primary_model="deepseek-chat") == "deepseek-flash"
 
 
 def test_capability_fail_closed_keeps_primary(monkeypatch):
-    monkeypatch.setitem(router_module.MODEL_CAPABILITIES, "deepseek-v4-flash", {"tool_call": False, "json_output": True})
+    monkeypatch.setitem(router_module.MODEL_CAPABILITIES, "deepseek-flash", {"tool_call": False, "json_output": True})
     router = ModelRouter(enabled=True)
     # 轻量档缺 tool_call 能力 → 不路由,保持主模型
     assert router.resolve_model("knowledge", primary_model="deepseek-chat") == "deepseek-chat"
@@ -86,4 +86,4 @@ def test_factory_get_llm_for_model_is_cached(monkeypatch):
     assert first is second
     assert first.model_name == "deepseek-v4-flash"
     # 默认档位仍是主模型
-    assert factory.get_llm(TaskType.KNOWLEDGE_QUERY).model_name == "deepseek-chat"
+    assert factory.get_llm(TaskType.KNOWLEDGE_QUERY).model_name == "deepseek-flash"

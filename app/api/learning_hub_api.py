@@ -7,7 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.api.student_contracts import STUDENT_API_RESPONSES
 from app.services.learning_activity import ActivityError, end_activity, heartbeat_activity, start_activity
 from app.services.learning_hub import LearningHubError, complete_review, defer_review, due_reviews, today_hub, unified_dashboard, unified_profile
+from app.services.learning_goals import archive_goal, create_goal, list_goals
 from app.services.reminders import build_reminders
+from app.services.mastery_correction import mastery_evidence, report_correction
+from app.services.learning_plan import PlanError, generate_plan, get_today_plan, resume_plan, update_task
+from app.services.proactive_learning import cancel_action, retry_action, set_automation_enabled
+from app.data.database import get_db_session
+from app.data.models import ProactiveLearningAction, LearningAutomationPreference
+from sqlalchemy import select
 
 router = APIRouter(prefix="/api/learning", tags=["学习闭环"])
 
@@ -161,6 +168,24 @@ class LearningProfileResponse(BaseModel):
     insights: list[dict[str, Any]]
     data_quality: dict[str, Any]
 
+class MasteryCorrectionRequest(BaseModel):
+    correction_type: Literal["error_type", "knowledge_point"]
+    proposed_value: str = Field(min_length=1, max_length=200)
+    reason: str = Field(default="", max_length=1000)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class LearningGoalCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    goal_type: Literal["minutes", "attempts", "mastery"]
+    target_value: float = Field(gt=0, le=100000)
+    target_knowledge_point: str | None = Field(default=None, max_length=128)
+    deadline: datetime | None = None
+
+class LearningPlanGenerateRequest(BaseModel):
+    goal_id: str | None = Field(default=None, max_length=36)
+    available_minutes: int = Field(default=30, ge=5, le=240)
+
 def _user(request: Request) -> str:
     value = getattr(request.state, "user_id", None)
     if not value:
@@ -187,8 +212,8 @@ async def post_action(request: Request, schedule_id: int, body: ReviewActionRequ
         _raise(error)
 
 @router.get("/today", response_model=TodayHubResponse, responses=STUDENT_API_RESPONSES)
-async def get_today(request: Request, limit: int = Query(5, ge=1, le=10)):
-    return await today_hub(_user(request), limit=limit)
+async def get_today(request: Request, limit: int = Query(5, ge=1, le=10), available_minutes: int | None = Query(None, ge=1, le=240)):
+    return await today_hub(_user(request), limit=limit, available_minutes=available_minutes)
 
 @router.get("/reminders", response_model=RemindersResponse, responses=STUDENT_API_RESPONSES)
 async def get_reminders(request: Request, limit: int = Query(50, ge=1, le=100)):
@@ -200,9 +225,98 @@ async def get_reminders(request: Request, limit: int = Query(50, ge=1, le=100)):
 async def get_dashboard(request: Request, period: Literal["7d", "30d", "90d"] = "7d"):
     return await unified_dashboard(_user(request), period=period)
 
+@router.get("/mastery/{knowledge_point_code}/evidence", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def get_mastery_evidence(request: Request, knowledge_point_code: str):
+    return {"code": 0, "data": await mastery_evidence(_user(request), knowledge_point_code)}
+
+@router.post("/mastery/{knowledge_point_code}/corrections", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def post_mastery_correction(request: Request, knowledge_point_code: str, body: MasteryCorrectionRequest):
+    try:
+        return {"code": 0, "data": await report_correction(user_id=_user(request), code=knowledge_point_code, **body.model_dump())}
+    except ValueError as error:
+        raise HTTPException(409, detail={"code": "CORRECTION_CONFLICT", "message": str(error)})
+
 @router.get("/profile", response_model=LearningProfileResponse, responses=STUDENT_API_RESPONSES)
 async def get_learning_profile(request: Request):
     return await unified_profile(_user(request))
+
+
+@router.get("/goals", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def get_learning_goals(request: Request):
+    return {"status": "ok", "items": await list_goals(_user(request))}
+
+
+@router.post("/goals", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def post_learning_goal(request: Request, body: LearningGoalCreateRequest):
+    return {"status": "ok", "item": await create_goal(_user(request), **body.model_dump())}
+
+
+@router.delete("/goals/{goal_id}", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def delete_learning_goal(request: Request, goal_id: str):
+    if not await archive_goal(_user(request), goal_id):
+        raise HTTPException(404, detail={"code": "GOAL_NOT_FOUND", "message": "学习目标不存在"})
+    return {"status": "ok", "goal_id": goal_id}
+
+def _plan_error(error: PlanError):
+    raise HTTPException(404 if error.code.endswith("NOT_FOUND") else 409 if error.code == "TASK_NOT_ACTIONABLE" else 422,
+                        detail={"code": error.code, "message": error.message})
+
+@router.get("/plans/today", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def get_today_learning_plan(request: Request):
+    return {"status": "ok", "item": await get_today_plan(_user(request))}
+
+@router.post("/plans/generate", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def post_generate_learning_plan(request: Request, body: LearningPlanGenerateRequest):
+    try: return {"status": "ok", "item": await generate_plan(_user(request), **body.model_dump())}
+    except PlanError as error: _plan_error(error)
+
+@router.post("/plans/{plan_id}/tasks/{task_id}/start", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def start_plan_task(request: Request, plan_id: str, task_id: str):
+    try: return {"status": "ok", "item": await update_task(_user(request), plan_id, task_id, "start")}
+    except PlanError as error: _plan_error(error)
+
+@router.post("/plans/{plan_id}/tasks/{task_id}/complete", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def complete_plan_task(request: Request, plan_id: str, task_id: str):
+    try: return {"status": "ok", "item": await update_task(_user(request), plan_id, task_id, "complete")}
+    except PlanError as error: _plan_error(error)
+
+@router.post("/plans/{plan_id}/tasks/{task_id}/skip", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def skip_plan_task(request: Request, plan_id: str, task_id: str):
+    try: return {"status": "ok", "item": await update_task(_user(request), plan_id, task_id, "skip")}
+    except PlanError as error: _plan_error(error)
+
+@router.post("/plans/{plan_id}/tasks/{task_id}/fail", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def fail_plan_task(request: Request, plan_id: str, task_id: str):
+    try: return {"status": "ok", "item": await update_task(_user(request), plan_id, task_id, "fail")}
+    except PlanError as error: _plan_error(error)
+
+@router.post("/plans/{plan_id}/resume", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def resume_learning_plan(request: Request, plan_id: str):
+    try: return {"status": "ok", "item": await resume_plan(_user(request), plan_id)}
+    except PlanError as error: _plan_error(error)
+
+@router.get("/proactive-actions", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def list_proactive_actions(request: Request, limit: int = Query(50, ge=1, le=100)):
+    user_id = _user(request)
+    async with get_db_session() as db:
+        rows = list((await db.scalars(select(ProactiveLearningAction).where(ProactiveLearningAction.user_id == user_id).order_by(ProactiveLearningAction.created_at.desc()).limit(limit))).all())
+        pref = await db.get(LearningAutomationPreference, user_id)
+        return {"status": "ok", "enabled": pref.enabled if pref else True, "items": [{"id": r.id, "action_type": r.action_type, "trigger": r.trigger, "evidence": r.evidence, "frequency_key": r.frequency_key, "cooldown_hours": r.cooldown_hours, "expires_at": r.expires_at, "status": r.status, "attempts": r.attempts, "result": r.result, "last_error": r.last_error, "created_at": r.created_at} for r in rows]}
+
+@router.post("/proactive-actions/{action_id}/cancel", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def cancel_proactive_action(request: Request, action_id: str):
+    if not await cancel_action(_user(request), action_id): raise HTTPException(404, detail={"code": "ACTION_NOT_FOUND", "message": "主动动作不存在或已结束"})
+    return {"status": "ok", "action_id": action_id, "cancelled": True}
+
+@router.post("/proactive-actions/{action_id}/retry", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def retry_proactive_action(request: Request, action_id: str):
+    if not await retry_action(_user(request), action_id):
+        raise HTTPException(404, detail={"code": "ACTION_NOT_RETRYABLE", "message": "主动动作不存在、已达到重试上限或当前不可重试"})
+    return {"status": "ok", "action_id": action_id, "queued": True}
+
+@router.post("/proactive-preference", response_model=dict, responses=STUDENT_API_RESPONSES)
+async def update_proactive_preference(request: Request, enabled: bool = Query(...)):
+    return {"status": "ok", "item": await set_automation_enabled(_user(request), enabled)}
 
 @router.post("/activities", response_model=ActivityItem, responses=STUDENT_API_RESPONSES)
 async def start_learning_activity(request: Request, body: ActivityStartRequest):
