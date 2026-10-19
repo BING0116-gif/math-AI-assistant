@@ -382,7 +382,8 @@ class TestAlembicMigration:
 
         cfg = Config(os.path.join(os.path.dirname(__file__), "..", "app", "data", "alembic.ini"))
         script = ScriptDirectory.from_config(cfg)
-        assert script.get_current_head() == "hi60718293a7"  # current ORM reconciliation head
+        assert len(script.get_heads()) == 1
+        assert script.get_revision("hi60718293a7") is not None
 
     def test_upgrade_head_on_sqlite(self):
         import sqlite3

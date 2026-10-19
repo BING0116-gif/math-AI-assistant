@@ -168,6 +168,7 @@ async def test_vision_ocr_suspicious_length_is_warning(monkeypatch):
 @pytest.mark.asyncio
 async def test_assessment_no_key_at_all_is_blocker(monkeypatch):
     _set(monkeypatch, "LLM_API_KEY", "")
+    _set(monkeypatch, "DEEPSEEK_API_KEY", "")
     _set(monkeypatch, "DASHSCOPE_API_KEY", "")
 
     result = await check_assessment()

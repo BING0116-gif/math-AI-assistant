@@ -373,8 +373,8 @@ class TestLLMProviderDetection:
         )
         assert svc.provider == LLMProvider.LOCAL
 
-    def test_remote_provider_detection(self):
-        """检测远程提供商"""
+    def test_legacy_dashscope_url_uses_deepseek_provider(self):
+        """旧 DashScope 地址统一映射到 DeepSeek。"""
         svc = LLMService.__new__(LLMService)
         svc.api_key = "test"
         if hasattr(svc, '_initialized'):
@@ -383,7 +383,7 @@ class TestLLMProviderDetection:
             api_key="test-key",
             api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
-        assert svc.provider == LLMProvider.DASHSCOPE
+        assert svc.provider == LLMProvider.DEEPSEEK
 
     def test_deepseek_provider_detection(self):
         """主文本模型切换 DeepSeek 后，应检测为 DEEPSEEK provider（观测指标维度正确）"""

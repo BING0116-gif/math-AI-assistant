@@ -171,7 +171,7 @@ def test_interactive_frame_cannot_contain_expression_or_too_many_frames():
 
 def test_prompt_requires_model_to_decide_visual_teaching_value():
     prompt = ReActPromptTemplate.build_instruction(["math_visualize"])
-    assert "自主判断图形是否能解释" in prompt
+    assert "图形对理解当前关系确有不可替代的教学增益" in prompt
     assert "不要为了调用工具而调用工具" in prompt
     assert "预计算 frames" in prompt
 
