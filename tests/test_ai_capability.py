@@ -47,6 +47,7 @@ def _run_subprocess(mode: str) -> dict:
         # LLM_API_KEY 现也决定 AI 可用性（文本 LLM 优先用它，兜底 DASHSCOPE_API_KEY）。
         # 必须一并清空，否则 .env 中的 LLM_API_KEY 会让子进程误判 AI 可用并触发 DB 迁移。
         env["LLM_API_KEY"] = ""  # 空字符串覆盖 .env 文件中的值
+        env["DEEPSEEK_API_KEY"] = ""  # 文本模型能力也读取此密钥
     elif mode == "disabled":
         env["AI_ENABLED"] = "false"
         env["DASHSCOPE_API_KEY"] = "test-key"

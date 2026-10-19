@@ -22,6 +22,7 @@ ENV/
 .agents/*
 !.agents/skills/
 !.agents/skills/**
+.agents/skills/**/__pycache__/
 .claude/
 .trae/
 
@@ -35,6 +36,8 @@ htmlcov/
 *.tmp
 *.log
 logs/
+/tmp/
+/.tmp-dsh-recon/
 
 # 前端构建产物
 frontend/node_modules/
