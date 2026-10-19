@@ -202,6 +202,29 @@ def _prepare(monkeypatch):
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "test-secret", raising=False)
 
 
+@pytest.mark.parametrize("during_token_creation", [False, True])
+def test_database_unavailable_is_not_reported_as_wrong_password(monkeypatch, during_token_creation):
+    from asyncpg import TooManyConnectionsError
+    from app.middleware.auth import AuthResult
+    from types import SimpleNamespace
+
+    async def authenticate(*args, **kwargs):
+        if not during_token_creation:
+            raise TooManyConnectionsError("database connection capacity exhausted")
+        return AuthResult(outcome=LoginOutcome.SUCCESS, user=SimpleNamespace(id="user-1"))
+
+    async def tokens(*args, **kwargs):
+        raise TooManyConnectionsError("database connection capacity exhausted")
+
+    monkeypatch.setattr(auth_api, "authenticate_user_detailed", authenticate)
+    monkeypatch.setattr(auth_api, "create_token_pair", tokens)
+    response = _client().post("/api/auth/login", json=_login_body())
+    assert response.status_code == 503
+    assert response.json()["code"] == "AUTH_UNAVAILABLE"
+    assert response.headers["Retry-After"] == "5"
+    assert "无需修改密码" in response.json()["message"]
+
+
 def test_login_invalid_credentials_contract(monkeypatch):
     _prepare(monkeypatch)
 
