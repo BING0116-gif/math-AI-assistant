@@ -86,6 +86,19 @@ class UpdateChatSessionRequest(BaseModel):
     archive: bool = False
 
 
+class ContextUsageData(BaseModel):
+    used_tokens_estimated: int = Field(ge=0)
+    budget_tokens: int = Field(gt=0)
+    remaining_tokens_estimated: int = Field(ge=0)
+    is_estimate: Literal[True] = True
+    compression_status: Literal["idle", "queued", "compressing", "retrying", "failed"] = "idle"
+
+
+class ContextUsageEnvelope(BaseModel):
+    code: Literal[0] = 0
+    data: ContextUsageData
+
+
 class ClarificationAnswerRequest(BaseModel):
     """T03: 学生回答 ask_student 澄清问题的请求。"""
     model_config = ConfigDict(extra="ignore")
@@ -427,6 +440,14 @@ async def list_chat_sessions(http_request: Request):
 async def get_chat_session(session_id: str, http_request: Request):
     data = await _chat_memory_service.get_chat_session(_user_id(http_request), session_id)
     if data is None: raise HTTPException(status_code=404, detail={"code": "CHAT_SESSION_NOT_FOUND", "message": "对话不存在"})
+    return {"code": 0, "data": data}
+
+
+@router.get("/api/chat/sessions/{session_id}/context-usage", response_model=ContextUsageEnvelope, responses=STUDENT_API_RESPONSES)
+async def get_chat_context_usage(session_id: str, http_request: Request):
+    data = await _chat_memory_service.get_context_usage(_user_id(http_request), session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail={"code": "CHAT_SESSION_NOT_FOUND", "message": "对话不存在"})
     return {"code": 0, "data": data}
 
 
