@@ -119,3 +119,6 @@ plans/
 /log*.txt
 /*_log.txt
 /*_tmp.json
+
+# ===== 代码智能索引（codegraph 本地生成，不入 Git）=====
+.codegraph/
