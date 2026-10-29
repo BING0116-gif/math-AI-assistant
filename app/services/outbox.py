@@ -249,7 +249,13 @@ async def _handle_review_complete(event: OutboxEvent) -> None:
     )
 
 
+async def _handle_chat_context_checkpoint(event: OutboxEvent) -> None:
+    from app.services.chat_context_checkpoint import generate_checkpoint
+    await generate_checkpoint(event.user_id, event.aggregate_id, int(event.payload["target_message_id"]))
+
+
 _HANDLERS = {
+    "chat.context.checkpoint": _handle_chat_context_checkpoint,
     "question.vector.upsert": _handle_question_upsert,
     "question.vector.delete": _handle_question_delete,
     "knowledge_resource.vector.upsert": _handle_knowledge_resource_upsert,
