@@ -9,12 +9,54 @@ live 模式留待正式标注集就绪后接入(1-J)。
 
 from __future__ import annotations
 
+import os
 from typing import Any, Iterable
 
+from .guards import EvaluationSafetyError, validate_eval_database_url
+from .runner import ai_enabled_from_environment, live_budget_from_environment, live_timeout_seconds_from_environment, live_token_budget_from_environment
 from .v2_schema import V2Case
 from .v2_scoring import V2CaseScore, V2ToolTrace, score_v2_case, summarise_v2_scores
 
 REPORT_SCHEMA_VERSION = "2.0"
+
+
+def preflight_live_v2(bundle, *, selected: Iterable[V2Case] | None = None) -> dict[str, Any]:
+    """Read-only checks before a V2 Agent run; never start the application or call a model."""
+    cases = list(selected) if selected is not None else list(bundle.cases)
+    issues: list[str] = []
+    drafts = [case.id for case in cases if case.gold_review_status == "draft"]
+    if drafts:
+        issues.append("GOLD_REVIEW_PENDING")
+    if not ai_enabled_from_environment():
+        issues.append("AI_UNAVAILABLE")
+    if live_budget_from_environment() is None:
+        issues.append("EVAL_BUDGET_NOT_CONFIGURED")
+    if live_token_budget_from_environment() is None or live_timeout_seconds_from_environment() is None:
+        issues.append("EVAL_TOKEN_OR_TIMEOUT_BUDGET_NOT_CONFIGURED")
+    try:
+        from app.config.settings import settings
+
+        validate_eval_database_url(
+            os.environ.get("EVAL_DATABASE_URL"), os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+        )
+    except (EvaluationSafetyError, ValueError):
+        issues.append("EVAL_DATABASE_UNSAFE")
+    for name in ("EVAL_INPUT_COST_PER_MILLION", "EVAL_OUTPUT_COST_PER_MILLION"):
+        try:
+            rate = float(os.environ[name])
+            if not 0 <= rate < float("inf"):
+                raise ValueError
+        except (KeyError, ValueError):
+            issues.append("EVAL_COST_RATES_NOT_CONFIGURED")
+            break
+    return {
+        "status": "ready_for_live_implementation" if not issues else "incomplete",
+        "dataset_hash": bundle.computed_hash,
+        "selected_case_ids": [case.id for case in cases],
+        "draft_case_ids": drafts,
+        "issues": issues,
+        "model_calls": 0,
+    }
 
 
 def mock_evidence_ids(case: V2Case) -> list[str]:
@@ -121,10 +163,71 @@ def compare_v2_reports(
     if baseline.get("dataset_hash") != candidate.get("dataset_hash"):
         raise ValueError("baseline and candidate dataset hashes differ")
     verdict = evaluate_gates(baseline, candidate, gates)
+    issues = list(verdict["failures"])
+    baseline_scores = {item["case_id"]: item for item in baseline.get("scores", [])}
+    candidate_scores = {item["case_id"]: item for item in candidate.get("scores", [])}
+    selected_ids = baseline.get("selected_case_ids", [])
+    missing_scores = sorted(set(selected_ids) - set(baseline_scores) | set(selected_ids) - set(candidate_scores))
+    case_deltas = {
+        case_id: round(candidate_scores[case_id]["weighted_score"] - baseline_scores[case_id]["weighted_score"], 2)
+        for case_id in selected_ids if case_id in baseline_scores and case_id in candidate_scores
+    }
+    failure_case_ids = sorted(
+        case_id for case_id in selected_ids
+        if case_id in candidate_scores
+        and (candidate_scores[case_id]["issues"] or candidate_scores[case_id]["weighted_score"] < baseline_scores.get(case_id, {}).get("weighted_score", 0))
+    )
+    modes = {baseline.get("mode"), candidate.get("mode")}
+    quality_claim = False
+    if modes == {"mocked"}:
+        status = "pipeline_pass" if verdict["status"] == "approved" else "rejected"
+    elif modes == {"live"}:
+        if baseline.get("status") != "approved" or candidate.get("status") not in {"baseline_only", "approved"}:
+            issues.append("LIVE_REVIEW_OR_BASELINE_MISSING")
+        if not baseline.get("full_dataset") or not candidate.get("full_dataset"):
+            issues.append("FULL_DATASET_REQUIRED")
+        if baseline.get("selected_case_ids") != candidate.get("selected_case_ids"):
+            issues.append("CASE_SELECTION_MISMATCH")
+        if missing_scores:
+            issues.append("SCORE_COVERAGE_MISSING")
+        old, new = baseline.get("summary", {}), candidate.get("summary", {})
+        for metric in ("weighted_score", "final_correctness", "key_steps_hit_rate", "requirements_coverage"):
+            if not isinstance(old.get(metric), (int, float)) or not isinstance(new.get(metric), (int, float)):
+                issues.append(f"MISSING_METRIC:{metric}")
+                continue
+            limit = gates.blocking.weighted_score_regression_max if metric == "weighted_score" else 0
+            if new[metric] < old[metric] - limit:
+                issues.append(f"QUALITY_REGRESSION:{metric}")
+        for section, name, limit in (
+            ("latency", "p95_ms", gates.blocking.latency_regression_max_pct),
+            ("cost", "average", gates.blocking.cost_regression_max_pct),
+        ):
+            old_value = (old.get(section) or {}).get(name)
+            new_value = (new.get(section) or {}).get(name)
+            if not isinstance(old_value, (int, float)) or old_value <= 0 or not isinstance(new_value, (int, float)):
+                issues.append(f"MISSING_METRIC:{section}.{name}")
+            elif new_value > old_value * (1 + limit / 100):
+                issues.append(f"REGRESSION:{section}.{name}")
+        incomplete_markers = ("MISSING_METRIC:", "LIVE_REVIEW_OR_BASELINE_MISSING", "FULL_DATASET_REQUIRED", "CASE_SELECTION_MISMATCH", "SCORE_COVERAGE_MISSING")
+        status = (
+            "approved" if not issues else
+            "incomplete" if any(item.startswith(incomplete_markers) for item in issues) else
+            "rejected"
+        )
+        quality_claim = status == "approved"
+    else:
+        issues.append("REPORT_MODES_NOT_COMPARABLE")
+        status = "incomplete"
     return {
         "comparison_schema_version": "2.0",
         "baseline_run_id": baseline.get("run_id"),
         "candidate_run_id": candidate.get("run_id"),
         "mode": candidate.get("mode"),
         **verdict,
+        "status": status,
+        "failures": sorted(set(issues)),
+        "model_quality_claim": quality_claim,
+        "failure_case_ids": failure_case_ids,
+        "missing_score_case_ids": missing_scores,
+        "case_score_deltas": case_deltas,
     }

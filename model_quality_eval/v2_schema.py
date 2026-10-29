@@ -89,6 +89,12 @@ class V2Case(V2StrictModel):
     memory_fixture: dict[str, Any] | None = None
     user_fixture: str | dict[str, Any] | None = None
     ai_offline_case: bool = False
+    case_version: str | None = None
+    gold_review_status: Literal["draft", "reviewed"] | None = None
+    clarification_allowed: bool | None = None
+    allowed_answer_variants: list[str] = Field(default_factory=list)
+    severe_errors: list[str] = Field(default_factory=list)
+    expected_side_effects: list[str] = Field(default_factory=list)
 
     def model_post_init(self, __context: Any) -> None:
         if self.category == "vision" and self.modality != "image":

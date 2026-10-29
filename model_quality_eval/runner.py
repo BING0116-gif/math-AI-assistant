@@ -62,6 +62,11 @@ def deterministic_session_id(dataset_hash: str, run_id: str, case_id: str, attem
     return f"mq-{hashlib.sha256(raw.encode()).hexdigest()[:48]}"
 
 
+def answer_text_chunk(chunk: Any) -> str:
+    """Ignore structured Agent events; only student-visible text is answer evidence."""
+    return chunk if isinstance(chunk, str) else ""
+
+
 def load_live_checkpoint(
     path: Path | None,
     *,
@@ -445,7 +450,7 @@ async def run_live_case(bundle: DatasetBundle, case: EvaluationCase, run_id: str
                 tutor_mode=case.tutor_mode.value, tutor_context=context,
             )
         async for chunk in stream:
-            text = str(chunk)
+            text = answer_text_chunk(chunk)
             if text and first_token_latency_ms is None:
                 first_token_latency_ms = int((time.perf_counter() - started) * 1000)
             chunks.append(text)
@@ -531,7 +536,11 @@ async def run_live(
             reason="EVAL_TOKEN_OR_TIMEOUT_BUDGET_NOT_CONFIGURED",
             full_dataset=len(cases) == len(bundle.cases), selected_case_ids=[case.case_id for case in cases],
         )
-    eval_url = validate_eval_database_url(os.environ.get("EVAL_DATABASE_URL"), os.environ.get("DATABASE_URL"))
+    from app.config.settings import settings
+
+    eval_url = validate_eval_database_url(
+        os.environ.get("EVAL_DATABASE_URL"), os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+    )
     os.environ["DATABASE_URL"] = eval_url.replace("postgresql+asyncpg://", "postgresql://", 1)
     os.environ["ASYNC_DATABASE_URL"] = eval_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     from app.data.database import close_db, init_db
@@ -616,14 +625,11 @@ async def run_live(
                         stability_runs=stability_runs,
                     )
                     current_cost = accumulated_cost(results, stability_runs)
-                    # A missing telemetry record on a stability retry must not
-                    # prevent the remaining cases from running. Drop that
-                    # retry from budget arithmetic, retain the final report's
-                    # telemetry_missing flag, and continue with the next case.
+                    # Missing usage makes the total spend unknowable. Keep the
+                    # failed attempt in the checkpoint and stop immediately.
                     if stability.execution.token_usage is None or stability.execution.estimated_cost is None:
                         telemetry_missing = True
-                        stability_runs.pop()
-                        continue
+                        break
                     if current_cost is None or current_cost >= budget:
                         budget_exhausted = True
                         break
