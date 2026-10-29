@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -338,13 +339,22 @@ class MathAgent:
     async def _persist_chat_message(
         self, user_id: str, session_id: str, role: str, content: str,
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
+    ) -> Optional[int]:
         try:
-            await self._memory_application.append_message(
+            return await self._memory_application.append_message(
                 user_id, session_id, role, content, metadata=metadata
             )
         except Exception as e:
             logger.warning(f"SQL 会话写入失败（非阻塞）: role={role} error={e}")
+            return None
+
+    async def _queue_context_checkpoint(self, user_id: str, session_id: str, user_message_id: Optional[int], assistant_message_id: Optional[int]) -> None:
+        if not (user_message_id and assistant_message_id and getattr(settings, "CHAT_CONTEXT_SHADOW_ENABLED", False)):
+            return
+        try:
+            await self._memory_application.queue_context_checkpoint(user_id, session_id, assistant_message_id)
+        except Exception as exc:
+            logger.warning("会话检查点入队失败（非阻塞）: %s", exc)
 
     def clear_session(self, user_id: str, session_id: str) -> None:
         """清除指定会话的历史记录。"""
@@ -407,26 +417,47 @@ class MathAgent:
         original_history_chars = sum(len(str(item.get("content") or "")) for item in chat_history_dicts)
         original_history_tokens = sum(estimate_tokens(str(item.get("content") or ""), getattr(self, "_model", "")) for item in chat_history_dicts)
         all_history = chat_history_dicts
-        recent = all_history[-max_messages:]
+
+        checkpoint_used = False
+        if getattr(settings, "CHAT_CONTEXT_INJECTION_ENABLED", False):
+            try:
+                from app.services.chat_context_checkpoint import CHECKPOINT_CONTEXT_PREFIX
+                checkpoint = await self._memory_application.load_context_checkpoint(user_id, session_id)
+                if checkpoint and estimate_tokens(checkpoint["summary"], getattr(self, "_model", "")) <= max(256, int(settings.AGENT_CONTEXT_MAX_TOKENS) // 2):
+                    chat_history_dicts = list(checkpoint["tail"])
+                    chat_history_dicts.insert(0, {"role": "system", "content":
+                        CHECKPOINT_CONTEXT_PREFIX + checkpoint["summary"]})
+                    all_history = chat_history_dicts
+                    checkpoint_used = True
+            except Exception as exc:
+                logger.warning("会话检查点读取失败，回退有界历史: %s", exc)
+        recent = ([all_history[0]] + (all_history[1:][-(max_messages - 1):] if max_messages > 1 else [])) if checkpoint_used else all_history[-max_messages:]
         max_tokens = max(256, int(getattr(settings, "AGENT_CONTEXT_MAX_TOKENS", 4000)))
         kept = []
         used_chars = 0
         used_tokens = 0
-        for item in reversed(recent):
+        reserved_summary = recent[0] if checkpoint_used and recent and recent[0].get("role") == "system" else None
+        if reserved_summary:
+            kept.append(reserved_summary)
+            used_chars = len(str(reserved_summary.get("content") or ""))
+            used_tokens = estimate_tokens(str(reserved_summary.get("content") or ""), getattr(self, "_model", ""))
+        recent_tail = recent[1:] if reserved_summary else recent
+        tail_kept = []
+        for item in reversed(recent_tail):
             content = str(item.get("content") or "")
             item_tokens = estimate_tokens(content, getattr(self, "_model", ""))
             if used_chars and (used_chars + len(content) > max_chars or used_tokens + item_tokens > max_tokens):
                 break
-            kept.append(item)
+            tail_kept.append(item)
             used_chars += len(content)
             used_tokens += item_tokens
-        chat_history_dicts = list(reversed(kept))
+        chat_history_dicts = kept + list(reversed(tail_kept))
         context_trimmed = (
             len(chat_history_dicts) < original_history_messages
             or sum(len(str(item.get("content") or "")) for item in chat_history_dicts) < original_history_chars
             or used_tokens < original_history_tokens
         )
-        if context_trimmed:
+        if context_trimmed and not checkpoint_used:
             try:
                 from app.observability import AGENT_CONTEXT_TRIMS
                 AGENT_CONTEXT_TRIMS.labels("history_budget").inc()
@@ -437,7 +468,7 @@ class MathAgent:
         # 对话的主题。这里不额外调用 LLM，保证摘要不会增加延迟、费用或
         # 递归触发 Agent；原文只保留极短片段，并明确标记为低可信背景。
         history_summary_injected = False
-        if context_trimmed:
+        if context_trimmed and not checkpoint_used:
             kept_ids = {id(item) for item in chat_history_dicts}
             omitted = [item for item in all_history if id(item) not in kept_ids]
             if omitted:
@@ -549,6 +580,7 @@ class MathAgent:
             "max_history_tokens": max_tokens,
             "context_trimmed": context_trimmed,
             "history_summary_injected": history_summary_injected,
+            "context_checkpoint_used": checkpoint_used,
             "dropped_history_messages": max(
                 0,
                 original_history_messages
@@ -723,7 +755,8 @@ class MathAgent:
 
         history = await self._get_or_restore_session_history(user_id, sid)
         history.add_user_message(user_input)
-        await self._persist_chat_message(user_id, sid, "user", user_input)
+        turn_id = str(uuid.uuid4())
+        user_message_id = await self._persist_chat_message(user_id, sid, "user", user_input, metadata={"turn_id": turn_id})
 
         context = await self._build_context(sid, user_input=user_input, user_id=user_id)
 
@@ -736,7 +769,8 @@ class MathAgent:
         result = await strategy.execute(user_input, strategy_session, context)
 
         history.add_ai_message(result)
-        await self._persist_chat_message(user_id, sid, "assistant", result)
+        assistant_message_id = await self._persist_chat_message(user_id, sid, "assistant", result, metadata={"turn_id": turn_id, "turn_status": "completed"})
+        await self._queue_context_checkpoint(user_id, sid, user_message_id, assistant_message_id)
 
         if self._persistence_facade:
             effective_user_id = user_id
@@ -791,7 +825,8 @@ class MathAgent:
         sid = session_id or "default"
         history = await self._get_or_restore_session_history(user_id, sid)
         history.add_user_message(input_text)
-        await self._persist_chat_message(user_id, sid, "user", input_text)
+        turn_id = str(uuid.uuid4())
+        user_message_id = await self._persist_chat_message(user_id, sid, "user", input_text, metadata={"turn_id": turn_id})
 
         context = await self._build_context(sid, user_input=input_text, user_id=user_id)
         strategy_session = self.session_key(user_id, sid)
@@ -800,7 +835,8 @@ class MathAgent:
         result_text = await strategy.execute(input_text, strategy_session, context)
 
         history.add_ai_message(result_text)
-        await self._persist_chat_message(user_id, sid, "assistant", result_text)
+        assistant_message_id = await self._persist_chat_message(user_id, sid, "assistant", result_text, metadata={"turn_id": turn_id, "turn_status": "completed"})
+        await self._queue_context_checkpoint(user_id, sid, user_message_id, assistant_message_id)
 
         # 获取思维链记录
         thoughts = []
@@ -978,7 +1014,8 @@ class MathAgent:
 
         history = await self._get_or_restore_session_history(user_id, sid)
         history.add_user_message(user_input)
-        await self._persist_chat_message(user_id, sid, "user", user_input)
+        turn_id = str(uuid.uuid4())
+        user_message_id = await self._persist_chat_message(user_id, sid, "user", user_input, metadata={"turn_id": turn_id})
 
         context = await self._build_context(sid, user_input=user_input, user_id=user_id, tutor_mode=tutor_mode, tutor_context=tutor_context)
         canonical_mode = context["tutor_mode"]
@@ -1117,12 +1154,16 @@ class MathAgent:
         # 面板只该跟着「这条回答自己的模式」走：切换选择器不应把历史自由对话的纪要藏起来，
         # 也不能把受限模式的消息误判成可展开。模式枚举低基数，不含学生内容。
         persist_metadata["tutor_mode"] = canonical_mode
+        persist_metadata["turn_id"] = turn_id
+        persist_metadata["turn_status"] = self._last_run_status
         # 本进程内再留一份给“展开全文”按需拉取；SSE 不承载超长文本，落库仍是唯一事实源。
         self._cache_session_trace(strategy, strategy_session, trace)
-        await self._persist_chat_message(
+        assistant_message_id = await self._persist_chat_message(
             user_id, sid, "assistant", full_response,
             metadata=persist_metadata or None,
         )
+        if self._last_run_status == "completed":
+            await self._queue_context_checkpoint(user_id, sid, user_message_id, assistant_message_id)
         self._last_run_metadata = {
             "model": self._model,
             "prompt_version": getattr(getattr(self, "_prompt_manager", None), "version", None),
@@ -1353,11 +1394,16 @@ class MathAgent:
                 persist_metadata["visualizations"] = list(context["visualizations"])
             if context.get("animations"):
                 persist_metadata["animations"] = list(context["animations"])
-            await self._persist_chat_message(user_id, sid, "user", combined_input)
-            await self._persist_chat_message(
+            turn_id = str(uuid.uuid4())
+            user_message_id = await self._persist_chat_message(user_id, sid, "user", combined_input, metadata={"turn_id": turn_id})
+            persist_metadata["turn_id"] = turn_id
+            persist_metadata["turn_status"] = str(getattr(strategy, "_last_run_status", "") or "completed")
+            assistant_message_id = await self._persist_chat_message(
                 user_id, sid, "assistant", full_response,
                 metadata=persist_metadata or None,
             )
+            if persist_metadata["turn_status"] == "completed":
+                await self._queue_context_checkpoint(user_id, sid, user_message_id, assistant_message_id)
             strategy_usage = dict(getattr(strategy, "_last_token_usage", None) or {})
             vision_usage = dict((result.metadata or {}).get("token_usage") or {})
             token_usage = {
