@@ -92,6 +92,7 @@ export function answerClarification({ sessionId, clarificationId, pendingTurnId,
 export const unwrapChat = (response) => response?.data?.data ?? response?.data
 export const listChatSessions = () => api.get('/chat/sessions')
 export const getChatSession = (id) => api.get(`/chat/sessions/${id}`)
+export const getChatContextUsage = (id) => api.get(`/chat/sessions/${encodeURIComponent(id)}/context-usage`)
 export const updateChatSession = (id, payload) => api.patch(`/chat/sessions/${id}`, payload)
 
 export function parseSSEStream(response, onData, onDone, onError, onEvent) {

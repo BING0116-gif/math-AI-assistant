@@ -5,10 +5,12 @@ const props = withDefaults(defineProps<{
   large?: boolean
   disabled?: boolean
   disabledReason?: string
+  contextUsage?: { used_tokens_estimated: number; budget_tokens: number; remaining_tokens_estimated: number; compression_status?: 'idle' | 'queued' | 'compressing' | 'retrying' | 'failed' } | null
 }>(), {
   large: false,
   disabled: false,
   disabledReason: '',
+  contextUsage: null,
 })
 
 const emit = defineEmits<{
@@ -20,6 +22,15 @@ const text = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const imagePreview = ref<string | null>(null)
 const isComposing = ref(false)
+const usageOpen = ref(false)
+const usageAvailable = computed(() => props.contextUsage !== null)
+const usageBudget = computed(() => Math.max(1, props.contextUsage?.budget_tokens || 4000))
+const usageUsed = computed(() => Math.max(0, props.contextUsage?.used_tokens_estimated || 0))
+const usagePercent = computed(() => Math.min(100, Math.round(usageUsed.value / usageBudget.value * 100)))
+const compressionStatus = computed(() => props.contextUsage?.compression_status || 'idle')
+const compressionActive = computed(() => ['queued', 'compressing', 'retrying'].includes(compressionStatus.value))
+const compressionLabel = computed(() => ({ queued: '上下文等待压缩', compressing: '正在压缩上下文', retrying: '上下文压缩重试中', failed: '上下文压缩未完成' }[compressionStatus.value] || ''))
+const formatTokens = (value: number) => value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)
 
 const placeholder = computed(() => {
   if (imagePreview.value) return '添加文字说明...'
@@ -158,6 +169,16 @@ onUnmounted(() => {
     class="agent-composer"
     :class="{ 'agent-composer--large': large, 'agent-composer--disabled': disabled }"
   >
+    <div v-if="usageOpen" id="context-usage-detail" class="agent-composer__usage-popover" role="status">
+      <strong>历史上下文预算</strong>
+      <template v-if="usageAvailable">
+        <span v-if="compressionStatus !== 'idle'" class="agent-composer__compression-status" aria-live="polite">{{ compressionLabel }}</span>
+        <span>{{ usagePercent }}% 已用（剩余 {{ 100 - usagePercent }}%）</span>
+        <span>约 {{ formatTokens(usageUsed) }} token 已用 / {{ formatTokens(usageBudget) }} token 预算</span>
+        <small>基于当前会话历史估算；不含本轮问题、工具内容及模型输出。</small>
+      </template>
+      <span v-else>发送首条消息后显示；服务暂不可用时无法估算。</span>
+    </div>
     <!-- AI 不可用提示 -->
     <div v-if="disabled" class="agent-composer__offline-banner">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="agent-composer__offline-icon">
@@ -235,7 +256,20 @@ onUnmounted(() => {
           <span class="agent-composer__hint">Enter 发送 · Shift + Enter 换行</span>
         </div>
 
-        <button
+        <div class="agent-composer__tools-right">
+          <button
+            class="agent-composer__usage-btn"
+            type="button"
+            :aria-label="compressionActive ? `${compressionLabel}，历史上下文预算约已用 ${usagePercent}%` : usageAvailable ? `历史上下文预算约已用 ${usagePercent}%` : '历史上下文用量暂不可用'"
+            :aria-expanded="usageOpen"
+            aria-controls="context-usage-detail"
+            @click="usageOpen = !usageOpen"
+            @keydown.esc="usageOpen = false"
+          >
+            <span class="agent-composer__usage-ring" :class="{ 'agent-composer__usage-ring--unknown': !usageAvailable, 'agent-composer__usage-ring--active': compressionActive }" :style="{ '--usage-percent': `${usagePercent}%` }" aria-hidden="true" />
+          </button>
+          <span v-if="compressionActive" class="agent-composer__compression-label" role="status">{{ compressionLabel }}</span>
+          <button
           class="agent-composer__send-btn"
           :disabled="disabled || (!text.trim() && !imagePreview)"
           aria-label="发送"
@@ -244,7 +278,8 @@ onUnmounted(() => {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
             <path d="M12 19V5M5 12l7-7 7 7"/>
           </svg>
-        </button>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -255,7 +290,24 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   width: 100%;
+  position: relative;
 }
+
+.agent-composer__tools-right { display: flex; align-items: center; gap: 4px; }
+.agent-composer__usage-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; cursor: pointer; color: var(--brand); }
+.agent-composer__usage-btn:hover { background: var(--brand-soft); }
+.agent-composer__usage-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.agent-composer__usage-ring { width: 22px; height: 22px; border-radius: 50%; background: conic-gradient(var(--brand) var(--usage-percent), var(--border-strong) var(--usage-percent)); position: relative; }
+.agent-composer__usage-ring--unknown { background: conic-gradient(var(--ink-3) 0 20%, transparent 20% 27%, var(--ink-3) 27% 47%, transparent 47% 54%, var(--ink-3) 54% 74%, transparent 74% 81%, var(--ink-3) 81% 100%); }
+.agent-composer__usage-ring--active { animation: context-ring-pulse 1.4s ease-in-out infinite; }
+@keyframes context-ring-pulse { 50% { opacity: .45; transform: scale(.88); } }
+@media (prefers-reduced-motion: reduce) { .agent-composer__usage-ring--active { animation: none; } }
+.agent-composer__usage-ring::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); }
+.agent-composer__compression-label { color: var(--ink-2); font-size: 11px; white-space: nowrap; }
+.agent-composer__compression-status { color: var(--brand); font-weight: 600; }
+.agent-composer__usage-popover { position: absolute; z-index: 20; right: 0; bottom: calc(100% + 8px); display: grid; gap: 4px; width: min(290px, calc(100vw - 32px)); padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--surface); color: var(--ink-1); box-shadow: var(--shadow-3); font-size: 12px; line-height: 1.4; }
+.agent-composer__usage-popover strong { font-size: 13px; }
+.agent-composer__usage-popover small { color: var(--ink-2); font-size: 11px; }
 
 .agent-composer--disabled {
   opacity: 0.85;

@@ -11,7 +11,7 @@ import FollowUpRecommendation from '@/components/FollowUpRecommendation.vue'
 import { useChatStore } from '@/stores/chatStore'
 import { useErrorBookStore } from '@/stores/errorBookStore'
 import { useAuthStore } from '@/stores/authStore'
-import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream, cancelChatStream } from '@/api/chat'
+import { sendChatMessage, sendMultimodalRequest, answerClarification, parseSSEStream, recoverChatStream, cancelChatStream, getChatContextUsage } from '@/api/chat'
 import { formatStreamText } from '@/utils/markdown'
 import { generateUUID, chatErrorSourceId } from '@/utils/helpers'
 import { applyAgentStep, applyTraceEvent, isTraceEvent, retractFromAnswer } from '@/utils/toolActivity'
@@ -36,6 +36,25 @@ const reasonInput = ref<HTMLTextAreaElement | null>(null)
 const followUpQuestions = ref<any[]>([])
 const askCard = ref<any>(null)
 const modeGuardNotice = ref('')
+type ContextUsage = { used_tokens_estimated: number; budget_tokens: number; remaining_tokens_estimated: number; compression_status: 'idle' | 'queued' | 'compressing' | 'retrying' | 'failed' }
+const contextUsage = ref<ContextUsage | null>(null)
+let contextUsageTimer: ReturnType<typeof setTimeout> | null = null
+let contextUsageActive = true
+async function refreshContextUsage(chatId: string) {
+  if (contextUsageTimer) clearTimeout(contextUsageTimer)
+  contextUsageTimer = null
+  try {
+    const response = await getChatContextUsage(chatId)
+    if (!contextUsageActive || store.currentChatId !== chatId) return
+    contextUsage.value = response?.data?.data || null
+    const status = contextUsage.value?.compression_status
+    if (status === 'queued' || status === 'compressing' || status === 'retrying') {
+      contextUsageTimer = setTimeout(() => refreshContextUsage(chatId), status === 'retrying' ? 10000 : 2500)
+    }
+  } catch {
+    if (contextUsageActive && store.currentChatId === chatId) contextUsage.value = null
+  }
+}
 const showErrorModal = ref(false)
 const autoScroll = ref(true)
 const tutorMode = ref(normalizeTutorMode(route.query.tutor_mode || store.currentChat?.defaultTutorMode || DEFAULT_TUTOR_MODE))
@@ -113,6 +132,10 @@ function reconcileErrorBookBadges() {
 
 watch(() => store.currentChatId, () => {
   nextTick(reconcileErrorBookBadges)
+  if (contextUsageTimer) clearTimeout(contextUsageTimer)
+  contextUsageTimer = null
+  contextUsage.value = null
+  if (store.currentChatId) refreshContextUsage(store.currentChatId)
 })
 
 onMounted(async () => {
@@ -133,6 +156,7 @@ onMounted(async () => {
   // 加载错题本以回填当前会话消息的“已加入”状态
   await errorBookStore.loadErrors().catch(() => {})
   reconcileErrorBookBadges()
+  if (store.currentChatId) refreshContextUsage(store.currentChatId)
 
   // 首页带问题进入：自动触发首次回答（文本走 query，图片走 store 暂存）
   const initQuery = typeof route.query.q === 'string' ? route.query.q.trim() : ''
@@ -149,6 +173,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  contextUsageActive = false
+  if (contextUsageTimer) clearTimeout(contextUsageTimer)
   if (renderRafId) {
     cancelAnimationFrame(renderRafId)
     renderRafId = null
@@ -489,6 +515,8 @@ async function streamAgentReply(
         timestamp: new Date().toISOString(),
       })
     }
+  } finally {
+    await refreshContextUsage(chatId)
   }
 }
 
@@ -808,6 +836,7 @@ function handleSkip(msgId: string) {
           <button v-for="item in TUTOR_MODES" :key="item.value" :class="{active:tutorMode===item.value}" :aria-pressed="tutorMode===item.value" :disabled="streaming" @click="tutorMode=item.value;store.setTutorMode(store.currentChatId,item.value)">{{item.label}}</button>
         </div>
         <AgentComposer
+          :context-usage="contextUsage"
           :disabled="!isAiAvailable"
           :disabled-reason="aiReason"
           @send="handleTextSend"
