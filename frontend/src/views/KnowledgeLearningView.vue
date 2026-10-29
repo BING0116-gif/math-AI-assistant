@@ -15,7 +15,7 @@
           <div class="hero-main">
             <span>难度 {{ content.difficulty }} / 5 · {{ content.course?.name }}</span>
             <h2>{{ content.description }}</h2>
-            <p>从概念、例题到练习都在这一页完成；页内练习使用真实题库并计入掌握度。</p>
+            <p>先看概念和例题，再用 5 道题检验理解。</p>
           </div>
           <div class="hero-stat" role="status" aria-label="当前掌握度">
             <div class="mastery-ring" :class="`is-${statStatus}`" :style="{ '--pct': masteryPercent }"><span>{{ masteryPercent }}%</span></div>
@@ -31,16 +31,16 @@
             <a href="#section-errors">{{ resourceCount + 5 }}. 错题与变式</a>
           </nav>
           <div class="lesson-flow">
-            <section id="objectives" class="foundation-card card">
-              <span>01 · 学习目标</span><h2>学完后，你应该能够</h2>
+            <details id="objectives" class="foundation-card card">
+              <summary><span>01 · 学习目标</span><strong>学完后，你应该能够</strong><small>按需查看</small></summary>
               <ul v-if="content.learning_objectives?.length"><li v-for="objective in content.learning_objectives" :key="objective">{{ objective }}</li></ul>
               <p v-else>准确说明核心概念，并在适用条件下完成相关计算。</p>
-            </section>
-            <section id="prerequisites" class="foundation-card card">
-              <span>02 · 前置检查</span><h2>{{ prerequisiteLabels.length ? '开始前，确认这些前置知识' : '可以直接开始' }}</h2>
+            </details>
+            <details id="prerequisites" class="foundation-card card">
+              <summary><span>02 · 前置检查</span><strong>{{ prerequisiteLabels.length ? `需要 ${prerequisiteLabels.length} 项前置知识` : '可以直接开始' }}</strong><small>按需查看</small></summary>
               <ul v-if="prerequisiteLabels.length"><li v-for="pre in prerequisiteLabels" :key="pre.code">{{ pre.name }}</li></ul>
               <p v-else>本知识点没有必须先完成的前置知识。</p>
-            </section>
+            </details>
             <LearningResourceCard v-for="resource in orderedResources" :id="`resource-${resource.id}`" :key="resource.id" :resource="resource" :common-error="commonError" @ask-ai="askAi" @practice="startPractice" />
             <section id="section-examples" class="hub-card card">
               <span>典型例题</span><h2>真题带解析，先看懂再动手</h2>
@@ -327,7 +327,7 @@ onMounted(load)
 .lesson-outline a{min-height:40px;padding:9px;border-radius:8px;color:var(--ink-2);text-decoration:none;line-height:1.45;transition:background .15s,color .15s}
 .lesson-outline a:hover{background:var(--brand-soft);color:var(--brand-text)}
 .lesson-flow{display:grid;gap:18px;min-width:0}
-.foundation-card{scroll-margin-top:20px;padding:24px}
+.foundation-card{scroll-margin-top:20px;padding:24px}.foundation-card summary{display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none}.foundation-card summary::-webkit-details-marker{display:none}.foundation-card summary strong{flex:1;font-size:17px;color:var(--ink-1)}.foundation-card summary small{color:var(--ink-3);font-size:12px}.foundation-card[open] summary{margin-bottom:16px}.foundation-card summary:focus-visible{outline:2px solid var(--brand);outline-offset:4px;border-radius:4px}
 .foundation-card span,.completion-card span{color:var(--brand-text);font-size:12px;font-weight:700;letter-spacing:.08em}
 .foundation-card h2,.completion-card h2{margin:6px 0 12px;color:var(--ink-1);font-size:20px}
 .foundation-card ul{margin:0;padding-left:22px;color:var(--ink-2);line-height:1.8}
