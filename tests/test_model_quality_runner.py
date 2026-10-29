@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -185,6 +186,10 @@ async def test_live_stops_after_stability_retry_without_cost_telemetry(monkeypat
     monkeypatch.setattr(database, "init_db", no_op)
     monkeypatch.setattr(database, "close_db", no_op)
     monkeypatch.setenv("EVAL_DATABASE_URL", "postgresql://localhost/model_quality_eval")
+    # run_live points the process at the eval database. Register the keys with
+    # monkeypatch so that mutation cannot leak into later tests in the same run.
+    monkeypatch.setenv("DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+    monkeypatch.setenv("ASYNC_DATABASE_URL", os.environ.get("ASYNC_DATABASE_URL", ""))
     report = await run_live(
         bundle, run_id="telemetry-stop", label="live", selected=cases,
         checkpoint_path=tmp_path / "checkpoint.json",
