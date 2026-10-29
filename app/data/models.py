@@ -789,6 +789,10 @@ class ChatSession(Base):
         lazy="dynamic",
         cascade="all, delete-orphan",
     )
+    context_checkpoint = relationship(
+        "ChatContextCheckpoint", back_populates="session", uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     title = Column(String(200), default="新对话")
     status = Column(String(20), default="active")
@@ -840,6 +844,26 @@ class ChatMessage(Base):
     __table_args__ = (
         Index("idx_message_session_time", "session_id", "created_at"),
     )
+
+
+class ChatContextCheckpoint(Base):
+    """Rebuildable, user-scoped context derived from durable chat messages."""
+
+    __tablename__ = "chat_context_checkpoints"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id = Column(String(36), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session = relationship("ChatSession", back_populates="context_checkpoint")
+    covered_through_message_id = Column(Integer, nullable=False)
+    summary_json = Column(JSON, nullable=False)
+    summary_text = Column(Text, nullable=False)
+    schema_version = Column(Integer, nullable=False, default=1)
+    revision = Column(Integer, nullable=False, default=1)
+    source_digest = Column(String(64), nullable=False)
+    model_id = Column(String(120), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class AIInteractionRun(Base):

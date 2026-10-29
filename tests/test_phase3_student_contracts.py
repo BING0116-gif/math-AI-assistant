@@ -44,6 +44,7 @@ def test_main_student_paths_have_success_and_failure_contracts():
         ("/api/exams/sessions/{session_id}/report", "get"),
         ("/api/learning/dashboard", "get"),
         ("/api/chat/sessions/{session_id}", "get"),
+        ("/api/chat/sessions/{session_id}/context-usage", "get"),
         ("/api/error-book/{error_id}/review", "post"),
         ("/api/profile/me", "get"),
         ("/api/recommend/session", "post"),

@@ -151,6 +151,159 @@ class MemoryApplicationService:
             await self.remember_explicit_preferences(user_id, content, str(message_id))
         return message_id
 
+    async def queue_context_checkpoint(self, user_id: str, external_session_id: str, target_message_id: int) -> bool:
+        """Queue a retryable shadow summary only after the assistant message committed."""
+        from app.services.outbox import enqueue_outbox
+        from app.data.models import ChatContextCheckpoint
+        from app.services.chat_context_checkpoint import _complete_prefix
+        from agent_core.token_budget import estimate_tokens
+        from app.config.settings import settings
+        self._validate_scope(user_id, external_session_id)
+        async with self._session_factory() as db:
+            session = (await db.execute(select(ChatSession).where(
+                ChatSession.user_id == user_id,
+                ChatSession.external_session_id == external_session_id,
+            ))).scalar_one_or_none()
+            if session is None:
+                return False
+            message = (await db.execute(select(ChatMessage).where(
+                ChatMessage.id == target_message_id,
+                ChatMessage.session_id == session.id,
+                ChatMessage.role == "assistant",
+            ))).scalar_one_or_none()
+            if message is None or (message.metadata_ or {}).get("turn_status") != "completed":
+                return False
+            first_message = (await db.execute(select(ChatMessage).where(
+                ChatMessage.session_id == session.id).order_by(ChatMessage.id).limit(1)
+            )).scalar_one_or_none()
+            # Legacy messages have no pairing evidence. Repeatedly queuing them
+            # would never produce a safe checkpoint and would consume the outbox.
+            if first_message is None or not (first_message.metadata_ or {}).get("turn_id"):
+                return False
+            checkpoint = (await db.execute(select(ChatContextCheckpoint).where(
+                ChatContextCheckpoint.user_id == user_id, ChatContextCheckpoint.session_id == session.id,
+            ))).scalar_one_or_none()
+            if checkpoint and checkpoint.revision >= settings.CHAT_CONTEXT_MAX_REVISIONS:
+                return False
+            covered_id = checkpoint.covered_through_message_id if checkpoint else 0
+            if target_message_id <= covered_id:
+                return False
+            rows = list((await db.execute(select(ChatMessage).where(
+                ChatMessage.session_id == session.id, ChatMessage.id > covered_id,
+                ChatMessage.id <= target_message_id).order_by(ChatMessage.id))).scalars())
+            complete = _complete_prefix(rows)
+            if not complete or complete[-1].id != target_message_id:
+                return False
+            trigger = max(256, int(settings.AGENT_CONTEXT_MAX_TOKENS * settings.CHAT_CONTEXT_TRIGGER_RATIO))
+            if sum(estimate_tokens(row.content, settings.LLM_MODEL) for row in complete) < trigger:
+                return False
+            await enqueue_outbox(db, event_type="chat.context.checkpoint", aggregate_type="chat_session",
+                aggregate_id=session.id, user_id=user_id, payload={"target_message_id": target_message_id},
+                idempotency_key=f"chat-context:{session.id}:{target_message_id}")
+            await db.commit()
+            return True
+
+    async def load_context_checkpoint(self, user_id: str, external_session_id: str) -> Dict[str, Any] | None:
+        from app.data.models import ChatContextCheckpoint
+        self._validate_scope(user_id, external_session_id)
+        async with self._session_factory() as db:
+            session = (await db.execute(select(ChatSession).where(
+                ChatSession.user_id == user_id, ChatSession.external_session_id == external_session_id,
+                ChatSession.status != "archived"))).scalar_one_or_none()
+            if session is None:
+                return None
+            row = (await db.execute(select(ChatContextCheckpoint).where(
+                ChatContextCheckpoint.user_id == user_id, ChatContextCheckpoint.session_id == session.id))).scalar_one_or_none()
+            from app.config.settings import settings
+            if row is None or row.schema_version != 1 or row.revision >= settings.CHAT_CONTEXT_MAX_REVISIONS or len(row.summary_text) > 6000:
+                return None
+            tail = list((await db.execute(select(ChatMessage).where(ChatMessage.session_id == session.id,
+                ChatMessage.id > row.covered_through_message_id).order_by(ChatMessage.id).limit(101))).scalars())
+            if len(tail) > 100:
+                return None
+            from app.services.chat_context_checkpoint import _complete_prefix
+            complete = _complete_prefix(tail)
+            return {"summary": row.summary_text, "tail": [
+                {"role": item.role, "content": item.content} for item in complete[-10:]
+            ], "covered_through_message_id": row.covered_through_message_id}
+
+    async def get_context_usage(self, user_id: str, external_session_id: str) -> Dict[str, Any] | None:
+        """Estimate the history portion of the next Agent request; never expose content."""
+        from app.config.settings import settings
+        from agent_core.token_budget import estimate_tokens
+        from app.data.models import ChatContextCheckpoint, OutboxEvent
+        self._validate_scope(user_id, external_session_id)
+        budget = max(256, int(settings.AGENT_CONTEXT_MAX_TOKENS))
+        max_messages = max(1, int(settings.AGENT_CONTEXT_MAX_MESSAGES))
+        max_chars = max(1000, int(settings.AGENT_CONTEXT_MAX_CHARS))
+        async with self._session_factory() as db:
+            session = (await db.execute(select(ChatSession).where(
+                ChatSession.user_id == user_id, ChatSession.external_session_id == external_session_id,
+                ChatSession.status != "archived"))).scalar_one_or_none()
+            if session is None:
+                return None
+            compression_status = "idle"
+            if settings.CHAT_CONTEXT_SHADOW_ENABLED:
+                event = (await db.execute(select(OutboxEvent).where(
+                    OutboxEvent.user_id == user_id,
+                    OutboxEvent.aggregate_type == "chat_session",
+                    OutboxEvent.aggregate_id == session.id,
+                    OutboxEvent.event_type == "chat.context.checkpoint",
+                ).order_by(OutboxEvent.created_at.desc(), OutboxEvent.id.desc()).limit(1))).scalar_one_or_none()
+                if event is not None:
+                    if event.status == "processing":
+                        compression_status = "compressing"
+                    elif event.status == "pending":
+                        compression_status = "retrying" if event.attempts else "queued"
+                    elif event.status == "dead":
+                        compression_status = "failed"
+            checkpoint = None
+            if settings.CHAT_CONTEXT_INJECTION_ENABLED:
+                checkpoint = (await db.execute(select(ChatContextCheckpoint).where(
+                    ChatContextCheckpoint.session_id == session.id,
+                    ChatContextCheckpoint.user_id == user_id))).scalar_one_or_none()
+            checkpoint_ready = (
+                checkpoint is not None
+                and checkpoint.schema_version == 1
+                and checkpoint.revision < settings.CHAT_CONTEXT_MAX_REVISIONS
+                and len(checkpoint.summary_text) <= 6000
+                and estimate_tokens(checkpoint.summary_text, settings.LLM_MODEL) <= max(256, budget // 2)
+            )
+            if checkpoint_ready:
+                tail = list((await db.execute(select(ChatMessage).where(
+                    ChatMessage.session_id == session.id, ChatMessage.id > checkpoint.covered_through_message_id
+                ).order_by(ChatMessage.id).limit(101))).scalars())
+                if len(tail) <= 100:
+                    from app.services.chat_context_checkpoint import CHECKPOINT_CONTEXT_PREFIX, _complete_prefix
+                    tail = _complete_prefix(tail)[-10:]
+                    summary_content = CHECKPOINT_CONTEXT_PREFIX + checkpoint.summary_text
+                    contents = [row.content for row in tail[-(max_messages - 1):]] if max_messages > 1 else []
+                    used = estimate_tokens(summary_content, settings.LLM_MODEL)
+                    chars = len(summary_content)
+                    for content in reversed(contents):
+                        tokens = estimate_tokens(content, settings.LLM_MODEL)
+                        if chars + len(content) > max_chars or used + tokens > budget:
+                            break
+                        used += tokens
+                        chars += len(content)
+                    return {"used_tokens_estimated": min(used, budget), "budget_tokens": budget,
+                            "remaining_tokens_estimated": max(0, budget - used), "is_estimate": True,
+                            "compression_status": compression_status}
+            rows = list((await db.execute(select(ChatMessage).where(
+                ChatMessage.session_id == session.id).order_by(ChatMessage.id.desc()).limit(max_messages))).scalars())
+            contents = [row.content for row in reversed(rows)]
+        used = 0
+        chars = 0
+        for content in reversed(contents):
+            tokens = estimate_tokens(content, settings.LLM_MODEL)
+            if used and (used + tokens > budget or chars + len(content) > max_chars):
+                break
+            used += tokens
+            chars += len(content)
+        return {"used_tokens_estimated": min(used, budget), "budget_tokens": budget,
+                "remaining_tokens_estimated": max(0, budget - used), "is_estimate": True,
+                "compression_status": compression_status}
+
     async def remember_explicit_preferences(
         self, user_id: str, text: str, source_message_id: str
     ) -> int:

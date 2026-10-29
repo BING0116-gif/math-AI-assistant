@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from agent_core.agent import MathAgent
 from agent_core.token_budget import estimate_tokens
+from app.config.settings import settings
 
 
 class _FakeMemoryApplication:
@@ -67,3 +68,48 @@ def test_agent_does_not_duplicate_current_input_and_bounds_recent_history():
 def test_token_estimator_is_nonzero_and_handles_mixed_math_text():
     assert estimate_tokens("") == 0
     assert estimate_tokens("求极限 lim x->0") >= 3
+
+
+def test_checkpoint_injection_uses_durable_tail_and_current_input_wins(monkeypatch):
+    class CheckpointMemory(_FakeMemoryApplication):
+        async def load_context_checkpoint(self, user_id, session_id):
+            assert (user_id, session_id) == ("user-a", "session-a")
+            return {"summary": '{"topic":"右极限"}', "tail": [
+                {"role": "user", "content": "旧条件 x→0"},
+                {"role": "assistant", "content": "已讨论旧条件"},
+            ]}
+
+    async def scenario():
+        monkeypatch.setattr(settings, "CHAT_CONTEXT_INJECTION_ENABLED", True)
+        agent = MathAgent.__new__(MathAgent)
+        agent._session_histories = {}
+        agent._registry = SimpleNamespace()
+        agent._persistence_facade = None
+        agent._memory_application = CheckpointMemory()
+        context = await agent._build_context("session-a", user_input="更正：x→0+", user_id="user-a")
+        history = context["chat_history"]
+        assert context["context_stats"]["context_checkpoint_used"] is True
+        assert any("低可信会话摘要" in item["content"] for item in history)
+        assert not any(item["content"] == "更正：x→0+" for item in history)
+    asyncio.run(scenario())
+
+
+def test_checkpoint_summary_keeps_budget_priority_over_long_tail(monkeypatch):
+    class CheckpointMemory(_FakeMemoryApplication):
+        async def load_context_checkpoint(self, user_id, session_id):
+            return {"summary": '{"verbatim_constraints":["x→0+"]}', "tail": [
+                {"role": "user" if i % 2 == 0 else "assistant", "content": "长推导" + "a" * 1300}
+                for i in range(10)
+            ]}
+
+    async def scenario():
+        monkeypatch.setattr(settings, "CHAT_CONTEXT_INJECTION_ENABLED", True)
+        agent = MathAgent.__new__(MathAgent)
+        agent._session_histories = {}
+        agent._registry = SimpleNamespace()
+        agent._persistence_facade = None
+        agent._memory_application = CheckpointMemory()
+        context = await agent._build_context("session-a", user_input="继续", user_id="user-a")
+        assert "x→0+" in context["chat_history"][0]["content"]
+        assert context["context_stats"]["context_checkpoint_used"] is True
+    asyncio.run(scenario())

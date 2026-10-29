@@ -73,4 +73,25 @@ describe('AgentComposer offline mode', () => {
     const banner = wrapper.find('.agent-composer__offline-banner')
     expect(banner.text()).toContain('AI 服务未配置 API 密钥')
   })
+
+  it('shows estimated context budget details when the ring is opened', async () => {
+    const wrapper = mount(AgentComposer, {
+      props: { contextUsage: { used_tokens_estimated: 1000, budget_tokens: 4000, remaining_tokens_estimated: 3000 } },
+    })
+    const button = wrapper.find('.agent-composer__usage-btn')
+    expect(button.attributes('aria-label')).toContain('25%')
+    await button.trigger('click')
+    expect(wrapper.find('.agent-composer__usage-popover').text()).toContain('约 1.0k token 已用 / 4.0k token 预算')
+    expect(wrapper.find('.agent-composer__usage-popover').text()).toContain('估算')
+  })
+
+  it('shows compression progress beside the ring and in its details', async () => {
+    const wrapper = mount(AgentComposer, {
+      props: { contextUsage: { used_tokens_estimated: 3000, budget_tokens: 4000, remaining_tokens_estimated: 1000, compression_status: 'compressing' } },
+    })
+    expect(wrapper.find('.agent-composer__compression-label').text()).toContain('正在压缩上下文')
+    expect(wrapper.find('.agent-composer__usage-ring--active').exists()).toBe(true)
+    await wrapper.find('.agent-composer__usage-btn').trigger('click')
+    expect(wrapper.find('.agent-composer__usage-popover').text()).toContain('正在压缩上下文')
+  })
 })
