@@ -8,6 +8,7 @@ import pytest
 from model_quality_eval.dataset import load_dataset
 from model_quality_eval.guards import EvaluationSafetyError, side_effect_delta, validate_eval_database_url
 from model_quality_eval.runner import (
+    answer_text_chunk,
     ai_enabled_from_environment,
     deterministic_session_id,
     estimated_cost_from_environment,
@@ -16,10 +17,16 @@ from model_quality_eval.runner import (
     live_token_budget_from_environment,
     live_budget_from_environment,
     load_live_checkpoint,
+    run_live,
     run_live_sync,
     run_mocked,
     summarise_stability,
 )
+
+
+def test_live_answer_capture_ignores_agent_events():
+    assert answer_text_chunk({"__agent_event__": True, "event_type": "thinking", "message": "内部步骤"}) == ""
+    assert answer_text_chunk("最终答案：2") == "最终答案：2"
 from model_quality_eval.schema import CaseResult
 
 
@@ -140,6 +147,52 @@ def test_live_run_is_not_run_when_ai_is_disabled_and_never_requires_a_database(m
     assert report["status"] == "not_run"
     assert report["reason"] == "AI_UNAVAILABLE"
     assert report["summary"]["case_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_live_stops_after_stability_retry_without_cost_telemetry(monkeypatch, tmp_path):
+    import model_quality_eval.runner as runner
+    import app.data.database as database
+
+    bundle = load_dataset(DATASET)
+    cases = bundle.cases[:2]
+    primary = CaseResult.model_validate(
+        run_mocked(bundle, run_id="telemetry-stop", label="offline", selected=cases[:1])["results"][0]
+    )
+    calls = []
+
+    async def no_op():
+        return None
+
+    async def seed(_run_id):
+        return {"user_a": "eval-a", "user_b": "eval-b"}
+
+    async def fake_case(_bundle, case, _run_id, _fixtures, attempt=1):
+        calls.append((case.case_id, attempt))
+        execution = primary.execution.model_copy(update={
+            "attempt": attempt,
+            "token_usage": None if attempt == 2 else {"total_tokens": 100},
+            "estimated_cost": None if attempt == 2 else 0.01,
+        })
+        return primary.model_copy(update={"execution": execution, "weighted_score": 0.0})
+
+    monkeypatch.setattr(runner, "ai_enabled_from_environment", lambda: True)
+    monkeypatch.setattr(runner, "live_budget_from_environment", lambda: 1.0)
+    monkeypatch.setattr(runner, "live_token_budget_from_environment", lambda: 10000)
+    monkeypatch.setattr(runner, "live_timeout_seconds_from_environment", lambda: 5.0)
+    monkeypatch.setattr(runner, "_seed_live_fixtures", seed)
+    monkeypatch.setattr(runner, "run_live_case", fake_case)
+    monkeypatch.setattr(database, "init_db", no_op)
+    monkeypatch.setattr(database, "close_db", no_op)
+    monkeypatch.setenv("EVAL_DATABASE_URL", "postgresql://localhost/model_quality_eval")
+    report = await run_live(
+        bundle, run_id="telemetry-stop", label="live", selected=cases,
+        checkpoint_path=tmp_path / "checkpoint.json",
+    )
+    assert calls == [(cases[0].case_id, 1), (cases[0].case_id, 2)]
+    assert report["status"] == "incomplete"
+    assert report["reason"] == "EVAL_TELEMETRY_MISSING"
+    assert len(report["stability_runs"]) == 1
 
 
 def test_cli_resumes_a_completed_case_set_without_reexecution(tmp_path):

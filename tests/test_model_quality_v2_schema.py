@@ -77,15 +77,25 @@ def test_validate_case_cli_accepts_v2_fixture(tmp_path: Path):
 
 def test_committed_v2_representative_matrix_is_hash_locked():
     bundle = load_v2_dataset(Path("evaluations/model_quality/v2"))
-    assert len(bundle.cases) == 95
+    assert len(bundle.cases) == 108
     assert set(bundle.by_id) == {item.case_id for item in bundle.manifest.cases}
     assert bundle.manifest.category_quotas["tool_failure"] == 12
     assert bundle.manifest.category_quotas["security"] == 17
     assert bundle.manifest.category_quotas["retrieval"] == 14
     assert bundle.manifest.category_quotas["basic"] == 18
     assert bundle.manifest.category_quotas["advanced_proof"] == 13
-    assert bundle.manifest.category_quotas["multi_turn"] == 11
+    assert bundle.manifest.category_quotas["multi_turn"] == 24
     assert bundle.manifest.category_quotas["vision"] == 10
     assert {case.category for case in bundle.cases} == {
         "basic", "advanced_proof", "multi_turn", "vision", "retrieval", "tool_failure", "security"
     }
+
+
+def test_long_conversation_drafts_require_independent_review():
+    bundle = load_v2_dataset(Path("evaluations/model_quality/v2"))
+    drafts = [case for case in bundle.cases if case.gold_review_status == "draft"]
+    assert len(drafts) == 13
+    assert all(case.case_version == "1.0.1" for case in drafts)
+    assert all(len(case.context_fixture["conversation"]) == 42 for case in drafts)
+    assert all(case.oracle.answer_match.expected and case.oracle.key_steps for case in drafts)
+    assert {case.clarification_allowed for case in drafts} == {False, True}

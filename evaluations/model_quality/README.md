@@ -12,6 +12,30 @@
 
 ## 金标流程
 
+V2.1.1 包含 13 条长会话合成草案，每例 21 个完整问答轮次；版本与数据集哈希已锁定。审阅清单见
+`v2/LONG_SESSION_REVIEW.md`。这些案例仍为 `draft`，mocked 满分仅证明管线可运行。
+在独立数学复核完成前，不得将其作为获批准的真实模型金标。
+
+`python -m scripts.model_quality_eval preflight-v2 --dataset evaluations/model_quality/v2`
+只读取环境配置和案例审阅状态，不连接数据库或调用模型。它检查评测库目标、模型密钥、
+显式费用单价及预算，并报告未审阅案例。通过预检也不代表 V2 live runner 已实现。
+
+V2 的 `v2_live.run_v2_with_executor` 是可注入执行器的编排契约：检查独立状态标识、
+草案审阅、配置指纹、预算、超时、遥测、用户隔离证据、学生数据副作用和断点续跑。
+隔离失败或意外副作用会立即停止并标为 `rejected`；缺少证据会标为 `incomplete`。
+终止原因写入检查点；同一运行恢复时不会重试已终止的案例，以免重复产生副作用。
+配置 A 要求后台生成和注入都关闭，B 仅开启后台生成，C 两者均开启；三组必须保持
+相同模型参数并使用不同隔离状态。
+目前尚无完整 Agent 适配器，
+因此这个契约不能产出 A/B/C 真实模型报告。
+纯数据的 `v2_replay.build_v2_replay_plan` 会为每例生成确定性的用户与会话 ID、
+有序历史、图片引用、检索证据需求及工具故障计划；执行器收到该计划后仍需在一次性
+数据库和隔离向量集合中真实建立夹具，并证明归属和副作用。
+`compare-v2` 对 mocked 报告只返回 `pipeline_pass`，并标记
+`model_quality_claim=false`；真实比较必须有获批准的 live baseline 和完成复核的候选报告。
+真实比较按版本化门槛检查数学质量、条件覆盖、安全、P95 延迟和平均费用；
+缺少基线遥测会返回 `incomplete`，超过门槛会返回 `rejected`。
+
 案例状态依次为 `draft → reviewed → approved`。`gold.author` 与 `gold.reviewer` 必须不同；修改输入、答案、
 关键步骤、允许工具或副作用时必须提升 `case_version`，并提升数据集版本、重新计算整体哈希。
 

@@ -16,7 +16,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from model_quality_eval.dataset import DatasetValidationError, load_dataset, load_v2_case, load_v2_dataset
-from model_quality_eval.v2_runner import compare_v2_reports, run_mocked_v2
+from model_quality_eval.v2_runner import compare_v2_reports, preflight_live_v2, run_mocked_v2
 from model_quality_eval.gates import load_gates
 from model_quality_eval.reporting import (
     apply_human_reviews,
@@ -153,13 +153,27 @@ def command_run_v2(args) -> int:
     return 0
 
 
+def command_preflight_v2(args) -> int:
+    bundle = load_v2_dataset(args.dataset)
+    selected = None
+    if args.case_id:
+        missing = [case_id for case_id in args.case_id if case_id not in bundle.by_id]
+        if missing:
+            print(json.dumps({"status": "error", "error": f"unknown case ids: {missing}"}, ensure_ascii=False))
+            return 1
+        selected = [bundle.by_id[case_id] for case_id in args.case_id]
+    result = preflight_live_v2(bundle, selected=selected)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["status"] == "ready_for_live_implementation" else 2
+
+
 def command_compare_v2(args) -> int:
     baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
     candidate = json.loads(Path(args.candidate).read_text(encoding="utf-8"))
     gates = load_gates(args.gates)
     verdict = compare_v2_reports(baseline, candidate, gates)
     print(json.dumps(verdict, ensure_ascii=False))
-    return 0 if verdict["status"] == "approved" else 2
+    return 0 if verdict["status"] in {"approved", "pipeline_pass"} else 2
 
 
 
@@ -300,6 +314,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_v2.add_argument("--output", required=True)
     run_v2.add_argument("--case-id", action="append")
     run_v2.set_defaults(handler=command_run_v2)
+
+    preflight_v2 = subcommands.add_parser("preflight-v2", help="Read-only V2 live safety and gold-review checks")
+    preflight_v2.add_argument("--dataset", required=True)
+    preflight_v2.add_argument("--case-id", action="append")
+    preflight_v2.set_defaults(handler=command_preflight_v2)
 
     compare_v2 = subcommands.add_parser("compare-v2", help="Gate verdict between two v2 mocked/live reports")
     compare_v2.add_argument("--baseline", required=True)

@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .scoring import answer_matches
+from .scoring import _answer_fragment, _normalise_text, answer_matches
 from .v2_schema import V2Case
 
 
@@ -67,6 +67,13 @@ def _final_correctness(case: V2Case, response: str) -> float:
         if not case.oracle.behavioral_rules:
             return 1.0 if _contains(response, expected) else 0.0
         return 1.0 if all(_contains(response, rule.desc) for rule in case.oracle.behavioral_rules) else 0.0
+    if match.mode == "exact":
+        fragment = _normalise_text(_answer_fragment(response))
+        for variant in (expected, *case.allowed_answer_variants):
+            wanted = _normalise_text(variant)
+            if wanted and re.search(r"(?<![A-Za-z0-9.\-])" + re.escape(wanted) + r"(?![A-Za-z0-9.])", fragment):
+                return 1.0
+        return 0.0
     mode = "symbolic" if match.mode == "expression" else match.mode
     return 1.0 if answer_matches(response, expected, mode, match.tolerance) else 0.0
 
