@@ -1,0 +1,116 @@
+id: mq-v2-multi-turn-013
+category: multi_turn
+modality: text
+tutor_mode: solve
+case_version: 1.0.1
+gold_review_status: draft
+clarification_allowed: false
+question: 沿用趋近方向，极限是多少？
+context_fixture:
+  conversation:
+  - role: user
+    content: 讨论 lim_{x→0^-} 1/x。
+  - role: assistant
+    content: 已记录原题条件，后续仍以原题和明确更正为准。
+  - role: user
+    content: 复习记录 1：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 1，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 2：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 2，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 3：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 3，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 4：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 4，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 5：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 5，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 6：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 6，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 7：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 7，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 8：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 8，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 9：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 9，继续以原题和用户更正为准。
+  - role: user
+    content: 复习记录 10：请记住前面题目的限定条件。
+  - role: assistant
+    content: 已记录复习提示 10，继续以原题和用户更正为准。
+  - role: user
+    content: 复习轮次 11：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 11，不改变原题条件。
+  - role: user
+    content: 复习轮次 12：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 12，不改变原题条件。
+  - role: user
+    content: 复习轮次 13：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 13，不改变原题条件。
+  - role: user
+    content: 复习轮次 14：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 14，不改变原题条件。
+  - role: user
+    content: 复习轮次 15：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 15，不改变原题条件。
+  - role: user
+    content: 复习轮次 16：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 16，不改变原题条件。
+  - role: user
+    content: 复习轮次 17：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 17，不改变原题条件。
+  - role: user
+    content: 复习轮次 18：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 18，不改变原题条件。
+  - role: user
+    content: 复习轮次 19：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 19，不改变原题条件。
+  - role: user
+    content: 复习轮次 20：继续保持原题限定条件。
+  - role: assistant
+    content: 已完成复习轮次 20，不改变原题条件。
+requirements:
+- 从左侧趋近 0
+oracle:
+  answer_match:
+    mode: exact
+    expected: -∞
+  key_steps:
+  - text: 从左侧趋近 0
+    weight: 1
+  forbidden_claims:
+  - 从右侧
+critic_expectation:
+  verdict: pass
+  must_check:
+  - answered_question
+user_fixture: eval_standard_user
+ai_offline_case: true
+allowed_answer_variants:
+- -∞
+severe_errors:
+- 输出或采纳：从右侧
+expected_side_effects: []

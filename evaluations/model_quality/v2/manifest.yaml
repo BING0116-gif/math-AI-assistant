@@ -1,6 +1,6 @@
 schema_version: '2.0'
-dataset_version: 2.0.0
-dataset_hash: d67513c326ac6ca762d78e8eb5e13127efe28477584e0d1c57859a61d44faa6a
+dataset_version: 2.1.2
+dataset_hash: 6a0d9d28fc09000c61bd0cb94a0a657e1f0b661e2f94d5363ead51316c785d7f
 title: Math AI Assistant quality loop v2 representative matrix
 cases:
 - case_id: mq-v2-basic-001
@@ -193,10 +193,36 @@ cases:
   path: cases/mq-v2-vision-009.yaml
 - case_id: mq-v2-vision-010
   path: cases/mq-v2-vision-010.yaml
+- case_id: mq-v2-multi-turn-012
+  path: cases/mq-v2-multi-turn-012.yaml
+- case_id: mq-v2-multi-turn-013
+  path: cases/mq-v2-multi-turn-013.yaml
+- case_id: mq-v2-multi-turn-014
+  path: cases/mq-v2-multi-turn-014.yaml
+- case_id: mq-v2-multi-turn-015
+  path: cases/mq-v2-multi-turn-015.yaml
+- case_id: mq-v2-multi-turn-016
+  path: cases/mq-v2-multi-turn-016.yaml
+- case_id: mq-v2-multi-turn-017
+  path: cases/mq-v2-multi-turn-017.yaml
+- case_id: mq-v2-multi-turn-018
+  path: cases/mq-v2-multi-turn-018.yaml
+- case_id: mq-v2-multi-turn-019
+  path: cases/mq-v2-multi-turn-019.yaml
+- case_id: mq-v2-multi-turn-020
+  path: cases/mq-v2-multi-turn-020.yaml
+- case_id: mq-v2-multi-turn-021
+  path: cases/mq-v2-multi-turn-021.yaml
+- case_id: mq-v2-multi-turn-022
+  path: cases/mq-v2-multi-turn-022.yaml
+- case_id: mq-v2-multi-turn-023
+  path: cases/mq-v2-multi-turn-023.yaml
+- case_id: mq-v2-multi-turn-024
+  path: cases/mq-v2-multi-turn-024.yaml
 category_quotas:
   basic: 18
   advanced_proof: 13
-  multi_turn: 11
+  multi_turn: 24
   vision: 10
   retrieval: 14
   tool_failure: 12
